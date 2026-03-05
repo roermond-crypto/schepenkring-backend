@@ -13,17 +13,29 @@ class AuditLog extends Model
     protected $fillable = [
         'action',
         'risk_level',
+        'result',
         'actor_id',
         'impersonator_id',
+        'location_id',
         'target_type',
         'target_id',
+        'entity_type',
+        'entity_id',
         'meta',
+        'snapshot_before',
+        'snapshot_after',
         'ip_address',
+        'ip_hash',
         'user_agent',
+        'device_id',
+        'request_id',
+        'idempotency_key',
     ];
 
     protected $casts = [
         'meta' => 'array',
+        'snapshot_before' => 'array',
+        'snapshot_after' => 'array',
     ];
 
     public function actor(): BelongsTo
@@ -34,5 +46,10 @@ class AuditLog extends Model
     public function impersonator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'impersonator_id');
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id');
     }
 }

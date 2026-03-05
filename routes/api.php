@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
+use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
 use App\Http\Controllers\Api\Auth\RegisterController;
@@ -84,4 +85,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
     Route::post('impersonate/stop', [AdminImpersonationController::class, 'destroy']);
+
+    Route::get('audit', [AdminAuditLogController::class, 'index']);
+    Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
 });

@@ -2,9 +2,11 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Task;
 use App\Models\User;
 use App\Repositories\TaskRepository;
+use App\Services\ActionSecurity;
 use App\Services\TaskAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
 
@@ -12,12 +14,15 @@ class RescheduleTaskAction
 {
     public function __construct(
         private TaskRepository $tasks,
-        private TaskAccessService $access
+        private TaskAccessService $access,
+        private ActionSecurity $security
     ) {
     }
 
     public function execute(User $actor, Task $task, array $data): Task
     {
+        $before = $task->toArray();
+
         if (! $this->access->canEdit($actor, $task)) {
             throw new AuthorizationException('Unauthorized');
         }
@@ -33,6 +38,17 @@ class RescheduleTaskAction
 
         $this->tasks->update($task, $payload);
 
-        return $task->fresh(['assignedTo', 'creator', 'user', 'yacht', 'column']);
+        $updated = $task->fresh(['assignedTo', 'creator', 'user', 'yacht', 'column']);
+
+        $this->security->log('task.reschedule', RiskLevel::LOW, $actor, $task, [
+            'due_date' => $payload['due_date'],
+            'reminder_at' => $payload['reminder_at'] ?? null,
+        ], [
+            'location_id' => $updated->location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $updated->toArray(),
+        ]);
+
+        return $updated;
     }
 }

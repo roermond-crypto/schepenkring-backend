@@ -2,19 +2,24 @@
 
 namespace App\Actions\User;
 
+use App\Enums\RiskLevel;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\User;
 use App\Repositories\UserRepository;
+use App\Services\ActionSecurity;
 use Illuminate\Validation\ValidationException;
 
 class CreateUserAction
 {
-    public function __construct(private UserRepository $users)
+    public function __construct(
+        private UserRepository $users,
+        private ActionSecurity $security
+    )
     {
     }
 
-    public function execute(array $data): User
+    public function execute(array $data, User $actor, ?string $idempotencyKey = null): User
     {
         $type = UserType::from($data['type']);
 
@@ -45,6 +50,16 @@ class CreateUserAction
             $payload['client_location_id'] = $data['location_id'];
         }
 
-        return $this->users->create($payload);
+        $user = $this->users->create($payload);
+
+        $this->security->log('admin.user.create', RiskLevel::MEDIUM, $actor, $user, [
+            'type' => $type->value,
+        ], [
+            'location_id' => $user->client_location_id,
+            'snapshot_after' => $user->toArray(),
+            'idempotency_key' => $idempotencyKey,
+        ]);
+
+        return $user;
     }
 }

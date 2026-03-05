@@ -41,6 +41,8 @@ class StartImpersonationAction
 
         $this->security->log('impersonation.start', RiskLevel::HIGH, $actor, $target, [
             'session_id' => $session->id,
+        ], [
+            'location_id' => $target->client_location_id,
         ]);
 
         return [

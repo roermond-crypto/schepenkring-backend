@@ -21,6 +21,8 @@ class UpdateUserAction
     {
         $allowed = Arr::only($data, ['name', 'email', 'phone', 'status']);
 
+        $before = $target->toArray();
+
         $emailChanged = array_key_exists('email', $allowed) && $allowed['email'] !== $target->email;
         $phoneChanged = array_key_exists('phone', $allowed) && $allowed['phone'] !== $target->phone;
         $statusChanged = array_key_exists('status', $allowed) && $allowed['status'] !== $target->status?->value;
@@ -50,13 +52,15 @@ class UpdateUserAction
             $this->users->revokeTokens($user);
         }
 
-        if ($sensitiveChange) {
-            $this->security->log('admin.user.update', RiskLevel::HIGH, $actor, $user, [
-                'email_changed' => $emailChanged,
-                'phone_changed' => $phoneChanged,
-                'status_changed' => $statusChanged,
-            ]);
-        }
+        $this->security->log('admin.user.update', $sensitiveChange ? RiskLevel::HIGH : RiskLevel::LOW, $actor, $user, [
+            'email_changed' => $emailChanged,
+            'phone_changed' => $phoneChanged,
+            'status_changed' => $statusChanged,
+        ], [
+            'location_id' => $user->client_location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $user->toArray(),
+        ]);
 
         return $user;
     }

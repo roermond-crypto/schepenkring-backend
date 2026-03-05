@@ -39,6 +39,8 @@ class StopImpersonationAction
 
         $this->security->log('impersonation.stop', RiskLevel::HIGH, $actor, $impersonator, [
             'session_id' => $session->id,
+        ], [
+            'location_id' => $impersonator->client_location_id,
         ]);
 
         return [

@@ -26,13 +26,18 @@ class UpdatePasswordAction
         }
 
         $this->security->requireIdempotency($idempotencyKey, 'me.password.update', $user);
+        $before = $user->toArray();
 
         $updated = $this->users->update($user, [
             'password' => $data['password'],
             'password_changed_at' => now(),
         ]);
 
-        $this->security->log('me.password.update', RiskLevel::HIGH, $user, $updated);
+        $this->security->log('me.password.update', RiskLevel::HIGH, $user, $updated, [], [
+            'location_id' => $user->client_location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $updated->toArray(),
+        ]);
 
         return $updated;
     }

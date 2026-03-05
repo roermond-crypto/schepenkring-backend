@@ -20,6 +20,7 @@ class AssignUserLocationsAction
     public function execute(User $target, array $data, User $actor, ?string $idempotencyKey): User
     {
         $this->security->requireIdempotency($idempotencyKey, 'admin.user.locations', $actor);
+        $before = $target->toArray();
 
         if ($target->type === UserType::CLIENT) {
             if (empty($data['location_id'])) {
@@ -36,6 +37,10 @@ class AssignUserLocationsAction
 
             $this->security->log('admin.user.locations', RiskLevel::HIGH, $actor, $target, [
                 'client_location_id' => $data['location_id'],
+            ], [
+                'location_id' => $data['location_id'],
+                'snapshot_before' => $before,
+                'snapshot_after' => $target->fresh()->toArray(),
             ]);
 
             return $target;
@@ -57,6 +62,9 @@ class AssignUserLocationsAction
 
         $this->security->log('admin.user.locations', RiskLevel::HIGH, $actor, $target, [
             'locations' => $data['locations'],
+        ], [
+            'snapshot_before' => $before,
+            'snapshot_after' => $target->fresh()->toArray(),
         ]);
 
         return $target->refresh();

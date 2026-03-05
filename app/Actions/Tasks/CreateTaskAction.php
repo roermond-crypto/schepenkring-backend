@@ -2,11 +2,13 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Boat;
 use App\Models\Task;
 use App\Models\User;
 use App\Repositories\TaskActivityLogRepository;
 use App\Repositories\TaskRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\TaskAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -17,7 +19,8 @@ class CreateTaskAction
         private TaskRepository $tasks,
         private TaskActivityLogRepository $activityLogs,
         private LocationAccessService $locationAccess,
-        private TaskAccessService $taskAccess
+        private TaskAccessService $taskAccess,
+        private ActionSecurity $security
     ) {
     }
 
@@ -79,6 +82,16 @@ class CreateTaskAction
             'action' => 'created',
             'description' => 'Task created',
             'location_id' => $task->location_id,
+        ]);
+
+        $this->security->log('task.create', RiskLevel::LOW, $actor, $task, [
+            'status' => $task->status,
+            'assigned_to' => $task->assigned_to,
+            'type' => $task->type,
+            'client_visible' => $task->client_visible,
+        ], [
+            'location_id' => $task->location_id,
+            'snapshot_after' => $task->toArray(),
         ]);
 
         return $task->load(['assignedTo', 'creator', 'user', 'yacht', 'column']);

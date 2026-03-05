@@ -2,9 +2,11 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Column;
 use App\Models\User;
 use App\Repositories\ColumnRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -14,7 +16,8 @@ class UpdateColumnAction
     public function __construct(
         private ColumnRepository $columns,
         private LocationAccessService $locationAccess,
-        private PermissionService $permissions
+        private PermissionService $permissions,
+        private ActionSecurity $security
     ) {
     }
 
@@ -35,6 +38,17 @@ class UpdateColumnAction
             throw new AuthorizationException('Unauthorized');
         }
 
-        return $this->columns->update($column, $data);
+        $before = $column->toArray();
+        $updated = $this->columns->update($column, $data);
+
+        $this->security->log('task.column.update', RiskLevel::LOW, $actor, $updated, [
+            'fields' => array_keys($data),
+        ], [
+            'location_id' => $updated->location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $updated->toArray(),
+        ]);
+
+        return $updated;
     }
 }

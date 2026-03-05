@@ -2,11 +2,13 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Boat;
 use App\Models\Task;
 use App\Models\User;
 use App\Repositories\TaskActivityLogRepository;
 use App\Repositories\TaskRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use App\Services\TaskAccessService;
@@ -19,12 +21,15 @@ class UpdateTaskAction
         private TaskActivityLogRepository $activityLogs,
         private LocationAccessService $locationAccess,
         private PermissionService $permissions,
-        private TaskAccessService $taskAccess
+        private TaskAccessService $taskAccess,
+        private ActionSecurity $security
     ) {
     }
 
     public function execute(User $actor, Task $task, array $data): Task
     {
+        $before = $task->toArray();
+
         if (! $this->taskAccess->canEdit($actor, $task)) {
             throw new AuthorizationException('Unauthorized');
         }
@@ -98,7 +103,17 @@ class UpdateTaskAction
             'location_id' => $task->location_id,
         ]);
 
-        return $task->fresh(['assignedTo', 'creator', 'user', 'yacht', 'column']);
+        $updated = $task->fresh(['assignedTo', 'creator', 'user', 'yacht', 'column']);
+
+        $this->security->log('task.update', RiskLevel::LOW, $actor, $task, [
+            'fields' => array_keys($data),
+        ], [
+            'location_id' => $updated->location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $updated->toArray(),
+        ]);
+
+        return $updated;
     }
 
     private function resolveLocationId(User $actor, ?User $assignee, array $data, Task $task): ?int

@@ -2,8 +2,10 @@
 
 namespace App\Actions\TaskAutomationTemplate;
 
+use App\Enums\RiskLevel;
 use App\Models\User;
 use App\Repositories\TaskAutomationTemplateRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -13,7 +15,8 @@ class CreateTaskAutomationTemplateAction
     public function __construct(
         private TaskAutomationTemplateRepository $templates,
         private LocationAccessService $locationAccess,
-        private PermissionService $permissions
+        private PermissionService $permissions,
+        private ActionSecurity $security
     ) {
     }
 
@@ -41,6 +44,13 @@ class CreateTaskAutomationTemplateAction
 
         $data['location_id'] = $locationId;
 
-        return $this->templates->create($data);
+        $template = $this->templates->create($data);
+
+        $this->security->log('task.automation_template.create', RiskLevel::LOW, $actor, $template, [], [
+            'location_id' => $locationId,
+            'snapshot_after' => $template->toArray(),
+        ]);
+
+        return $template;
     }
 }

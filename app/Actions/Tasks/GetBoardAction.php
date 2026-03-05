@@ -2,10 +2,12 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Board;
 use App\Models\Column;
 use App\Models\User;
 use App\Repositories\BoardRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
 
@@ -13,7 +15,8 @@ class GetBoardAction
 {
     public function __construct(
         private BoardRepository $boards,
-        private LocationAccessService $locationAccess
+        private LocationAccessService $locationAccess,
+        private ActionSecurity $security
     ) {
     }
 
@@ -47,6 +50,11 @@ class GetBoardAction
             $board->load(['columns' => function ($query) {
                 $query->orderBy('position');
             }]);
+
+            $this->security->log('task.board.create', RiskLevel::LOW, $actor, $board, [], [
+                'location_id' => $resolvedLocationId,
+                'snapshot_after' => $board->toArray(),
+            ]);
         }
 
         return $board;

@@ -24,7 +24,11 @@ class UserController extends Controller
 
     public function store(AdminUserStoreRequest $request, CreateUserAction $action)
     {
-        $user = $action->execute($request->validated());
+        $user = $action->execute(
+            $request->validated(),
+            $request->user(),
+            $request->header('Idempotency-Key')
+        );
 
         return response()->json([
             'data' => new UserResource($user->load(['locations', 'clientLocation'])),

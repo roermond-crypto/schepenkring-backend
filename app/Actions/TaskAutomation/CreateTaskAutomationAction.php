@@ -2,10 +2,12 @@
 
 namespace App\Actions\TaskAutomation;
 
+use App\Enums\RiskLevel;
 use App\Models\TaskAutomationTemplate;
 use App\Models\User;
 use App\Repositories\TaskAutomationRepository;
 use App\Repositories\TaskAutomationTemplateRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use Carbon\Carbon;
@@ -19,7 +21,8 @@ class CreateTaskAutomationAction
         private TaskAutomationRepository $automations,
         private TaskAutomationTemplateRepository $templates,
         private LocationAccessService $locationAccess,
-        private PermissionService $permissions
+        private PermissionService $permissions,
+        private ActionSecurity $security
     ) {
     }
 
@@ -55,7 +58,7 @@ class CreateTaskAutomationAction
 
         $assignedUserId = $data['assigned_user_id'] ?? $this->getDefaultAdminId();
 
-        return $this->automations->create([
+        $automation = $this->automations->create([
             'template_id' => $template->id,
             'trigger_event' => $data['trigger_event'] ?? $template->trigger_event,
             'related_type' => $data['related_type'] ?? null,
@@ -65,6 +68,16 @@ class CreateTaskAutomationAction
             'status' => 'pending',
             'location_id' => $locationId,
         ])->load('template');
+
+        $this->security->log('task.automation.create', RiskLevel::LOW, $actor, $automation, [
+            'template_id' => $template->id,
+            'trigger_event' => $automation->trigger_event,
+        ], [
+            'location_id' => $locationId,
+            'snapshot_after' => $automation->toArray(),
+        ]);
+
+        return $automation;
     }
 
     private function calculateDueAt(TaskAutomationTemplate $template, ?string $baseAt = null): ?Carbon

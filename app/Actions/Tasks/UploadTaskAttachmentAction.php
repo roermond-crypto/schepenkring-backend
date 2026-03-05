@@ -2,10 +2,12 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Task;
 use App\Models\User;
 use App\Repositories\TaskActivityLogRepository;
 use App\Repositories\TaskAttachmentRepository;
+use App\Services\ActionSecurity;
 use App\Services\TaskAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
@@ -16,7 +18,8 @@ class UploadTaskAttachmentAction
     public function __construct(
         private TaskAttachmentRepository $attachments,
         private TaskActivityLogRepository $activityLogs,
-        private TaskAccessService $access
+        private TaskAccessService $access,
+        private ActionSecurity $security
     ) {
     }
 
@@ -43,6 +46,13 @@ class UploadTaskAttachmentAction
             'user_id' => $actor->id,
             'action' => 'attachment_added',
             'description' => 'Uploaded file: '.$file->getClientOriginalName(),
+            'location_id' => $task->location_id,
+        ]);
+
+        $this->security->log('task.attachment.add', RiskLevel::LOW, $actor, $task, [
+            'attachment_id' => $attachment->id,
+            'file_name' => $attachment->file_name,
+        ], [
             'location_id' => $task->location_id,
         ]);
 

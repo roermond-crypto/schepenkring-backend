@@ -20,6 +20,8 @@ class UpdatePersonalAction
     {
         $payload = Arr::only($data, ['first_name', 'last_name', 'phone', 'date_of_birth', 'email']);
 
+        $before = $user->toArray();
+
         $emailChanged = array_key_exists('email', $payload) && $payload['email'] !== $user->email;
         $phoneChanged = array_key_exists('phone', $payload) && $payload['phone'] !== $user->phone;
 
@@ -38,12 +40,16 @@ class UpdatePersonalAction
 
         $updated = $this->users->update($user, $payload);
 
-        if ($emailChanged || $phoneChanged) {
-            $this->security->log('me.personal.update', RiskLevel::HIGH, $user, $updated, [
-                'email_changed' => $emailChanged,
-                'phone_changed' => $phoneChanged,
-            ]);
-        }
+        $risk = ($emailChanged || $phoneChanged) ? RiskLevel::HIGH : RiskLevel::LOW;
+
+        $this->security->log('me.personal.update', $risk, $user, $updated, [
+            'email_changed' => $emailChanged,
+            'phone_changed' => $phoneChanged,
+        ], [
+            'location_id' => $user->client_location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $updated->toArray(),
+        ]);
 
         return $updated;
     }

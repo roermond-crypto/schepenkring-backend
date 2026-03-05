@@ -641,6 +641,200 @@ paths:
                   created_at: "2026-03-05T09:00:00Z"
                   updated_at: "2026-03-05T09:00:00Z"
 
+  /api/admin/audit:
+    get:
+      summary: List audit logs
+      parameters:
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: user_id
+          schema:
+            type: integer
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+        - in: query
+          name: risk_level
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH]
+        - in: query
+          name: result
+          schema:
+            type: string
+            enum: [SUCCESS, FAIL]
+        - in: query
+          name: search
+          description: Free-text search across action/entity/user/email/ip/device
+          schema:
+            type: string
+        - in: query
+          name: query
+          description: Alias for search
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum: [created_at, action, risk_level, result]
+        - in: query
+          name: sort_dir
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: Paginated audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+              example:
+                data:
+                  - id: 501
+                    created_at: "2026-03-05T12:30:00Z"
+                    actor_id: 1
+                    impersonator_id: null
+                    actor:
+                      id: 1
+                      type: ADMIN
+                      status: ACTIVE
+                      name: "Admin User"
+                      email: "admin@example.com"
+                      phone: null
+                    impersonator: null
+                    location_id: 2
+                    location:
+                      id: 2
+                      name: "Marina West"
+                      code: "MW"
+                    action: "task.update"
+                    entity_type: "App\\\\Models\\\\Task"
+                    entity_id: 44
+                    risk_level: "LOW"
+                    result: "SUCCESS"
+                    ip_address: "203.0.113.10"
+                    ip_hash: "c4be5f6c69c4e3b1a8b2bb9df3a1e0c9f5dbf1c1c8a5a4f7f6e9d0b1c2a3e4f5"
+                    user_agent: "Mozilla/5.0"
+                    device_id: "ios-123"
+                    request_id: "req-123"
+                    idempotency_key: "idem-123"
+                    metadata:
+                      method: "PATCH"
+                      path: "api/tasks/44"
+                      route: null
+                      impersonation_session_id: null
+                    snapshot_before:
+                      id: 44
+                      title: "Inspect hull"
+                      status: "New"
+                    snapshot_after:
+                      id: 44
+                      title: "Inspect hull"
+                      status: "Pending"
+                    updated_at: "2026-03-05T12:30:01Z"
+                links:
+                  first: "http://localhost:8000/api/admin/audit?page=1"
+                  last: "http://localhost:8000/api/admin/audit?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  path: "http://localhost:8000/api/admin/audit"
+                  per_page: 50
+                  to: 1
+                  total: 1
+
+  /api/admin/audit/{id}:
+    get:
+      summary: Get audit log detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Audit log detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+              example:
+                data:
+                  id: 501
+                  created_at: "2026-03-05T12:30:00Z"
+                  actor_id: 1
+                  impersonator_id: null
+                  actor:
+                    id: 1
+                    type: ADMIN
+                    status: ACTIVE
+                    name: "Admin User"
+                    email: "admin@example.com"
+                    phone: null
+                  impersonator: null
+                  location_id: 2
+                  location:
+                    id: 2
+                    name: "Marina West"
+                    code: "MW"
+                  action: "task.update"
+                  entity_type: "App\\\\Models\\\\Task"
+                  entity_id: 44
+                  risk_level: "LOW"
+                  result: "SUCCESS"
+                  ip_address: "203.0.113.10"
+                  ip_hash: "c4be5f6c69c4e3b1a8b2bb9df3a1e0c9f5dbf1c1c8a5a4f7f6e9d0b1c2a3e4f5"
+                  user_agent: "Mozilla/5.0"
+                  device_id: "ios-123"
+                  request_id: "req-123"
+                  idempotency_key: "idem-123"
+                  metadata:
+                    method: "PATCH"
+                    path: "api/tasks/44"
+                    route: null
+                    impersonation_session_id: null
+                  snapshot_before:
+                    id: 44
+                    title: "Inspect hull"
+                    status: "New"
+                  snapshot_after:
+                    id: 44
+                    title: "Inspect hull"
+                    status: "Pending"
+                  updated_at: "2026-03-05T12:30:01Z"
+
   /api/public/users/employees:
     get:
       summary: List employees for task assignment
@@ -1731,6 +1925,110 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+        links:
+          type: object
+        meta:
+          type: object
+
+    AuditUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        status:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        actor_id:
+          type: integer
+          nullable: true
+        impersonator_id:
+          type: integer
+          nullable: true
+        actor:
+          $ref: '#/components/schemas/AuditUser'
+        impersonator:
+          $ref: '#/components/schemas/AuditUser'
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        location:
+          $ref: '#/components/schemas/Location'
+        action:
+          type: string
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+        risk_level:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        result:
+          type: string
+          enum: [SUCCESS, FAIL]
+        ip_address:
+          type: string
+          nullable: true
+        ip_hash:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        device_id:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        snapshot_before:
+          type: object
+          nullable: true
+        snapshot_after:
+          type: object
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    AuditLogResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AuditLog'
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
         links:
           type: object
         meta:

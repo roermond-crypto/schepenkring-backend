@@ -2,8 +2,10 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Column;
 use App\Models\User;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -13,7 +15,8 @@ class ReorderColumnsAction
 {
     public function __construct(
         private LocationAccessService $locationAccess,
-        private PermissionService $permissions
+        private PermissionService $permissions,
+        private ActionSecurity $security
     ) {
     }
 
@@ -21,6 +24,7 @@ class ReorderColumnsAction
     {
         if ($actor->isAdmin()) {
             $this->applyUpdates($columns);
+            $this->logReorder($actor, $columns);
             return;
         }
 
@@ -41,6 +45,7 @@ class ReorderColumnsAction
         }
 
         $this->applyUpdates($columns);
+        $this->logReorder($actor, $columns);
     }
 
     private function applyUpdates(array $columns): void
@@ -52,5 +57,17 @@ class ReorderColumnsAction
                 ]);
             }
         });
+    }
+
+    private function logReorder(User $actor, array $columns): void
+    {
+        $firstColumnId = $columns[0]['id'] ?? null;
+        $firstColumn = $firstColumnId ? Column::find($firstColumnId) : null;
+
+        $this->security->log('task.column.reorder', RiskLevel::LOW, $actor, $firstColumn, [
+            'columns' => $columns,
+        ], [
+            'location_id' => $firstColumn?->location_id,
+        ]);
     }
 }

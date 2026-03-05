@@ -2,9 +2,11 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Board;
 use App\Models\User;
 use App\Repositories\ColumnRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -14,7 +16,8 @@ class CreateColumnAction
     public function __construct(
         private ColumnRepository $columns,
         private LocationAccessService $locationAccess,
-        private PermissionService $permissions
+        private PermissionService $permissions,
+        private ActionSecurity $security
     ) {
     }
 
@@ -38,6 +41,13 @@ class CreateColumnAction
         $payload = $data;
         $payload['location_id'] = $locationId;
 
-        return $this->columns->create($payload);
+        $column = $this->columns->create($payload);
+
+        $this->security->log('task.column.create', RiskLevel::LOW, $actor, $column, [], [
+            'location_id' => $locationId,
+            'snapshot_after' => $column->toArray(),
+        ]);
+
+        return $column;
     }
 }

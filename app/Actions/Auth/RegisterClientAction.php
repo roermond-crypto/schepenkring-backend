@@ -2,20 +2,25 @@
 
 namespace App\Actions\Auth;
 
+use App\Enums\RiskLevel;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\User;
 use App\Repositories\UserRepository;
+use App\Services\ActionSecurity;
 
 class RegisterClientAction
 {
-    public function __construct(private UserRepository $users)
+    public function __construct(
+        private UserRepository $users,
+        private ActionSecurity $security
+    )
     {
     }
 
     public function execute(array $data): User
     {
-        return $this->users->create([
+        $user = $this->users->create([
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
@@ -27,5 +32,14 @@ class RegisterClientAction
             'phone_changed_at' => array_key_exists('phone', $data) ? now() : null,
             'password_changed_at' => now(),
         ]);
+
+        $this->security->log('auth.register', RiskLevel::LOW, $user, $user, [
+            'source' => 'self_signup',
+        ], [
+            'location_id' => $user->client_location_id,
+            'snapshot_after' => $user->toArray(),
+        ]);
+
+        return $user;
     }
 }

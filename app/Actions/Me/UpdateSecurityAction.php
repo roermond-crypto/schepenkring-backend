@@ -21,6 +21,7 @@ class UpdateSecurityAction
     public function execute(User $user, array $data, ?string $idempotencyKey): User
     {
         $enable = (bool) $data['two_factor_enabled'];
+        $before = $user->toArray();
 
         if ($enable) {
             if (! Totp::verify($data['otp_secret'], $data['otp_code'])) {
@@ -54,6 +55,10 @@ class UpdateSecurityAction
 
         $this->security->log('me.security.update', RiskLevel::HIGH, $user, $updated, [
             'enabled' => $enable,
+        ], [
+            'location_id' => $user->client_location_id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $updated->toArray(),
         ]);
 
         return $updated;

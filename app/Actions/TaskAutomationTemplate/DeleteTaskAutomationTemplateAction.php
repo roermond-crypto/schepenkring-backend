@@ -2,9 +2,11 @@
 
 namespace App\Actions\TaskAutomationTemplate;
 
+use App\Enums\RiskLevel;
 use App\Models\TaskAutomationTemplate;
 use App\Models\User;
 use App\Repositories\TaskAutomationTemplateRepository;
+use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use App\Services\PermissionService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -14,7 +16,8 @@ class DeleteTaskAutomationTemplateAction
     public function __construct(
         private TaskAutomationTemplateRepository $templates,
         private LocationAccessService $locationAccess,
-        private PermissionService $permissions
+        private PermissionService $permissions,
+        private ActionSecurity $security
     ) {
     }
 
@@ -34,6 +37,14 @@ class DeleteTaskAutomationTemplateAction
             throw new AuthorizationException('Unauthorized');
         }
 
+        $before = $template->toArray();
+        $locationId = $template->location_id;
+
         $this->templates->delete($template);
+
+        $this->security->log('task.automation_template.delete', RiskLevel::LOW, $actor, $template, [], [
+            'location_id' => $locationId,
+            'snapshot_before' => $before,
+        ]);
     }
 }

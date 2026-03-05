@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AuditResult;
 use App\Enums\RiskLevel;
 use App\Models\AuditLog;
 use App\Models\IdempotencyKey;
@@ -62,20 +63,78 @@ class ActionSecurity
         }
     }
 
-    public function log(string $action, RiskLevel $risk, User $actor, ?object $target = null, array $meta = []): AuditLog
+    public function log(
+        string $action,
+        RiskLevel $risk,
+        ?User $actor,
+        ?object $target = null,
+        array $meta = [],
+        array $context = []
+    ): AuditLog
     {
         $impersonator = $this->impersonationContext->impersonator();
+        $request = request();
+
+        $entityType = $context['entity_type'] ?? ($target ? $target::class : null);
+        $entityId = $context['entity_id'] ?? ($target->id ?? null);
+        $locationId = $context['location_id'] ?? $this->resolveLocationId($actor, $target);
+        $result = $context['result'] ?? AuditResult::SUCCESS->value;
+        $requestId = $context['request_id'] ?? $request->header('X-Request-Id')
+            ?? $request->header('X-Request-ID')
+            ?? $request->header('X-Trace-Id')
+            ?? $request->header('X-Trace-ID');
+        $idempotencyKey = $context['idempotency_key'] ?? $request->header('Idempotency-Key');
+        $deviceId = $context['device_id'] ?? $request->header('X-Device-Id')
+            ?? $request->header('X-Device-ID')
+            ?? $request->input('device_id');
+        $ipAddress = $request->ip();
+
+        $meta = array_merge([
+            'method' => $request->method(),
+            'path' => $request->path(),
+            'route' => $request->route()?->getName(),
+            'impersonation_session_id' => $this->impersonationContext->sessionId(),
+        ], $meta);
 
         return AuditLog::create([
             'action' => $action,
             'risk_level' => $risk->value,
-            'actor_id' => $actor->id,
+            'result' => $result,
+            'actor_id' => $actor?->id,
             'impersonator_id' => $impersonator?->id,
-            'target_type' => $target ? $target::class : null,
-            'target_id' => $target->id ?? null,
+            'location_id' => $locationId,
+            'target_type' => $entityType,
+            'target_id' => $entityId,
+            'entity_type' => $entityType,
+            'entity_id' => $entityId,
             'meta' => $meta,
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
+            'snapshot_before' => $context['snapshot_before'] ?? null,
+            'snapshot_after' => $context['snapshot_after'] ?? null,
+            'ip_address' => $ipAddress,
+            'ip_hash' => $ipAddress ? hash('sha256', $ipAddress) : null,
+            'user_agent' => $request->userAgent(),
+            'device_id' => $deviceId,
+            'request_id' => $requestId,
+            'idempotency_key' => $idempotencyKey,
         ]);
+    }
+
+    private function resolveLocationId(?User $actor, ?object $target): ?int
+    {
+        if ($target) {
+            if (isset($target->location_id)) {
+                return $target->location_id;
+            }
+
+            if (isset($target->client_location_id)) {
+                return $target->client_location_id;
+            }
+        }
+
+        if ($actor?->isClient()) {
+            return $actor->client_location_id;
+        }
+
+        return null;
     }
 }

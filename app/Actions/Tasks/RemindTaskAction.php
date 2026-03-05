@@ -2,8 +2,10 @@
 
 namespace App\Actions\Tasks;
 
+use App\Enums\RiskLevel;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\ActionSecurity;
 use App\Services\NotificationDispatchService;
 use App\Services\TaskAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -13,7 +15,8 @@ class RemindTaskAction
 {
     public function __construct(
         private TaskAccessService $access,
-        private NotificationDispatchService $notifications
+        private NotificationDispatchService $notifications,
+        private ActionSecurity $security
     ) {
     }
 
@@ -49,6 +52,14 @@ class RemindTaskAction
             $allowRealtime,
             $allowEmail
         );
+
+        $this->security->log('task.remind', RiskLevel::LOW, $actor, $task, [
+            'recipient_id' => $recipient->id,
+            'realtime' => $allowRealtime,
+            'email' => $allowEmail,
+        ], [
+            'location_id' => $task->location_id,
+        ]);
 
         return [
             'message' => 'Reminder sent',
