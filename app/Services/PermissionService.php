@@ -52,6 +52,31 @@ class PermissionService
         return $roles->contains($role);
     }
 
+    /**
+     * @return array<int>
+     */
+    public function locationIdsForPermission(User $user, string $permission): array
+    {
+        if ($user->isAdmin()) {
+            return [];
+        }
+
+        if (! $user->isEmployee()) {
+            return [];
+        }
+
+        $roles = $user->locations()->pluck('role', 'locations.id');
+
+        $locations = [];
+        foreach ($roles as $locationId => $role) {
+            if ($this->roleHasPermission($role, $permission)) {
+                $locations[] = (int) $locationId;
+            }
+        }
+
+        return $locations;
+    }
+
     private function roleHasPermission(?string $role, string $permission): bool
     {
         if (! $role) {

@@ -641,6 +641,780 @@ paths:
                   created_at: "2026-03-05T09:00:00Z"
                   updated_at: "2026-03-05T09:00:00Z"
 
+  /api/public/users/employees:
+    get:
+      summary: List employees for task assignment
+      responses:
+        '200':
+          description: Employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskAssignee'
+              example:
+                - id: 1
+                  name: "Admin User"
+                  email: "admin@example.com"
+                  role: "ADMIN"
+                - id: 12
+                  name: "Staff User"
+                  email: "staff@example.com"
+                  role: "EMPLOYEE"
+
+  /api/boards:
+    get:
+      summary: Get task board
+      parameters:
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+              example:
+                id: 1
+                name: "Main Board"
+                owner_id: 1
+                location_id: 1
+                columns:
+                  - id: 10
+                    board_id: 1
+                    name: "To Do"
+                    position: 0
+                  - id: 11
+                    board_id: 1
+                    name: "In Progress"
+                    position: 1
+                  - id: 12
+                    board_id: 1
+                    name: "Done"
+                    position: 2
+
+  /api/columns:
+    post:
+      summary: Create column
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnStoreRequest'
+            example:
+              board_id: 1
+              name: "Review"
+              position: 3
+      responses:
+        '201':
+          description: Column created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+
+  /api/columns/{id}:
+    put:
+      summary: Update column
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnUpdateRequest'
+            example:
+              name: "QA"
+              position: 2
+      responses:
+        '200':
+          description: Column updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+    delete:
+      summary: Delete column
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Deleted"
+
+  /api/columns/reorder:
+    post:
+      summary: Reorder columns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnReorderRequest'
+            example:
+              columns:
+                - id: 10
+                  position: 0
+                - id: 11
+                  position: 1
+      responses:
+        '200':
+          description: Columns reordered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Columns reordered"
+
+  /api/tasks:
+    get:
+      summary: List tasks
+      responses:
+        '200':
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+              example:
+                - id: 1
+                  title: "Inspect hull"
+                  description: "Initial inspection"
+                  priority: "High"
+                  status: "New"
+                  assignment_status: "pending"
+                  assigned_to: 12
+                  user_id: null
+                  created_by: 1
+                  yacht_id: 5
+                  appointment_id: null
+                  due_date: "2026-03-10"
+                  reminder_at: null
+                  reminder_sent_at: null
+                  type: "assigned"
+                  column_id: 10
+                  position: 0
+                  location_id: 1
+                  client_visible: false
+                  created_at: "2026-03-05T12:00:00Z"
+                  updated_at: "2026-03-05T12:00:00Z"
+    post:
+      summary: Create task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskStoreRequest'
+            example:
+              title: "Inspect hull"
+              description: "Initial inspection"
+              priority: "High"
+              status: "New"
+              due_date: "2026-03-10"
+              type: "assigned"
+              assigned_to: 12
+              yacht_id: 5
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/my:
+    get:
+      summary: List my tasks
+      responses:
+        '200':
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+  /api/tasks/calendar:
+    get:
+      summary: Calendar tasks
+      parameters:
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Calendar tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskCalendarItem'
+              example:
+                - id: 1
+                  title: "Inspect hull"
+                  start: "2026-03-10"
+                  end: "2026-03-11"
+                  priority: "High"
+                  status: "New"
+                  type: "assigned"
+                  assigned_to: "Staff User"
+                  yacht: "Sea Breeze"
+                  color: "#d97706"
+
+  /api/tasks/reorder:
+    post:
+      summary: Reorder tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskReorderRequest'
+            example:
+              tasks:
+                - id: 1
+                  position: 0
+                  column_id: 10
+      responses:
+        '200':
+          description: Tasks reordered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Tasks reordered"
+
+  /api/tasks/{id}:
+    get:
+      summary: Get task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    put:
+      summary: Update task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdateRequest'
+            example:
+              title: "Inspect hull (updated)"
+              status: "In Progress"
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    delete:
+      summary: Delete task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Task deleted successfully"
+
+  /api/tasks/{id}/status:
+    patch:
+      summary: Update task status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskStatusRequest'
+            example:
+              status: "Done"
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/reschedule:
+    patch:
+      summary: Reschedule task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRescheduleRequest'
+            example:
+              due_date: "2026-03-15"
+              reminder_at: "2026-03-14T10:00:00Z"
+      responses:
+        '200':
+          description: Rescheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/reminder:
+    patch:
+      summary: Schedule task reminder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskReminderRequest'
+            example:
+              reminder_at: "2026-03-09T10:00:00Z"
+      responses:
+        '200':
+          description: Reminder scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/remind:
+    post:
+      summary: Send task reminder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRemindRequest'
+            example:
+              realtime: true
+              email: false
+      responses:
+        '200':
+          description: Reminder sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskRemindResponse'
+
+  /api/tasks/{id}/accept:
+    patch:
+      summary: Accept task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/reject:
+    patch:
+      summary: Reject task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/activities:
+    get:
+      summary: Task activities and attachments
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskActivitiesResponse'
+
+  /api/tasks/{id}/comments:
+    post:
+      summary: Add task comment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+            example:
+              content: "Please attach inspection photos."
+      responses:
+        '201':
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskActivityLog'
+
+  /api/tasks/{id}/attachments:
+    post:
+      summary: Upload task attachment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskAttachmentRequest'
+      responses:
+        '201':
+          description: Attachment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAttachment'
+
+  /api/tasks/{taskId}/attachments/{attachmentId}:
+    delete:
+      summary: Delete task attachment
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: attachmentId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Attachment deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Attachment deleted successfully"
+
+  /api/task-automation-templates:
+    get:
+      summary: List task automation templates
+      parameters:
+        - in: query
+          name: trigger_event
+          schema:
+            type: string
+        - in: query
+          name: is_active
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskAutomationTemplate'
+    post:
+      summary: Create task automation template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationTemplateStoreRequest'
+            example:
+              name: "New Bid Follow-up"
+              trigger_event: "bid.created"
+              schedule_type: "relative"
+              delay_value: 1
+              delay_unit: "days"
+              title: "Follow up bid"
+              description: "Send a reminder"
+              priority: "Medium"
+              default_assignee_type: "admin"
+              notification_enabled: true
+              email_enabled: false
+              is_active: true
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomationTemplate'
+
+  /api/task-automation-templates/{id}:
+    get:
+      summary: Get task automation template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomationTemplate'
+    put:
+      summary: Update task automation template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationTemplateUpdateRequest'
+            example:
+              title: "Follow up bid (updated)"
+              is_active: false
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomationTemplate'
+    delete:
+      summary: Delete task automation template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Template deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Template deleted"
+
+  /api/task-automations:
+    get:
+      summary: List task automations
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: trigger_event
+          schema:
+            type: string
+        - in: query
+          name: related_type
+          schema:
+            type: string
+        - in: query
+          name: related_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Automations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskAutomation'
+    post:
+      summary: Create task automation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationStoreRequest'
+            example:
+              template_id: 1
+              trigger_event: "bid.created"
+              related_type: "bid"
+              related_id: 42
+      responses:
+        '201':
+          description: Automation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomation'
+
+  /api/task-automations/{id}:
+    get:
+      summary: Get task automation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Automation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomation'
+    patch:
+      summary: Update task automation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationUpdateRequest'
+            example:
+              status: "completed"
+      responses:
+        '200':
+          description: Automation updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomation'
+    delete:
+      summary: Delete task automation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Automation deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Automation deleted"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -999,3 +1773,671 @@ components:
           type: string
         errors:
           type: object
+
+    TaskAssignee:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    Board:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        owner_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Column'
+
+    Column:
+      type: object
+      properties:
+        id:
+          type: integer
+        board_id:
+          type: integer
+        name:
+          type: string
+        position:
+          type: integer
+        location_id:
+          type: integer
+          nullable: true
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+        status:
+          type: string
+        assignment_status:
+          type: string
+        assigned_to:
+          type: integer
+          nullable: true
+        user_id:
+          type: integer
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        yacht_id:
+          type: integer
+          nullable: true
+        appointment_id:
+          type: integer
+          nullable: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+        reminder_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        type:
+          type: string
+        column_id:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        location_id:
+          type: integer
+          nullable: true
+        client_visible:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskCalendarItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        start:
+          type: string
+          format: date
+        end:
+          type: string
+          format: date
+        priority:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+        assigned_to:
+          type: string
+          nullable: true
+        yacht:
+          type: string
+          nullable: true
+        color:
+          type: string
+
+    TaskActivityLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        action:
+          type: string
+        description:
+          type: string
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskAttachment:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        file_path:
+          type: string
+        file_name:
+          type: string
+        mime_type:
+          type: string
+          nullable: true
+        size:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskActivitiesResponse:
+      type: object
+      properties:
+        activities:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskActivityLog'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskAttachment'
+
+    TaskStoreRequest:
+      type: object
+      required: [title, priority, due_date, type]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        status:
+          type: string
+          enum: [New, Pending, To Do, In Progress, Done]
+        due_date:
+          type: string
+          format: date
+        reminder_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [personal, assigned]
+        assigned_to:
+          type: integer
+          nullable: true
+        yacht_id:
+          type: integer
+          nullable: true
+        appointment_id:
+          type: integer
+          nullable: true
+        column_id:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        client_visible:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        status:
+          type: string
+          enum: [New, Pending, To Do, In Progress, Done]
+        assigned_to:
+          type: integer
+          nullable: true
+        yacht_id:
+          type: integer
+          nullable: true
+        appointment_id:
+          type: integer
+          nullable: true
+        due_date:
+          type: string
+          format: date
+        reminder_at:
+          type: string
+          format: date-time
+        column_id:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        type:
+          type: string
+          enum: [personal, assigned]
+        client_visible:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [New, Pending, To Do, In Progress, Done]
+
+    TaskRescheduleRequest:
+      type: object
+      required: [due_date]
+      properties:
+        due_date:
+          type: string
+          format: date
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskReminderRequest:
+      type: object
+      properties:
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskRemindRequest:
+      type: object
+      properties:
+        realtime:
+          type: boolean
+        email:
+          type: boolean
+
+    TaskAttachmentRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+
+    TaskCommentRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    TaskRemindResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        notification:
+          $ref: '#/components/schemas/UserNotification'
+
+    TaskReorderRequest:
+      type: object
+      required: [tasks]
+      properties:
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              position:
+                type: integer
+              column_id:
+                type: integer
+
+    ColumnStoreRequest:
+      type: object
+      required: [board_id, name, position]
+      properties:
+        board_id:
+          type: integer
+        name:
+          type: string
+        position:
+          type: integer
+
+    ColumnUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        position:
+          type: integer
+
+    ColumnReorderRequest:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              position:
+                type: integer
+
+    TaskAutomationTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          nullable: true
+        trigger_event:
+          type: string
+        schedule_type:
+          type: string
+        delay_value:
+          type: integer
+          nullable: true
+        delay_unit:
+          type: string
+          nullable: true
+        fixed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cron_expression:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+        default_assignee_type:
+          type: string
+        notification_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        is_active:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskAutomationTemplateStoreRequest:
+      type: object
+      required: [trigger_event, schedule_type, title, priority, default_assignee_type]
+      properties:
+        name:
+          type: string
+          nullable: true
+        trigger_event:
+          type: string
+        schedule_type:
+          type: string
+          enum: [relative, fixed, recurring]
+        delay_value:
+          type: integer
+          nullable: true
+        delay_unit:
+          type: string
+          nullable: true
+        fixed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cron_expression:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        default_assignee_type:
+          type: string
+          enum: [admin, seller, buyer, harbor, creator, related_owner]
+        notification_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        is_active:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskAutomationTemplateUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        trigger_event:
+          type: string
+        schedule_type:
+          type: string
+          enum: [relative, fixed, recurring]
+        delay_value:
+          type: integer
+          nullable: true
+        delay_unit:
+          type: string
+          nullable: true
+        fixed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cron_expression:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        default_assignee_type:
+          type: string
+          enum: [admin, seller, buyer, harbor, creator, related_owner]
+        notification_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        is_active:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskAutomation:
+      type: object
+      properties:
+        id:
+          type: integer
+        template_id:
+          type: integer
+        trigger_event:
+          type: string
+        related_type:
+          type: string
+          nullable: true
+        related_id:
+          type: integer
+          nullable: true
+        assigned_user_id:
+          type: integer
+          nullable: true
+        due_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+        created_task_id:
+          type: integer
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        template:
+          $ref: '#/components/schemas/TaskAutomationTemplate'
+
+    TaskAutomationStoreRequest:
+      type: object
+      required: [template_id]
+      properties:
+        template_id:
+          type: integer
+        trigger_event:
+          type: string
+          nullable: true
+        related_type:
+          type: string
+          nullable: true
+        related_id:
+          type: integer
+          nullable: true
+        assigned_user_id:
+          type: integer
+          nullable: true
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        base_at:
+          type: string
+          format: date-time
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskAutomationUpdateRequest:
+      type: object
+      properties:
+        due_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, canceled]
+        assigned_user_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserNotification:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        notification_id:
+          type: integer
+        read:
+          type: boolean
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        notification:
+          $ref: '#/components/schemas/Notification'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
