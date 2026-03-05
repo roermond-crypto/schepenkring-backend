@@ -1,0 +1,156 @@
+{
+  "info": {
+    "name": "NautiSecure Onboarding API",
+    "description": "User + Partner onboarding, email verification, agreement, contract signing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api" },
+    { "key": "auth_token", "value": "<bearer-token>" },
+    { "key": "verification_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Register User",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane@example.com\",\n  \"password\": \"secret123\",\n  \"password_confirmation\": \"secret123\",\n  \"accept_terms\": true\n}"
+        }
+      }
+    },
+    {
+      "name": "Register Partner",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/partner/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Alex Broker\",\n  \"email\": \"alex@broker.com\",\n  \"phone\": \"+31600000000\",\n  \"password\": \"secret123\",\n  \"password_confirmation\": \"secret123\",\n  \"place_id\": \"ChIJN1t_tDeuEmsRUsoyG83frY4\",\n  \"accept_terms\": true\n}"
+        }
+      }
+    },
+    {
+      "name": "Verify Email (Info)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/verify-email/{{verification_token}}"
+      }
+    },
+    {
+      "name": "Verify Email (Confirm)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/verify-email/{{verification_token}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"123456\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Resend Verification",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/verify-email/{{verification_token}}/resend"
+      }
+    },
+    {
+      "name": "Change Email",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/verify-email/{{verification_token}}/change-email",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"new-email@example.com\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Onboarding Status",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{auth_token}}", "type": "string" }
+          ]
+        },
+        "url": "{{base_url}}/onboarding/status"
+      }
+    },
+    {
+      "name": "Partner Agreement (Get)",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{auth_token}}", "type": "string" }
+          ]
+        },
+        "url": "{{base_url}}/partner/agreement"
+      }
+    },
+    {
+      "name": "Partner Agreement (Accept)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{auth_token}}", "type": "string" }
+          ]
+        },
+        "url": "{{base_url}}/partner/agreement",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accepted\": true\n}"
+        }
+      }
+    },
+    {
+      "name": "Partner Contract (Create)",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{auth_token}}", "type": "string" }
+          ]
+        },
+        "url": "{{base_url}}/partner/contract"
+      }
+    },
+    {
+      "name": "Partner Contract (Status)",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            { "key": "token", "value": "{{auth_token}}", "type": "string" }
+          ]
+        },
+        "url": "{{base_url}}/partner/contract"
+      }
+    }
+  ]
+}

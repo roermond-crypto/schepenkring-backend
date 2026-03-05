@@ -1,0 +1,207 @@
+{
+  "info": {
+    "name": "NautiSecure Chat API",
+    "description": "Unified Inbox + AI Concierge chat endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api" },
+    { "key": "auth_token", "value": "<bearer-token>" },
+    { "key": "chat_adapter_secret", "value": "<adapter-secret>" },
+    { "key": "conversation_id", "value": "" },
+    { "key": "message_id", "value": "" },
+    { "key": "visitor_id", "value": "" },
+    { "key": "session_jwt", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Widget",
+      "item": [
+        {
+          "name": "Widget Init",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/chat/widget/init",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visitor_id\": \"optional-uuid\",\n  \"harbor_id\": 17\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Conversations",
+      "item": [
+        {
+          "name": "Create Conversation (Widget/Web)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/chat/conversations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visitor_id\": \"{{visitor_id}}\",\n  \"session_jwt\": \"{{session_jwt}}\",\n  \"page_url\": \"https://nauticsecure.com/yachts/140\",\n  \"channel_origin\": \"web_widget\",\n  \"contact\": {\n    \"name\": \"Jan de Vries\",\n    \"email\": \"jan@example.com\",\n    \"phone\": \"+31612345678\"\n  },\n  \"utm_source\": \"google\",\n  \"utm_medium\": \"cpc\",\n  \"utm_campaign\": \"boat-search\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Conversations (Staff)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{auth_token}}", "type": "string" }
+              ]
+            },
+            "url": "{{base_url}}/chat/conversations?status=open&limit=20"
+          }
+        },
+        {
+          "name": "Conversation Detail (Staff)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{auth_token}}", "type": "string" }
+              ]
+            },
+            "url": "{{base_url}}/chat/conversations/{{conversation_id}}"
+          }
+        },
+        {
+          "name": "Update Conversation (Staff)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{auth_token}}", "type": "string" }
+              ]
+            },
+            "url": "{{base_url}}/chat/conversations/{{conversation_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"pending\",\n  \"priority\": \"high\",\n  \"assign_to\": 5,\n  \"ai_mode\": \"assist\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Conversation Stream (Staff)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "text/event-stream" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{auth_token}}", "type": "string" }
+              ]
+            },
+            "url": "{{base_url}}/chat/conversations/{{conversation_id}}/stream"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/chat/conversations/{{conversation_id}}/messages",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Is this yacht still available?\",\n  \"channel\": \"web\",\n  \"sender_type\": \"visitor\",\n  \"visitor_id\": \"{{visitor_id}}\",\n  \"session_jwt\": \"{{session_jwt}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Thumbs-up Training (Staff)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{auth_token}}", "type": "string" }
+              ]
+            },
+            "url": "{{base_url}}/chat/messages/{{message_id}}/thumbs-up"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Adapters",
+      "item": [
+        {
+          "name": "Inbound WhatsApp",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Chat-Adapter-Secret", "value": "{{chat_adapter_secret}}" }
+            ],
+            "url": "{{base_url}}/chat/adapters/whatsapp/inbound",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_thread_id\": \"wa-thread-123\",\n  \"external_user_id\": \"wa-user-999\",\n  \"external_message_id\": \"msg-abc\",\n  \"text\": \"Hi, I want to book a viewing\",\n  \"language\": \"en\",\n  \"contact\": {\n    \"name\": \"Alex\",\n    \"phone\": \"+31600000000\",\n    \"whatsapp_user_id\": \"wa-user-999\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Inbound Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Chat-Adapter-Secret", "value": "{{chat_adapter_secret}}" }
+            ],
+            "url": "{{base_url}}/chat/adapters/email/inbound",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_thread_id\": \"email-thread-456\",\n  \"external_user_id\": \"alex@example.com\",\n  \"external_message_id\": \"msg-xyz\",\n  \"text\": \"Is the boat still available?\",\n  \"language\": \"en\",\n  \"contact\": {\n    \"name\": \"Alex\",\n    \"email\": \"alex@example.com\"\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI Concierge",
+      "item": [
+        {
+          "name": "AI Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/ai/chat",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Show me available yachts under €1M\",\n  \"session_id\": \"anon-12345\",\n  \"history\": [\n    { \"role\": \"user\", \"content\": \"Hi\" },\n    { \"role\": \"assistant\", \"content\": \"Hello! How can I help?\" }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

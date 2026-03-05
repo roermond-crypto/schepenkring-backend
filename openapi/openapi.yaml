@@ -1,0 +1,845 @@
+openapi: 3.0.3
+info:
+  title: NautiSecure API
+  version: 1.0.0
+  description: |
+    OpenAPI is the source of truth for API docs. Only endpoints defined here
+    should appear in human-facing docs.
+servers:
+  - url: /api
+security:
+  - BearerAuth: []
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        error_reference:
+          type: string
+      required: [message]
+    ValidationErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+        error_reference:
+          type: string
+      required: [message, errors]
+    ActionCatalog:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCatalogItem'
+      required: [generated_at, count, actions]
+    ActionCatalogItem:
+      type: object
+      properties:
+        action_id:
+          type: string
+        title:
+          type: string
+        short_description:
+          type: string
+        description:
+          type: string
+        module:
+          type: string
+        required_role:
+          type: string
+        permission_key:
+          type: string
+        security_level:
+          type: string
+          enum: [low, medium, high]
+        input_schema:
+          type: object
+        example_inputs:
+          type: array
+          items:
+            type: object
+        example_prompts:
+          type: array
+          items:
+            type: string
+        side_effects:
+          type: array
+          items:
+            type: string
+        idempotency_rules:
+          type: array
+          items:
+            type: string
+        rate_limit_class:
+          type: string
+        fresh_auth_required_minutes:
+          type: integer
+        confirmation_required:
+          type: boolean
+        route_template:
+          type: string
+        query_template:
+          type: string
+          nullable: true
+        required_params:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        phrases:
+          type: array
+          items:
+            type: string
+      required: [action_id, title]
+    CopilotDraftRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        language:
+          type: string
+        module:
+          type: string
+        top_k:
+          type: integer
+        context:
+          type: object
+      required: [prompt]
+    CopilotDraftResponse:
+      type: object
+      properties:
+        draft_id:
+          type: string
+        prompt:
+          type: string
+        selected_action:
+          type: object
+        candidates:
+          type: array
+          items:
+            type: object
+        confidence:
+          type: number
+        clarifying_question:
+          type: string
+          nullable: true
+    CopilotValidateRequest:
+      type: object
+      properties:
+        action_id:
+          type: string
+        payload:
+          type: object
+      required: [action_id]
+    CopilotValidateResponse:
+      type: object
+      properties:
+        validation_token:
+          type: string
+        action_id:
+          type: string
+        requires_confirmation:
+          type: boolean
+        payload:
+          type: object
+    CopilotExecuteRequest:
+      type: object
+      properties:
+        validation_token:
+          type: string
+        confirm:
+          type: boolean
+      required: [validation_token]
+    CopilotExecuteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        action_id:
+          type: string
+        payload:
+          type: object
+        execution:
+          type: object
+    PlatformError:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        level:
+          type: string
+        status:
+          type: string
+        sentry_issue_id:
+          type: string
+        project:
+          type: string
+        environment:
+          type: string
+    LocaleInfo:
+      type: object
+      properties:
+        default:
+          type: string
+        supported:
+          type: array
+          items:
+            type: string
+        fallbacks:
+          type: object
+      required: [default, supported, fallbacks]
+    BlogTranslation:
+      type: object
+      properties:
+        id:
+          type: integer
+        blog_id:
+          type: integer
+        locale:
+          type: string
+        title:
+          type: string
+        excerpt:
+          type: string
+        content:
+          type: string
+        meta_title:
+          type: string
+        meta_description:
+          type: string
+        status:
+          type: string
+        translated_from_hash:
+          type: string
+      required: [id, blog_id, locale, title, content, status]
+    InteractionTemplateTranslation:
+      type: object
+      properties:
+        id:
+          type: integer
+        interaction_template_id:
+          type: integer
+        locale:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        status:
+          type: string
+        translated_from_hash:
+          type: string
+      required: [id, interaction_template_id, locale, body, status]
+        release:
+          type: string
+        occurrences_count:
+          type: integer
+        users_affected:
+          type: integer
+        last_seen_at:
+          type: string
+          format: date-time
+    PlatformErrorList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformError'
+        links:
+          type: object
+        meta:
+          type: object
+    PlatformErrorStats:
+      type: object
+      properties:
+        errors_last_24h:
+          type: integer
+        critical:
+          type: integer
+        regressions:
+          type: integer
+        users_affected:
+          type: integer
+paths:
+  /admin/copilot/action-catalog:
+    get:
+      tags: [copilot]
+      summary: Get action catalog
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Action catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalog'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/copilot/draft:
+    post:
+      tags: [copilot]
+      summary: Draft a copilot action from prompt
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotDraftRequest'
+      responses:
+        '200':
+          description: Draft result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotDraftResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/copilot/validate:
+    post:
+      tags: [copilot]
+      summary: Validate a copilot action payload
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotValidateRequest'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotValidateResponse'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /admin/copilot/execute:
+    post:
+      tags: [copilot]
+      summary: Execute a validated copilot action
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotExecuteRequest'
+      responses:
+        '200':
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotExecuteResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Confirmation required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/errors:
+    get:
+      tags: [sentry]
+      summary: List platform errors (synced from Sentry)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: level
+          schema:
+            type: string
+        - in: query
+          name: source
+          schema:
+            type: string
+        - in: query
+          name: environment
+          schema:
+            type: string
+        - in: query
+          name: release
+          schema:
+            type: string
+        - in: query
+          name: route
+          schema:
+            type: string
+        - in: query
+          name: user_id
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: subject
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+        - in: query
+          name: sort_dir
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformErrorList'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/errors/stats:
+    get:
+      tags: [sentry]
+      summary: Error stats
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformErrorStats'
+  /admin/errors/{error}:
+    get:
+      tags: [sentry]
+      summary: Get error detail
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: include_reports
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Error detail
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/errors/{error}/resolve:
+    post:
+      tags: [sentry]
+      summary: Resolve error
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+  /admin/errors/{error}/ignore:
+    post:
+      tags: [sentry]
+      summary: Ignore error
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                days:
+                  type: integer
+                until_release:
+                  type: string
+      responses:
+        '200':
+          description: Ignored
+          content:
+            application/json:
+              schema:
+                type: object
+  /admin/errors/{error}/note:
+    post:
+      tags: [sentry]
+      summary: Add internal note
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Noted
+          content:
+            application/json:
+              schema:
+                type: object
+  /admin/errors/{error}/assign:
+    post:
+      tags: [sentry]
+      summary: Assign error
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                type: object
+  /sentry/webhook:
+    post:
+      tags: [sentry]
+      summary: Sentry webhook
+      security: []
+      parameters:
+        - in: header
+          name: X-Sentry-Signature
+          schema:
+            type: string
+          required: false
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /locales:
+    get:
+      tags: [locales]
+      summary: List supported locales and fallback map
+      security: []
+      responses:
+        '200':
+          description: Locale info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocaleInfo'
+  /admin/blog-translations:
+    get:
+      tags: [translations]
+      summary: List blog translations
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: blog_id
+          schema:
+            type: integer
+        - in: query
+          name: locale
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated blog translations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BlogTranslation'
+  /admin/blog-translations/ai-generate:
+    post:
+      tags: [translations]
+      summary: Queue AI blog translations
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blog_ids:
+                  type: array
+                  items:
+                    type: integer
+                target_locale:
+                  type: string
+                force:
+                  type: boolean
+              required: [blog_ids, target_locale]
+      responses:
+        '200':
+          description: Jobs queued
+  /admin/blog-translations/{translation}:
+    patch:
+      tags: [translations]
+      summary: Update blog translation
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: translation
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated translation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlogTranslation'
+  /admin/blog-translations/{translation}/approve:
+    post:
+      tags: [translations]
+      summary: Approve blog translation
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: translation
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Approved
+  /admin/interaction-template-translations:
+    get:
+      tags: [translations]
+      summary: List interaction template translations
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: template_id
+          schema:
+            type: integer
+        - in: query
+          name: locale
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated interaction template translations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InteractionTemplateTranslation'
+  /admin/interaction-template-translations/ai-generate:
+    post:
+      tags: [translations]
+      summary: Queue AI interaction template translations
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template_ids:
+                  type: array
+                  items:
+                    type: integer
+                target_locale:
+                  type: string
+                force:
+                  type: boolean
+              required: [template_ids, target_locale]
+      responses:
+        '200':
+          description: Jobs queued
+  /admin/interaction-template-translations/{translation}:
+    patch:
+      tags: [translations]
+      summary: Update interaction template translation
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: translation
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated translation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionTemplateTranslation'
+  /admin/interaction-template-translations/{translation}/approve:
+    post:
+      tags: [translations]
+      summary: Approve interaction template translation
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: translation
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Approved

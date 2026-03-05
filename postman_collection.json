@@ -1,0 +1,1718 @@
+{
+    "info": {
+        "name": "Schepen-Kring API",
+        "description": "Complete API collection for the Schepen-Kring yacht platform.\n\nBase URL (local): http://localhost:8000/api\nBase URL (production): https://schepen-kring.nl/api\n\nAuthentication: Bearer token via Laravel Sanctum.\nLogin first, then use the returned token in the Authorization header.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000/api"
+        },
+        {
+            "key": "token",
+            "value": ""
+        }
+    ],
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "🔐 Auth",
+            "item": [
+                {
+                    "name": "Login",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/login",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Register (User)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/register",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Register (Partner)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/register/partner",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Partner Company\",\n  \"email\": \"partner@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Register (Seller)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/register/seller",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Seller Name\",\n  \"email\": \"seller@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Verify Password",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/verify-password",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"password\": \"password\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get Current User",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/user"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "👤 Profile",
+            "item": [
+                {
+                    "name": "Get Profile",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/profile"
+                    }
+                },
+                {
+                    "name": "Update Profile",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/profile/update",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated Name\",\n  \"email\": \"updated@example.com\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Change Password",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/profile/change-password",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"current_password\": \"old_password\",\n  \"password\": \"new_password\",\n  \"password_confirmation\": \"new_password\"\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "👥 Users (Admin)",
+            "item": [
+                {
+                    "name": "List Users",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/users"
+                    }
+                },
+                {
+                    "name": "Create User",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/users",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"New User\",\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password\",\n  \"role\": \"user\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get User",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/users/1"
+                    }
+                },
+                {
+                    "name": "Update User",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/users/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated User\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete User",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/users/1"
+                    }
+                },
+                {
+                    "name": "Get Staff",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/users/staff"
+                    }
+                },
+                {
+                    "name": "Toggle User Status",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{base_url}}/users/1/toggle-status"
+                    }
+                },
+                {
+                    "name": "Toggle Permission",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/users/1/toggle-permission",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"permission\": \"manage yachts\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Impersonate User",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/users/1/impersonate"
+                    }
+                },
+                {
+                    "name": "Get Employees (Public)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/public/users/employees"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔑 Page Permissions",
+            "item": [
+                {
+                    "name": "List All Page Permissions",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/page-permissions"
+                    }
+                },
+                {
+                    "name": "Get User Page Permissions",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/users/1/page-permissions"
+                    }
+                },
+                {
+                    "name": "Update Permission",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/users/1/page-permissions/update",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"page_slug\": \"dashboard\",\n  \"has_access\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Bulk Update Permissions",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/users/1/page-permissions/bulk-update",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"permissions\": [\n    { \"page_slug\": \"dashboard\", \"has_access\": true },\n    { \"page_slug\": \"yachts\", \"has_access\": false }\n  ]\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Reset Permissions",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/users/1/page-permissions/reset"
+                    }
+                },
+                {
+                    "name": "Get User Authorizations",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/user/authorizations/1"
+                    }
+                },
+                {
+                    "name": "Sync Authorizations",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/user/authorizations/1/sync",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"permissions\": [\"manage yachts\", \"manage users\"]\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🚤 Yachts",
+            "item": [
+                {
+                    "name": "List Yachts (Public)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts"
+                    }
+                },
+                {
+                    "name": "Get Yacht (Public)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts/1"
+                    }
+                },
+                {
+                    "name": "Create Yacht",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "multipart/form-data"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "boat_name",
+                                    "value": "M/Y Test Vessel",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "price",
+                                    "value": "500000",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "year",
+                                    "value": "2024",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "manufacturer",
+                                    "value": "Beneteau",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "model",
+                                    "value": "Oceanis 38",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "boat_type",
+                                    "value": "Sailboat",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "loa",
+                                    "value": "38.5",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "main_image",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Yacht (POST)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "multipart/form-data"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "boat_name",
+                                    "value": "Updated Name",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "price",
+                                    "value": "600000",
+                                    "type": "text"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Yacht (PUT)",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/yachts/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"boat_name\": \"Updated Name\",\n  \"price\": 600000\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Yacht",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/yachts/1"
+                    }
+                },
+                {
+                    "name": "Upload Gallery",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/1/gallery",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "images[]",
+                                    "value": "",
+                                    "type": "file"
+                                },
+                                {
+                                    "key": "category",
+                                    "value": "Exterior",
+                                    "type": "text"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Gallery Image",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/gallery/1"
+                    }
+                },
+                {
+                    "name": "My Yachts",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/my-yachts"
+                    }
+                },
+                {
+                    "name": "Search Boats",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/search-boats?q=beneteau"
+                    }
+                },
+                {
+                    "name": "Get Boat Types",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/boat-types"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🤖 AI Pipeline",
+            "item": [
+                {
+                    "name": "Pipeline Extract & Enrich",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/ai/pipeline-extract",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "images[]",
+                                    "value": "",
+                                    "type": "file"
+                                },
+                                {
+                                    "key": "hint_text",
+                                    "value": "Beneteau Oceanis 38.1 2024",
+                                    "type": "text"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "AI Chat (Gemini)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/ai/chat",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"message\": \"Tell me about this yacht\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "AI Extract Boat",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/ai/extract-boat",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "images[]",
+                                    "value": "",
+                                    "type": "file"
+                                },
+                                {
+                                    "key": "hint_text",
+                                    "value": "Sunseeker Manhattan 52",
+                                    "type": "text"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "AI Autofill RAG",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/ai/autofill-rag",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"manufacturer\": \"Beneteau\",\n  \"model\": \"Oceanis 38.1\",\n  \"year\": 2024\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "AI Classify Images",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/ai-classify",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "images[]",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Recognize Boat",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/recognize-boat",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "image",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Analyze Boat",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/analyze-boat",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "image",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Upload Boat Image",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/upload-boat",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "image",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Search by Image",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/search-by-image",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "image",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Generate Embedding",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/1/generate-embedding"
+                    }
+                },
+                {
+                    "name": "Delete Boat Image",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/boats/filename.webp"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔍 Catalog Autocomplete",
+            "item": [
+                {
+                    "name": "Search Brands",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/autocomplete/brands?q=bene"
+                    }
+                },
+                {
+                    "name": "Search Models",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/autocomplete/models?q=oceanis&brand_id=1"
+                    }
+                },
+                {
+                    "name": "Search Types",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/autocomplete/types?q=sail"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🏷️ Catalog Aliases (Admin)",
+            "item": [
+                {
+                    "name": "Get Pending Brand Aliases",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/admin/aliases/brands"
+                    }
+                },
+                {
+                    "name": "Map Brand Alias",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/admin/aliases/brands/1/map",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"canonical_id\": 5\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get Pending Model Aliases",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/admin/aliases/models"
+                    }
+                },
+                {
+                    "name": "Map Model Alias",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/admin/aliases/models/1/map",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"canonical_id\": 10\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Discard Alias",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/admin/aliases/brands/1/discard"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "💰 Bids",
+            "item": [
+                {
+                    "name": "List All Bids (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/bids"
+                    }
+                },
+                {
+                    "name": "Place Bid",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/bids/place",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"yacht_id\": 1,\n  \"amount\": 450000,\n  \"message\": \"Interested in this yacht\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "My Bids",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/my-bids"
+                    }
+                },
+                {
+                    "name": "Seller Bids",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/seller-bids"
+                    }
+                },
+                {
+                    "name": "Bid History",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/bids/1/history"
+                    }
+                },
+                {
+                    "name": "Accept Bid (Admin)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/bids/1/accept"
+                    }
+                },
+                {
+                    "name": "Decline Bid (Admin)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/bids/1/decline"
+                    }
+                },
+                {
+                    "name": "Accept Bid (Owner)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/owner-bids/1/accept"
+                    }
+                },
+                {
+                    "name": "Decline Bid (Owner)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/owner-bids/1/decline"
+                    }
+                },
+                {
+                    "name": "Delete Bid",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/bids/1"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📋 Tasks",
+            "item": [
+                {
+                    "name": "List Tasks",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/tasks"
+                    }
+                },
+                {
+                    "name": "Create Task",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/tasks",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"Inspect Yacht\",\n  \"description\": \"Complete inspection of vessel ID 1\",\n  \"assigned_to\": 2,\n  \"yacht_id\": 1,\n  \"priority\": \"high\",\n  \"due_date\": \"2026-03-15\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get Task",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/tasks/1"
+                    }
+                },
+                {
+                    "name": "Update Task",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/tasks/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"Updated Task Title\",\n  \"status\": \"in_progress\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Task",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/tasks/1"
+                    }
+                },
+                {
+                    "name": "My Tasks",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/tasks/my"
+                    }
+                },
+                {
+                    "name": "Accept Task",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{base_url}}/tasks/1/accept"
+                    }
+                },
+                {
+                    "name": "Reject Task",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{base_url}}/tasks/1/reject"
+                    }
+                },
+                {
+                    "name": "Update Task Status",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{base_url}}/tasks/1/status",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"status\": \"completed\"\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📅 Bookings",
+            "item": [
+                {
+                    "name": "Get Available Dates",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts/1/available-dates"
+                    }
+                },
+                {
+                    "name": "Get Available Slots",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts/1/available-slots?date=2026-03-15"
+                    }
+                },
+                {
+                    "name": "Book Yacht",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/1/book",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"date\": \"2026-03-15\",\n  \"start_time\": \"10:00\",\n  \"end_time\": \"12:00\",\n  \"type\": \"viewing\"\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔔 Notifications",
+            "item": [
+                {
+                    "name": "List Notifications",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/notifications"
+                    }
+                },
+                {
+                    "name": "Create Notification",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/notifications",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"New Bid\",\n  \"message\": \"A new bid was placed on your yacht\",\n  \"user_id\": 1\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Unread Count",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/notifications/unread-count"
+                    }
+                },
+                {
+                    "name": "Mark as Read",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/notifications/1/read"
+                    }
+                },
+                {
+                    "name": "Mark All as Read",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/notifications/read-all"
+                    }
+                },
+                {
+                    "name": "Delete Notification",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/notifications/1"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📝 Blogs",
+            "item": [
+                {
+                    "name": "List Blogs (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/blogs"
+                    }
+                },
+                {
+                    "name": "List Blogs (Public)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/public/blogs"
+                    }
+                },
+                {
+                    "name": "Featured Blogs",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/public/blogs/featured"
+                    }
+                },
+                {
+                    "name": "Get Blog by Slug",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/public/blogs/slug/my-blog-post"
+                    }
+                },
+                {
+                    "name": "Get Blog by ID",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/public/blogs/1"
+                    }
+                },
+                {
+                    "name": "Increment Blog Views",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/public/blogs/1/view"
+                    }
+                },
+                {
+                    "name": "Create Blog",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/blogs",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"New Blog Post\",\n  \"content\": \"Blog content here...\",\n  \"slug\": \"new-blog-post\",\n  \"is_featured\": false\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Update Blog",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/blogs/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"Updated Blog Title\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Blog",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/blogs/1"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "❓ FAQs",
+            "item": [
+                {
+                    "name": "List FAQs",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/faqs"
+                    }
+                },
+                {
+                    "name": "Get FAQ",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/faqs/1"
+                    }
+                },
+                {
+                    "name": "Create FAQ",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/faqs",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"question\": \"How do I register?\",\n  \"answer\": \"Click register and fill in the form.\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Update FAQ",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/faqs/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"answer\": \"Updated answer\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete FAQ",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/faqs/1"
+                    }
+                },
+                {
+                    "name": "Ask Gemini",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/faqs/ask-gemini",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"question\": \"What types of yachts can I find?\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Train Gemini",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/faqs/train-gemini"
+                    }
+                },
+                {
+                    "name": "FAQ Stats",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/faqs/stats"
+                    }
+                },
+                {
+                    "name": "Training Status",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/faqs/training-status"
+                    }
+                },
+                {
+                    "name": "Rate FAQ Helpful",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/faqs/1/rate-helpful"
+                    }
+                },
+                {
+                    "name": "Rate FAQ Not Helpful",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/faqs/1/rate-not-helpful"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔧 Inspections",
+            "item": [
+                {
+                    "name": "Create Inspection",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/inspections",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"boat_id\": 1,\n  \"inspector\": \"John Smith\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get Inspection by Boat",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/inspections/boat/1"
+                    }
+                },
+                {
+                    "name": "Store Inspection Answers",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/inspections/1/answers",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"answers\": [\n    { \"question_id\": 1, \"answer\": \"Good condition\" }\n  ]\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Update Inspection Answer",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/inspections/1/answers/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"answer\": \"Updated answer\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "AI Analyze Inspection",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/inspections/1/ai-analyze"
+                    }
+                },
+                {
+                    "name": "Get Inspection Report",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts/1/inspection-report"
+                    }
+                },
+                {
+                    "name": "Download Inspection PDF",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts/1/inspection-report/pdf"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "✅ Boat Checks",
+            "item": [
+                {
+                    "name": "List Boat Checks",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/boat-checks"
+                    }
+                },
+                {
+                    "name": "Create Boat Check",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/boat-checks",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"boat_id\": 1,\n  \"type\": \"annual\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get Boat Check",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/boat-checks/1"
+                    }
+                },
+                {
+                    "name": "Update Boat Check",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/boat-checks/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"status\": \"completed\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Boat Check",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/boat-checks/1"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🎬 Videos",
+            "item": [
+                {
+                    "name": "Generate Video",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/1/generate-video",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"music_track\": \"ocean_breeze\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List Yacht Videos",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/yachts/1/videos"
+                    }
+                },
+                {
+                    "name": "Video Job Status",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/video-jobs/1"
+                    }
+                },
+                {
+                    "name": "Music Tracks",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/video/music-tracks"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📢 Advertising",
+            "item": [
+                {
+                    "name": "List Channels",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/advertising-channels"
+                    }
+                },
+                {
+                    "name": "Syndicate Yacht",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/yachts/1/syndicate",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"channels\": [\"marktplaats\", \"boat24\"]\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📊 Analytics",
+            "item": [
+                {
+                    "name": "Analytics Summary",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/analytics/summary"
+                    }
+                },
+                {
+                    "name": "Track Event",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/analytics/track",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"event\": \"yacht_viewed\",\n  \"yacht_id\": 1\n}"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📜 System Logs (Admin)",
+            "item": [
+                {
+                    "name": "List Logs",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/system-logs"
+                    }
+                },
+                {
+                    "name": "Get Log",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/system-logs/1"
+                    }
+                },
+                {
+                    "name": "Log Summary",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/system-logs/summary"
+                    }
+                },
+                {
+                    "name": "Health Check",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/system-logs/health"
+                    }
+                },
+                {
+                    "name": "Export Logs",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/system-logs/export"
+                    }
+                },
+                {
+                    "name": "Cleanup Logs",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/system-logs/cleanup"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🤝 Partner",
+            "item": [
+                {
+                    "name": "Partner Fleet (Public Token)",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/partner-fleet/TOKEN_HERE"
+                    }
+                },
+                {
+                    "name": "List Partner Users",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/partner/users"
+                    }
+                },
+                {
+                    "name": "Create Partner User",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/partner/users",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Partner Staff\",\n  \"email\": \"staff@partner.com\",\n  \"password\": \"password\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Get Partner User",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{base_url}}/partner/users/1"
+                    }
+                },
+                {
+                    "name": "Update Partner User",
+                    "request": {
+                        "method": "PUT",
+                        "url": "{{base_url}}/partner/users/1",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated Partner Staff\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Partner User",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{base_url}}/partner/users/1"
+                    }
+                },
+                {
+                    "name": "Create Partner Yacht",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/partner/yachts",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "boat_name",
+                                    "value": "Partner Vessel",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "price",
+                                    "value": "300000",
+                                    "type": "text"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Partner AI Classify",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/partner/yachts/ai-classify",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "images[]",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Partner Upload Gallery",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/partner/yachts/1/gallery",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "images[]",
+                                    "value": "",
+                                    "type": "file"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🔄 Sync & Misc",
+            "item": [
+                {
+                    "name": "Sync Remaining",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/sync-remaining"
+                    }
+                },
+                {
+                    "name": "Test Yacht Update",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{base_url}}/test-yacht-update"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,133 @@
+{
+  "info": {
+    "name": "NautiSecure Deal Orchestration",
+    "_postman_id": "b6b07b1c-6a1f-4d2e-8b19-2b3a8c0f2b1f",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "token", "value": "PASTE_TOKEN_HERE" },
+    { "key": "dealId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Generate Contract",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/contract/generate"
+      }
+    },
+    {
+      "name": "Create Signhost Transaction",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/signhost/create"
+      }
+    },
+    {
+      "name": "Get Signhost URL (buyer)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/signhost/url?role=buyer"
+      }
+    },
+    {
+      "name": "Get Signhost URL (seller)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/signhost/url?role=seller"
+      }
+    },
+    {
+      "name": "Get Deal Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/status"
+      }
+    },
+    {
+      "name": "Create Deposit Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 1000.00,\n  \"currency\": \"EUR\",\n  \"redirect_url\": \"http://localhost:8000/deals/1\"\n}"
+        },
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/payments/deposit/create"
+      }
+    },
+    {
+      "name": "Create Platform Fee Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 250.00,\n  \"currency\": \"EUR\",\n  \"redirect_url\": \"http://localhost:8000/deals/1\"\n}"
+        },
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/payments/platform-fee/create"
+      }
+    },
+    {
+      "name": "Get Checkout URL",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/deals/{{dealId}}/payments/platform_fee/checkout-url"
+      }
+    },
+    {
+      "name": "Webhook - Mollie",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"tr_test_payment_id\"\n}"
+        },
+        "url": "{{baseUrl}}/api/webhooks/mollie"
+      }
+    },
+    {
+      "name": "Webhook - Signhost",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Signhost-Checksum", "value": "checksum_here" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"TransactionId\": \"signhost_tx_id\",\n  \"Status\": \"signed\"\n}"
+        },
+        "url": "{{baseUrl}}/api/webhooks/signhost"
+      }
+    }
+  ]
+}

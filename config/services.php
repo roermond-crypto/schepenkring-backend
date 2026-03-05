@@ -1,0 +1,122 @@
+<?php
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Third Party Services
+    |--------------------------------------------------------------------------
+    |
+    | This file is for storing the credentials for third party services such
+    | as Mailgun, Postmark, AWS and more. This file provides the de facto
+    | location for this type of information, allowing packages to have
+    | a conventional file to locate the various service credentials.
+    |
+    */
+
+    'postmark' => [
+        'key' => env('POSTMARK_API_KEY'),
+    ],
+
+    'resend' => [
+        'key' => env('RESEND_API_KEY'),
+    ],
+
+    'ses' => [
+        'key' => env('AWS_ACCESS_KEY_ID'),
+        'secret' => env('AWS_SECRET_ACCESS_KEY'),
+        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+    ],
+
+    'slack' => [
+        'notifications' => [
+            'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
+            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+        ],
+    ],
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+    ],
+
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+    ],
+
+    'pinecone' => [
+        'key' => env('PINECONE_API_KEY'),
+        'host' => env('PINECONE_HOST'),
+        'index' => env('PINECONE_INDEX'),
+    ],
+    'ga4' => [
+        'property_id' => env('GA4_PROPERTY_ID'),
+        'client_email' => env('GA4_CLIENT_EMAIL'),
+        'private_key' => env('GA4_PRIVATE_KEY'),
+        'measurement_id' => env('GA4_MEASUREMENT_ID'),
+        'api_secret' => env('GA4_API_SECRET'),
+        'cache_ttl' => env('GA4_DATA_CACHE_TTL', 3600),
+        'dimension_harbor_id' => env('GA4_DIMENSION_HARBOR_ID', 'customEvent:harbor_id'),
+    ],
+    'yext' => [
+        'api_key' => env('YEXT_API_KEY'),
+        'account_id' => env('YEXT_ACCOUNT_ID'),
+        'entity_id' => env('YEXT_ENTITY_ID'),
+        'api_base' => env('YEXT_API_BASE', 'https://api.yextapis.com'),
+        'api_version' => env('YEXT_API_VERSION', '20240101'),
+        'use_publisher_targets' => env('YEXT_USE_PUBLISHER_TARGETS', true),
+        'use_video_upload' => env('YEXT_USE_VIDEO_UPLOAD', false),
+        'video_publishers' => array_filter(array_map('trim', explode(',', env('YEXT_VIDEO_PUBLISHERS', 'facebook,instagram')))),
+        'analytics_endpoint' => env('YEXT_ANALYTICS_ENDPOINT'),
+    ],
+
+    'mollie' => [
+        'base_url' => env('MOLLIE_BASE_URL', 'https://api.mollie.com/v2'),
+        'api_key' => env('MOLLIE_API_KEY'),
+        'api_key_live' => env('MOLLIE_API_KEY_LIVE'),
+        'api_key_test' => env('MOLLIE_API_KEY_TEST'),
+        'webhook_secret' => env('MOLLIE_WEBHOOK_SECRET'),
+    ],
+
+    'signhost' => [
+        'base_url' => env('SIGNHOST_BASE_URL', 'https://api.signhost.com/api/'),
+        'app_key' => env('SIGNHOST_APP_KEY'),
+        'user_token' => env('SIGNHOST_USER_TOKEN'),
+        'shared_secret' => env('SIGNHOST_SHARED_SECRET'),
+        'webhook_auth' => env('SIGNHOST_WEBHOOK_AUTH'),
+    ],
+    'telnyx' => [
+        'base_url' => env('TELNYX_BASE_URL', 'https://api.telnyx.com/v2'),
+        'api_key' => env('TELNYX_API_KEY'),
+        'webhook_public_key' => env('TELNYX_WEBHOOK_PUBLIC_KEY'),
+        'webhook_secret' => env('TELNYX_WEBHOOK_SECRET'),
+        'connection_id' => env('TELNYX_CONNECTION_ID'),
+        'application_id' => env('TELNYX_APPLICATION_ID'),
+    ],
+
+    'hiswa' => [
+        'base_url' => env('HISWA_BASE_URL', 'https://www.hiswa.nl'),
+    ],
+
+    'google' => [
+        'maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
+    ],
+
+    // Optional enrichment provider. Keep disabled by default due ToS/compliance review needs.
+    'outscraper' => [
+        'enabled' => env('OUTSCRAPER_ENABLED', false),
+        'api_key' => env('OUTSCRAPER_API_KEY'),
+        'base_url' => env('OUTSCRAPER_BASE_URL', 'https://api.app.outscraper.com'),
+    ],
+
+    'serpapi' => [
+        'enabled' => env('SERPAPI_ENABLED', false),
+        'api_key' => env('SERPAPI_API_KEY'),
+    ],
+
+    'yachtshift' => [
+        'feed_urls' => array_values(array_filter([
+            env('YACHTSHIFT_FEED_URL_1', 'https://krekelberg.yachtshift.nl/yachtshift/export/feed/key/790b0db72e79d4f9f461b469a6b75c1249'),
+            env('YACHTSHIFT_FEED_URL_2', 'https://krekelberg.yachtshift.nl/yachtshift/export/feed/key/b838013b411e375e537ff6e722d9f22f19'),
+        ])),
+    ],
+
+];

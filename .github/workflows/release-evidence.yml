@@ -1,0 +1,23 @@
+name: Release Evidence
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release evidence
+        run: scripts/ci/generate-release-evidence.sh release-evidence.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: release-evidence.json
