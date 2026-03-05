@@ -2,6 +2,7 @@
 
 namespace App\Actions\Tasks;
 
+use App\Events\TaskCreated;
 use App\Enums\RiskLevel;
 use App\Models\Boat;
 use App\Models\Task;
@@ -93,6 +94,8 @@ class CreateTaskAction
             'location_id' => $task->location_id,
             'snapshot_after' => $task->toArray(),
         ]);
+
+        event(new TaskCreated($task, $actor));
 
         return $task->load(['assignedTo', 'creator', 'user', 'yacht', 'column']);
     }

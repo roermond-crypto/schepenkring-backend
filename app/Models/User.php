@@ -48,6 +48,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'phone_changed_at',
         'password_changed_at',
         'last_login_at',
+        'notifications_enabled',
+        'email_notifications_enabled',
     ];
 
     /**
@@ -80,6 +82,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'phone_changed_at' => 'datetime',
             'password_changed_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'notifications_enabled' => 'boolean',
+            'email_notifications_enabled' => 'boolean',
         ];
     }
 
@@ -93,6 +97,23 @@ class User extends Authenticatable implements MustVerifyEmail
     public function clientLocation(): BelongsTo
     {
         return $this->belongsTo(Location::class, 'client_location_id');
+    }
+
+    public function notifications(): BelongsToMany
+    {
+        return $this->belongsToMany(Notification::class, 'user_notifications')
+            ->withPivot('read', 'read_at')
+            ->withTimestamps();
+    }
+
+    public function unreadNotifications()
+    {
+        return $this->notifications()->wherePivot('read', false);
+    }
+
+    public function getUnreadNotificationsCountAttribute(): int
+    {
+        return $this->unreadNotifications()->count();
     }
 
     public function isAdmin(): bool

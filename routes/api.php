@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
 use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
 use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
 use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
 use App\Http\Controllers\Api\Tasks\TaskAutomationController;
@@ -33,6 +34,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('me/address', [MeAddressController::class, 'update']);
     Route::patch('me/security', [MeSecurityController::class, 'update']);
     Route::patch('me/password', [MePasswordController::class, 'update']);
+
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
     Route::get('public/users/employees', [TaskUserController::class, 'employees']);
 

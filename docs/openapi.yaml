@@ -319,6 +319,121 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserResponse'
 
+  /api/notifications:
+    get:
+      summary: List notifications
+      parameters:
+        - in: query
+          name: read
+          schema:
+            type: boolean
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+              example:
+                data:
+                  - id: 10
+                    user_id: 1
+                    notification_id: 55
+                    read: false
+                    read_at: null
+                    created_at: "2026-03-05T12:40:00Z"
+                    updated_at: "2026-03-05T12:40:00Z"
+                    notification:
+                      id: 55
+                      type: "info"
+                      title: "New task assigned"
+                      message: "You have a new task: Inspect hull"
+                      data:
+                        task_id: 44
+                        entity_type: "task"
+                        entity_id: 44
+                        url: "/dashboard/tasks/44"
+                      location_id: 2
+                      created_at: "2026-03-05T12:40:00Z"
+                      updated_at: "2026-03-05T12:40:00Z"
+                meta:
+                  current_page: 1
+                  last_page: 1
+                  per_page: 20
+                  total: 1
+                  unread_count: 1
+
+  /api/notifications/unread-count:
+    get:
+      summary: Get unread notifications count
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+              example:
+                count: 3
+
+  /api/notifications/{id}/read:
+    post:
+      summary: Mark notification as read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                success: true
+                message: "Notification marked as read"
+
+  /api/notifications/read-all:
+    post:
+      summary: Mark all notifications as read
+      responses:
+        '200':
+          description: Marked all as read
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                success: true
+                message: "All notifications marked as read"
+                count: 5
+
+  /broadcasting/auth:
+    post:
+      summary: Broadcast channel authentication
+      description: Auth endpoint for private user/location channels.
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+
   /api/admin/users:
     get:
       summary: List users
@@ -1711,6 +1826,10 @@ components:
           type: string
         locale:
           type: string
+        notifications_enabled:
+          type: boolean
+        email_notifications_enabled:
+          type: boolean
 
     MePersonalRequest:
       type: object
@@ -1858,6 +1977,10 @@ components:
         last_login_at:
           type: string
           format: date-time
+        notifications_enabled:
+          type: boolean
+        email_notifications_enabled:
+          type: boolean
           nullable: true
         created_at:
           type: string
@@ -2031,6 +2154,64 @@ components:
             $ref: '#/components/schemas/AuditLog'
         links:
           type: object
+        meta:
+          type: object
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserNotification:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        notification_id:
+          type: integer
+        read:
+          type: boolean
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        notification:
+          $ref: '#/components/schemas/Notification'
+
+    NotificationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserNotification'
         meta:
           type: object
 

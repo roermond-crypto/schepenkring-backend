@@ -58,6 +58,8 @@ class UserResource extends JsonResource
             'phone_changed_at' => $this->phone_changed_at,
             'password_changed_at' => $this->password_changed_at,
             'last_login_at' => $this->last_login_at,
+            'notifications_enabled' => $this->notifications_enabled,
+            'email_notifications_enabled' => $this->email_notifications_enabled,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

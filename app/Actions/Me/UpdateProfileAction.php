@@ -19,7 +19,7 @@ class UpdateProfileAction
 
     public function execute(User $user, array $data): User
     {
-        $payload = Arr::only($data, ['name', 'timezone', 'locale']);
+        $payload = Arr::only($data, ['name', 'timezone', 'locale', 'notifications_enabled', 'email_notifications_enabled']);
 
         $before = $user->toArray();
         $updated = $this->users->update($user, $payload);

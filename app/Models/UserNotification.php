@@ -17,6 +17,8 @@ class UserNotification extends Model
     protected $casts = [
         'read' => 'boolean',
         'read_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     public function user(): BelongsTo
@@ -27,5 +29,21 @@ class UserNotification extends Model
     public function notification(): BelongsTo
     {
         return $this->belongsTo(Notification::class);
+    }
+
+    public function markAsRead(): void
+    {
+        $this->update([
+            'read' => true,
+            'read_at' => now(),
+        ]);
+    }
+
+    public function markAsUnread(): void
+    {
+        $this->update([
+            'read' => false,
+            'read_at' => null,
+        ]);
     }
 }

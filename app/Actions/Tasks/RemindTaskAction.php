@@ -47,10 +47,14 @@ class RemindTaskAction
                 'assignment_status' => $task->assignment_status,
                 'related_type' => $task->yacht_id ? 'yacht' : null,
                 'related_id' => $task->yacht_id,
+                'entity_type' => 'task',
+                'entity_id' => $task->id,
+                'url' => "/dashboard/tasks/{$task->id}",
             ],
             null,
             $allowRealtime,
-            $allowEmail
+            $allowEmail,
+            $task->location_id
         );
 
         $this->security->log('task.remind', RiskLevel::LOW, $actor, $task, [

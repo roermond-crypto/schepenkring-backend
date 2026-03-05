@@ -7,13 +7,15 @@ use App\Enums\UserType;
 use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Services\ActionSecurity;
+use App\Services\NotificationDispatchService;
 use Illuminate\Validation\ValidationException;
 
 class AssignUserLocationsAction
 {
     public function __construct(
         private UserRepository $users,
-        private ActionSecurity $security
+        private ActionSecurity $security,
+        private NotificationDispatchService $notifications
     ) {
     }
 
@@ -43,6 +45,23 @@ class AssignUserLocationsAction
                 'snapshot_after' => $target->fresh()->toArray(),
             ]);
 
+            $this->notifications->notifyUser(
+                $target,
+                'system',
+                'Location assignment updated',
+                'Your location assignment has been updated.',
+                [
+                    'entity_type' => 'user',
+                    'entity_id' => $target->id,
+                    'location_id' => $data['location_id'],
+                    'url' => '/dashboard/account',
+                ],
+                null,
+                true,
+                true,
+                $data['location_id']
+            );
+
             return $target;
         }
 
@@ -66,6 +85,24 @@ class AssignUserLocationsAction
             'snapshot_before' => $before,
             'snapshot_after' => $target->fresh()->toArray(),
         ]);
+
+        $locationId = $data['locations'][0]['location_id'] ?? null;
+        $this->notifications->notifyUser(
+            $target,
+            'system',
+            'Location assignment updated',
+            'Your location assignments have been updated.',
+            [
+                'entity_type' => 'user',
+                'entity_id' => $target->id,
+                'locations' => $data['locations'],
+                'url' => '/dashboard/account',
+            ],
+            null,
+            true,
+            true,
+            $locationId
+        );
 
         return $target->refresh();
     }
