@@ -13,12 +13,14 @@ use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
 use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
 use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\SignhostController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
 use App\Http\Controllers\Api\Tasks\TaskAutomationController;
 use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
 use App\Http\Controllers\Api\Tasks\TaskController;
 use App\Http\Controllers\Api\Tasks\TaskUserController;
+use App\Http\Controllers\Api\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -39,6 +41,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+
+    Route::post('contracts/generate', [SignhostController::class, 'generateContract']);
+    Route::post('signhost/request', [SignhostController::class, 'requestSignhost']);
+    Route::post('signhost/resend', [SignhostController::class, 'resend']);
+    Route::post('signhost/cancel', [SignhostController::class, 'cancel']);
+    Route::get('signhost/status', [SignhostController::class, 'status']);
+    Route::get('signhost/documents', [SignhostController::class, 'documents']);
+
+    Route::post('deals/{dealId}/contract/generate', [SignhostController::class, 'generateDealContract']);
+    Route::post('deals/{dealId}/signhost/create', [SignhostController::class, 'createDealSignhost']);
+    Route::get('deals/{dealId}/signhost/status', [SignhostController::class, 'dealStatus']);
+    Route::get('deals/{dealId}/signhost/documents', [SignhostController::class, 'dealDocuments']);
+    Route::get('deals/{dealId}/signhost/url', [SignhostController::class, 'dealSignUrl']);
 
     Route::get('public/users/employees', [TaskUserController::class, 'employees']);
 
@@ -79,6 +94,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('task-automations/{id}', [TaskAutomationController::class, 'update']);
     Route::delete('task-automations/{id}', [TaskAutomationController::class, 'destroy']);
 });
+
+Route::post('webhooks/signhost', [WebhookController::class, 'signhost']);
 
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('users', [AdminUserController::class, 'index']);

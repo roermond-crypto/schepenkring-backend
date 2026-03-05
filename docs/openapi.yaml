@@ -422,6 +422,494 @@ paths:
                 message: "All notifications marked as read"
                 count: 5
 
+  /api/contracts/generate:
+    post:
+      summary: Generate contract PDF
+      description: Creates a draft signing request and stores the generated contract PDF.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostGenerateContractRequest'
+            example:
+              entity_type: "Deal"
+              entity_id: 123
+              location_id: 2
+              title: "Purchase Agreement"
+              metadata:
+                template_id: "deal-standard"
+      responses:
+        '200':
+          description: Contract generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  contract_pdf_path:
+                    type: string
+                    nullable: true
+                  contract_sha256:
+                    type: string
+                    nullable: true
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Contract generated"
+                contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
+                contract_sha256: "f1c2d3e4f5"
+                sign_request:
+                  id: 77
+                  location_id: 2
+                  entity_type: "Deal"
+                  entity_id: 123
+                  provider: "signhost"
+                  status: "DRAFT"
+                  signhost_transaction_id: null
+                  sign_url: null
+                  requested_by_user_id: null
+                  metadata:
+                    contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
+                    contract_sha256: "f1c2d3e4f5"
+                  documents:
+                    - id: 900
+                      sign_request_id: 77
+                      file_path: "contracts/deal_123_20260305_120000.pdf"
+                      sha256: "f1c2d3e4f5"
+                      type: "original"
+                      created_at: "2026-03-05T12:00:00Z"
+                      updated_at: "2026-03-05T12:00:00Z"
+                  created_at: "2026-03-05T12:00:00Z"
+                  updated_at: "2026-03-05T12:00:00Z"
+
+  /api/signhost/request:
+    post:
+      summary: Create Signhost request
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestCreateRequest'
+            example:
+              sign_request_id: 77
+              recipients:
+                - user_id: 25
+                  role: "buyer"
+                - email: "seller@example.com"
+                  name: "Seller User"
+                  role: "seller"
+              reference: "deal-123"
+              password: "Password123!"
+              otp_code: "123456"
+      responses:
+        '201':
+          description: Signhost request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Signhost request created"
+                sign_request:
+                  id: 77
+                  location_id: 2
+                  entity_type: "Deal"
+                  entity_id: 123
+                  provider: "signhost"
+                  status: "SENT"
+                  signhost_transaction_id: "sh_123456"
+                  sign_url: "https://signhost.app/sign/abc"
+                  requested_by_user_id: 5
+                  metadata:
+                    reference: "deal-123"
+                    recipients:
+                      - user_id: 25
+                        role: "buyer"
+                      - email: "seller@example.com"
+                        name: "Seller User"
+                        role: "seller"
+                    sign_urls:
+                      - role: "buyer"
+                        url: "https://signhost.app/sign/buyer"
+                      - role: "seller"
+                        url: "https://signhost.app/sign/seller"
+                  documents: []
+                  created_at: "2026-03-05T12:10:00Z"
+                  updated_at: "2026-03-05T12:10:00Z"
+
+  /api/signhost/resend:
+    post:
+      summary: Resend Signhost request
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestActionRequest'
+            example:
+              sign_request_id: 77
+              password: "Password123!"
+              otp_code: "123456"
+      responses:
+        '200':
+          description: Signhost request resent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Signhost request resent"
+                sign_request:
+                  id: 77
+                  status: "SENT"
+
+  /api/signhost/cancel:
+    post:
+      summary: Cancel Signhost request
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestActionRequest'
+            example:
+              sign_request_id: 77
+              password: "Password123!"
+              otp_code: "123456"
+              reason: "Customer requested cancellation"
+      responses:
+        '200':
+          description: Signhost request cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Signhost request cancelled"
+                sign_request:
+                  id: 77
+                  status: "FAILED"
+
+  /api/signhost/status:
+    get:
+      summary: Get Signhost request status
+      parameters:
+        - in: query
+          name: sign_request_id
+          schema:
+            type: integer
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost request status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                sign_request:
+                  id: 77
+                  status: "SIGNED"
+
+  /api/signhost/documents:
+    get:
+      summary: List Signhost documents
+      parameters:
+        - in: query
+          name: sign_request_id
+          schema:
+            type: integer
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignDocument'
+              example:
+                documents:
+                  - id: 901
+                    sign_request_id: 77
+                    file_path: "contracts/deal_123_signed_20260305_121500.pdf"
+                    sha256: "a1b2c3d4"
+                    type: "signed"
+                    created_at: "2026-03-05T12:15:00Z"
+                    updated_at: "2026-03-05T12:15:00Z"
+
+  /api/deals/{dealId}/contract/generate:
+    post:
+      summary: Generate deal contract PDF (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location_id]
+              properties:
+                location_id:
+                  type: integer
+                title:
+                  type: string
+                metadata:
+                  type: object
+            example:
+              location_id: 2
+              title: "Purchase Agreement"
+      responses:
+        '200':
+          description: Contract generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  contract_pdf_path:
+                    type: string
+                    nullable: true
+                  contract_sha256:
+                    type: string
+                    nullable: true
+              example:
+                message: "Contract generated"
+                contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
+                contract_sha256: "f1c2d3e4f5"
+
+  /api/deals/{dealId}/signhost/create:
+    post:
+      summary: Create Signhost transaction for deal (compat)
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestCreateRequest'
+            example:
+              recipients:
+                - user_id: 25
+                  role: "buyer"
+                - email: "seller@example.com"
+                  name: "Seller User"
+                  role: "seller"
+              password: "Password123!"
+              otp_code: "123456"
+      responses:
+        '200':
+          description: Signhost transaction created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  transaction:
+                    $ref: '#/components/schemas/LegacySignhostTransaction'
+              example:
+                message: "Signhost transaction created"
+                transaction:
+                  id: 77
+                  deal_id: 123
+                  signhost_transaction_id: "sh_123456"
+                  status: "signing"
+                  signing_url_buyer: "https://signhost.app/sign/buyer"
+                  signing_url_seller: "https://signhost.app/sign/seller"
+                  signed_pdf_path: null
+                  webhook_last_payload: null
+                  created_at: "2026-03-05T12:10:00Z"
+                  updated_at: "2026-03-05T12:10:00Z"
+
+  /api/deals/{dealId}/signhost/status:
+    get:
+      summary: Get Signhost transaction status for deal (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost transaction status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/LegacySignhostTransaction'
+              example:
+                transaction:
+                  id: 77
+                  deal_id: 123
+                  status: "signed"
+
+  /api/deals/{dealId}/signhost/documents:
+    get:
+      summary: List Signhost documents for deal (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignDocument'
+              example:
+                documents:
+                  - id: 901
+                    sign_request_id: 77
+                    file_path: "contracts/deal_123_signed_20260305_121500.pdf"
+                    sha256: "a1b2c3d4"
+                    type: "signed"
+                    created_at: "2026-03-05T12:15:00Z"
+                    updated_at: "2026-03-05T12:15:00Z"
+
+  /api/deals/{dealId}/signhost/url:
+    get:
+      summary: Get Signhost signing URL for deal (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [buyer, seller]
+      responses:
+        '200':
+          description: Signing URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+              example:
+                url: "https://signhost.app/sign/buyer"
+
+  /api/webhooks/signhost:
+    post:
+      summary: Signhost webhook
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostWebhookPayload'
+            example:
+              TransactionId: "sh_123456"
+              Status: "Signed"
+              File:
+                Id: "file_123"
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "queued"
+
   /broadcasting/auth:
     post:
       summary: Broadcast channel authentication
@@ -2196,12 +2684,221 @@ components:
           type: string
           format: date-time
           nullable: true
+        notification:
+          $ref: '#/components/schemas/Notification'
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    SignDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+        sign_request_id:
+          type: integer
+        file_path:
+          type: string
+        sha256:
+          type: string
+        type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SignRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        location_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        provider:
+          type: string
+          enum: [signhost]
+        status:
+          type: string
+          enum: [DRAFT, REQUESTED, SENT, VIEWED, SIGNED, DECLINED, EXPIRED, FAILED]
+        signhost_transaction_id:
+          type: string
+          nullable: true
+        sign_url:
+          type: string
+          nullable: true
+        requested_by_user_id:
+          type: integer
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignDocument'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LegacySignhostTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        deal_id:
+          type: integer
+        signhost_transaction_id:
+          type: string
+        status:
+          type: string
+        signing_url_buyer:
+          type: string
+          nullable: true
+        signing_url_seller:
+          type: string
+          nullable: true
+        signed_pdf_path:
+          type: string
+          nullable: true
+        webhook_last_payload:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SignhostGenerateContractRequest:
+      type: object
+      required: [entity_type, entity_id, location_id]
+      properties:
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        location_id:
+          type: integer
+        title:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+
+    SignhostRequestCreateRequest:
+      type: object
+      required: [recipients, password]
+      properties:
+        sign_request_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        recipients:
+          type: array
+          items:
+            type: object
+            properties:
+              email:
+                type: string
+                nullable: true
+              name:
+                type: string
+                nullable: true
+              user_id:
+                type: integer
+                nullable: true
+              role:
+                type: string
+                nullable: true
+              send:
+                type: boolean
+                nullable: true
+        reference:
+          type: string
+          nullable: true
+        password:
+          type: string
+        otp_code:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+
+    SignhostRequestActionRequest:
+      type: object
+      required: [password]
+      properties:
+        sign_request_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+        password:
+          type: string
+        otp_code:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    SignhostRequestQuery:
+      type: object
+      properties:
+        sign_request_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+
+    SignhostWebhookPayload:
+      type: object
+      properties:
+        TransactionId:
+          type: string
+        Status:
+          type: string
+        File:
+          type: object
+          properties:
+            Id:
+              type: string
         notification:
           $ref: '#/components/schemas/Notification'
 
@@ -2876,47 +3573,3 @@ components:
         location_id:
           type: integer
           nullable: true
-
-    Notification:
-      type: object
-      properties:
-        id:
-          type: integer
-        type:
-          type: string
-        title:
-          type: string
-        message:
-          type: string
-        data:
-          type: object
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    UserNotification:
-      type: object
-      properties:
-        id:
-          type: integer
-        user_id:
-          type: integer
-        notification_id:
-          type: integer
-        read:
-          type: boolean
-        read_at:
-          type: string
-          format: date-time
-          nullable: true
-        notification:
-          $ref: '#/components/schemas/Notification'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
