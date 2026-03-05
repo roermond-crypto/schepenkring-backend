@@ -7,7 +7,7 @@
         "dev": "vite"
     },
     "devDependencies": {
-        "@sentry/browser": "^7.120.0",
+        "@sentry/browser": "^10.42.0",
         "@sentry/tracing": "^7.120.0",
         "@tailwindcss/vite": "^4.2.1",
         "axios": "^1.11.0",
