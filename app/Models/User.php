@@ -2,15 +2,20 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\UserStatus;
+use App\Enums\UserType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -19,8 +24,30 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'first_name',
+        'last_name',
+        'date_of_birth',
         'email',
+        'phone',
         'password',
+        'type',
+        'status',
+        'client_location_id',
+        'timezone',
+        'locale',
+        'address_line1',
+        'address_line2',
+        'city',
+        'state',
+        'postal_code',
+        'country',
+        'two_factor_enabled',
+        'two_factor_confirmed_at',
+        'otp_secret',
+        'email_changed_at',
+        'phone_changed_at',
+        'password_changed_at',
+        'last_login_at',
     ];
 
     /**
@@ -31,6 +58,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'otp_secret',
     ];
 
     /**
@@ -43,6 +71,47 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'type' => UserType::class,
+            'status' => UserStatus::class,
+            'date_of_birth' => 'date',
+            'two_factor_enabled' => 'boolean',
+            'two_factor_confirmed_at' => 'datetime',
+            'email_changed_at' => 'datetime',
+            'phone_changed_at' => 'datetime',
+            'password_changed_at' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
+    }
+
+    public function locations(): BelongsToMany
+    {
+        return $this->belongsToMany(Location::class)
+            ->withPivot('role')
+            ->withTimestamps();
+    }
+
+    public function clientLocation(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'client_location_id');
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->type === UserType::ADMIN;
+    }
+
+    public function isEmployee(): bool
+    {
+        return $this->type === UserType::EMPLOYEE;
+    }
+
+    public function isClient(): bool
+    {
+        return $this->type === UserType::CLIENT;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === UserStatus::ACTIVE;
     }
 }

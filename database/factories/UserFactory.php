@@ -25,10 +25,16 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
+            'first_name' => fake()->firstName(),
+            'last_name' => fake()->lastName(),
+            'date_of_birth' => fake()->optional()->date(),
             'email' => fake()->unique()->safeEmail(),
+            'phone' => fake()->optional()->phoneNumber(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            'type' => \\App\\Enums\\UserType::CLIENT,
+            'status' => \\App\\Enums\\UserStatus::ACTIVE,
         ];
     }
 

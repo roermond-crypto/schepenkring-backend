@@ -2,6 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Enums\UserStatus;
+use App\Enums\UserType;
+use App\Models\Location;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -15,11 +18,26 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $location = Location::firstOrCreate([
+            'code' => 'HQ',
+        ], [
+            'name' => 'Headquarters',
+            'status' => 'ACTIVE',
+        ]);
 
         User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+            'name' => 'Admin User',
+            'email' => 'admin@example.com',
+            'type' => UserType::ADMIN,
+            'status' => UserStatus::ACTIVE,
+        ]);
+
+        User::factory()->create([
+            'name' => 'Client User',
+            'email' => 'client@example.com',
+            'type' => UserType::CLIENT,
+            'status' => UserStatus::ACTIVE,
+            'client_location_id' => $location->id,
         ]);
     }
 }
