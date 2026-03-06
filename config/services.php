@@ -50,6 +50,12 @@ return [
 
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
+    'signhost' => [
+        'base_url' => env('SIGNHOST_BASE_URL', 'https://api.signhost.com/api/'),
+        'app_key' => env('SIGNHOST_APP_KEY'),
+        'user_token' => env('SIGNHOST_USER_TOKEN'),
+        'shared_secret' => env('SIGNHOST_SHARED_SECRET'),
+        'webhook_auth' => env('SIGNHOST_WEBHOOK_AUTH'),
     ],
 
 ];

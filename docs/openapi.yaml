@@ -1,0 +1,3575 @@
+openapi: 3.0.3
+info:
+  title: NauticSecure API
+  version: "1.0.0"
+  description: |
+    API for NauticSecure user management, location scoping, and impersonation.
+servers:
+  - url: http://localhost:8000
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/auth/register:
+    post:
+      summary: Client self-registration
+      description: Only CLIENT users can self-register. Employees/partners/admins are blocked.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              name: "Jane Client"
+              email: "jane.client@example.com"
+              phone: "+1-555-0100"
+              password: "Password123!"
+              password_confirmation: "Password123!"
+              location_id: 1
+              website: ""
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                data:
+                  id: 100
+                  type: CLIENT
+                  status: ACTIVE
+                  name: "Jane Client"
+                  first_name: null
+                  last_name: null
+                  email: "jane.client@example.com"
+                  phone: "+1-555-0100"
+                  client_location_id: 1
+                  client_location:
+                    id: 1
+                    name: "Headquarters"
+                    code: "HQ"
+                  locations: []
+                  timezone: null
+                  locale: null
+                  address_line1: null
+                  address_line2: null
+                  city: null
+                  state: null
+                  postal_code: null
+                  country: null
+                  two_factor_enabled: false
+                  two_factor_confirmed_at: null
+                  email_changed_at: "2026-03-05T10:00:00Z"
+                  phone_changed_at: "2026-03-05T10:00:00Z"
+                  password_changed_at: "2026-03-05T10:00:00Z"
+                  created_at: "2026-03-05T10:00:00Z"
+                  updated_at: "2026-03-05T10:00:00Z"
+                token: "1|client_token_example"
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/auth/login:
+    post:
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: "admin@example.com"
+              password: "password"
+              device_name: "postman"
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                data:
+                  id: 1
+                  type: ADMIN
+                  status: ACTIVE
+                  name: "Admin User"
+                  first_name: null
+                  last_name: null
+                  email: "admin@example.com"
+                  phone: null
+                  client_location_id: null
+                  client_location: null
+                  locations: []
+                  timezone: null
+                  locale: null
+                  address_line1: null
+                  address_line2: null
+                  city: null
+                  state: null
+                  postal_code: null
+                  country: null
+                  two_factor_enabled: false
+                  two_factor_confirmed_at: null
+                  email_changed_at: "2026-03-05T09:00:00Z"
+                  phone_changed_at: null
+                  password_changed_at: "2026-03-05T09:00:00Z"
+                  created_at: "2026-03-05T09:00:00Z"
+                  updated_at: "2026-03-05T09:00:00Z"
+                token: "1|admin_token_example"
+        '422':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/auth/logout:
+    post:
+      summary: Logout
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Logged out."
+
+  /api/me:
+    get:
+      summary: Get current user
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+              example:
+                data:
+                  id: 100
+                  type: CLIENT
+                  status: ACTIVE
+                  name: "Jane Client"
+                  first_name: "Jane"
+                  last_name: "Client"
+                  email: "jane.client@example.com"
+                  phone: "+1-555-0100"
+                  client_location_id: 1
+                  client_location:
+                    id: 1
+                    name: "Headquarters"
+                    code: "HQ"
+                  locations: []
+                  timezone: "UTC"
+                  locale: "en"
+                  address_line1: "1 Marina Way"
+                  address_line2: null
+                  city: "Lagos"
+                  state: "LA"
+                  postal_code: "100001"
+                  country: "NG"
+                  two_factor_enabled: false
+                  two_factor_confirmed_at: null
+                  email_changed_at: "2026-03-05T10:00:00Z"
+                  phone_changed_at: "2026-03-05T10:00:00Z"
+                  password_changed_at: "2026-03-05T10:00:00Z"
+                  created_at: "2026-03-05T10:00:00Z"
+                  updated_at: "2026-03-05T10:00:00Z"
+                impersonation: null
+
+  /api/me/profile:
+    patch:
+      summary: Update profile tab
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeProfileRequest'
+            example:
+              name: "Jane Client"
+              timezone: "Africa/Lagos"
+              locale: "en"
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/me/personal:
+    patch:
+      summary: Update personal tab
+      description: Idempotency-Key is required when changing email or phone.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MePersonalRequest'
+            example:
+              first_name: "Jane"
+              last_name: "Client"
+              phone: "+1-555-0100"
+              date_of_birth: "1992-06-15"
+              email: "jane.client@example.com"
+      responses:
+        '200':
+          description: Updated personal info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/me/address:
+    patch:
+      summary: Update address tab
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeAddressRequest'
+            example:
+              address_line1: "1 Marina Way"
+              city: "Lagos"
+              state: "LA"
+              postal_code: "100001"
+              country: "NG"
+      responses:
+        '200':
+          description: Updated address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/me/security:
+    patch:
+      summary: Update security tab
+      description: Idempotency-Key is required.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeSecurityRequest'
+            example:
+              two_factor_enabled: true
+              otp_secret: "JBSWY3DPEHPK3PXP"
+              otp_code: "123456"
+      responses:
+        '200':
+          description: Updated security
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/me/password:
+    patch:
+      summary: Update password tab
+      description: Idempotency-Key is required.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MePasswordRequest'
+            example:
+              current_password: "Password123!"
+              password: "NewPassword123!"
+              password_confirmation: "NewPassword123!"
+      responses:
+        '200':
+          description: Updated password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/notifications:
+    get:
+      summary: List notifications
+      parameters:
+        - in: query
+          name: read
+          schema:
+            type: boolean
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+              example:
+                data:
+                  - id: 10
+                    user_id: 1
+                    notification_id: 55
+                    read: false
+                    read_at: null
+                    created_at: "2026-03-05T12:40:00Z"
+                    updated_at: "2026-03-05T12:40:00Z"
+                    notification:
+                      id: 55
+                      type: "info"
+                      title: "New task assigned"
+                      message: "You have a new task: Inspect hull"
+                      data:
+                        task_id: 44
+                        entity_type: "task"
+                        entity_id: 44
+                        url: "/dashboard/tasks/44"
+                      location_id: 2
+                      created_at: "2026-03-05T12:40:00Z"
+                      updated_at: "2026-03-05T12:40:00Z"
+                meta:
+                  current_page: 1
+                  last_page: 1
+                  per_page: 20
+                  total: 1
+                  unread_count: 1
+
+  /api/notifications/unread-count:
+    get:
+      summary: Get unread notifications count
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+              example:
+                count: 3
+
+  /api/notifications/{id}/read:
+    post:
+      summary: Mark notification as read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                success: true
+                message: "Notification marked as read"
+
+  /api/notifications/read-all:
+    post:
+      summary: Mark all notifications as read
+      responses:
+        '200':
+          description: Marked all as read
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                success: true
+                message: "All notifications marked as read"
+                count: 5
+
+  /api/contracts/generate:
+    post:
+      summary: Generate contract PDF
+      description: Creates a draft signing request and stores the generated contract PDF.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostGenerateContractRequest'
+            example:
+              entity_type: "Deal"
+              entity_id: 123
+              location_id: 2
+              title: "Purchase Agreement"
+              metadata:
+                template_id: "deal-standard"
+      responses:
+        '200':
+          description: Contract generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  contract_pdf_path:
+                    type: string
+                    nullable: true
+                  contract_sha256:
+                    type: string
+                    nullable: true
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Contract generated"
+                contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
+                contract_sha256: "f1c2d3e4f5"
+                sign_request:
+                  id: 77
+                  location_id: 2
+                  entity_type: "Deal"
+                  entity_id: 123
+                  provider: "signhost"
+                  status: "DRAFT"
+                  signhost_transaction_id: null
+                  sign_url: null
+                  requested_by_user_id: null
+                  metadata:
+                    contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
+                    contract_sha256: "f1c2d3e4f5"
+                  documents:
+                    - id: 900
+                      sign_request_id: 77
+                      file_path: "contracts/deal_123_20260305_120000.pdf"
+                      sha256: "f1c2d3e4f5"
+                      type: "original"
+                      created_at: "2026-03-05T12:00:00Z"
+                      updated_at: "2026-03-05T12:00:00Z"
+                  created_at: "2026-03-05T12:00:00Z"
+                  updated_at: "2026-03-05T12:00:00Z"
+
+  /api/signhost/request:
+    post:
+      summary: Create Signhost request
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestCreateRequest'
+            example:
+              sign_request_id: 77
+              recipients:
+                - user_id: 25
+                  role: "buyer"
+                - email: "seller@example.com"
+                  name: "Seller User"
+                  role: "seller"
+              reference: "deal-123"
+              password: "Password123!"
+              otp_code: "123456"
+      responses:
+        '201':
+          description: Signhost request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Signhost request created"
+                sign_request:
+                  id: 77
+                  location_id: 2
+                  entity_type: "Deal"
+                  entity_id: 123
+                  provider: "signhost"
+                  status: "SENT"
+                  signhost_transaction_id: "sh_123456"
+                  sign_url: "https://signhost.app/sign/abc"
+                  requested_by_user_id: 5
+                  metadata:
+                    reference: "deal-123"
+                    recipients:
+                      - user_id: 25
+                        role: "buyer"
+                      - email: "seller@example.com"
+                        name: "Seller User"
+                        role: "seller"
+                    sign_urls:
+                      - role: "buyer"
+                        url: "https://signhost.app/sign/buyer"
+                      - role: "seller"
+                        url: "https://signhost.app/sign/seller"
+                  documents: []
+                  created_at: "2026-03-05T12:10:00Z"
+                  updated_at: "2026-03-05T12:10:00Z"
+
+  /api/signhost/resend:
+    post:
+      summary: Resend Signhost request
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestActionRequest'
+            example:
+              sign_request_id: 77
+              password: "Password123!"
+              otp_code: "123456"
+      responses:
+        '200':
+          description: Signhost request resent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Signhost request resent"
+                sign_request:
+                  id: 77
+                  status: "SENT"
+
+  /api/signhost/cancel:
+    post:
+      summary: Cancel Signhost request
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestActionRequest'
+            example:
+              sign_request_id: 77
+              password: "Password123!"
+              otp_code: "123456"
+              reason: "Customer requested cancellation"
+      responses:
+        '200':
+          description: Signhost request cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                message: "Signhost request cancelled"
+                sign_request:
+                  id: 77
+                  status: "FAILED"
+
+  /api/signhost/status:
+    get:
+      summary: Get Signhost request status
+      parameters:
+        - in: query
+          name: sign_request_id
+          schema:
+            type: integer
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost request status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+              example:
+                sign_request:
+                  id: 77
+                  status: "SIGNED"
+
+  /api/signhost/documents:
+    get:
+      summary: List Signhost documents
+      parameters:
+        - in: query
+          name: sign_request_id
+          schema:
+            type: integer
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignDocument'
+              example:
+                documents:
+                  - id: 901
+                    sign_request_id: 77
+                    file_path: "contracts/deal_123_signed_20260305_121500.pdf"
+                    sha256: "a1b2c3d4"
+                    type: "signed"
+                    created_at: "2026-03-05T12:15:00Z"
+                    updated_at: "2026-03-05T12:15:00Z"
+
+  /api/deals/{dealId}/contract/generate:
+    post:
+      summary: Generate deal contract PDF (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location_id]
+              properties:
+                location_id:
+                  type: integer
+                title:
+                  type: string
+                metadata:
+                  type: object
+            example:
+              location_id: 2
+              title: "Purchase Agreement"
+      responses:
+        '200':
+          description: Contract generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  contract_pdf_path:
+                    type: string
+                    nullable: true
+                  contract_sha256:
+                    type: string
+                    nullable: true
+              example:
+                message: "Contract generated"
+                contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
+                contract_sha256: "f1c2d3e4f5"
+
+  /api/deals/{dealId}/signhost/create:
+    post:
+      summary: Create Signhost transaction for deal (compat)
+      description: Requires fresh auth (password + optional OTP) and Idempotency-Key.
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostRequestCreateRequest'
+            example:
+              recipients:
+                - user_id: 25
+                  role: "buyer"
+                - email: "seller@example.com"
+                  name: "Seller User"
+                  role: "seller"
+              password: "Password123!"
+              otp_code: "123456"
+      responses:
+        '200':
+          description: Signhost transaction created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  transaction:
+                    $ref: '#/components/schemas/LegacySignhostTransaction'
+              example:
+                message: "Signhost transaction created"
+                transaction:
+                  id: 77
+                  deal_id: 123
+                  signhost_transaction_id: "sh_123456"
+                  status: "signing"
+                  signing_url_buyer: "https://signhost.app/sign/buyer"
+                  signing_url_seller: "https://signhost.app/sign/seller"
+                  signed_pdf_path: null
+                  webhook_last_payload: null
+                  created_at: "2026-03-05T12:10:00Z"
+                  updated_at: "2026-03-05T12:10:00Z"
+
+  /api/deals/{dealId}/signhost/status:
+    get:
+      summary: Get Signhost transaction status for deal (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost transaction status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction:
+                    $ref: '#/components/schemas/LegacySignhostTransaction'
+              example:
+                transaction:
+                  id: 77
+                  deal_id: 123
+                  status: "signed"
+
+  /api/deals/{dealId}/signhost/documents:
+    get:
+      summary: List Signhost documents for deal (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Signhost documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SignDocument'
+              example:
+                documents:
+                  - id: 901
+                    sign_request_id: 77
+                    file_path: "contracts/deal_123_signed_20260305_121500.pdf"
+                    sha256: "a1b2c3d4"
+                    type: "signed"
+                    created_at: "2026-03-05T12:15:00Z"
+                    updated_at: "2026-03-05T12:15:00Z"
+
+  /api/deals/{dealId}/signhost/url:
+    get:
+      summary: Get Signhost signing URL for deal (compat)
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [buyer, seller]
+      responses:
+        '200':
+          description: Signing URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+              example:
+                url: "https://signhost.app/sign/buyer"
+
+  /api/webhooks/signhost:
+    post:
+      summary: Signhost webhook
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignhostWebhookPayload'
+            example:
+              TransactionId: "sh_123456"
+              Status: "Signed"
+              File:
+                Id: "file_123"
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "queued"
+
+  /broadcasting/auth:
+    post:
+      summary: Broadcast channel authentication
+      description: Auth endpoint for private user/location channels.
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/admin/users:
+    get:
+      summary: List users
+      parameters:
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [ADMIN, EMPLOYEE, CLIENT]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [ACTIVE, DISABLED, BLOCKED]
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+              example:
+                data:
+                  - id: 1
+                    type: ADMIN
+                    status: ACTIVE
+                    name: "Admin User"
+                    first_name: null
+                    last_name: null
+                    email: "admin@example.com"
+                    phone: null
+                    client_location_id: null
+                    client_location: null
+                    locations: []
+                    timezone: null
+                    locale: null
+                    address_line1: null
+                    address_line2: null
+                    city: null
+                    state: null
+                    postal_code: null
+                    country: null
+                    two_factor_enabled: false
+                    two_factor_confirmed_at: null
+                    email_changed_at: "2026-03-05T09:00:00Z"
+                    phone_changed_at: null
+                    password_changed_at: "2026-03-05T09:00:00Z"
+                    created_at: "2026-03-05T09:00:00Z"
+                    updated_at: "2026-03-05T09:00:00Z"
+                links:
+                  first: "http://localhost:8000/api/admin/users?page=1"
+                  last: "http://localhost:8000/api/admin/users?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  path: "http://localhost:8000/api/admin/users"
+                  per_page: 15
+                  to: 1
+                  total: 1
+    post:
+      summary: Create user (employee/client)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserStoreRequest'
+            example:
+              type: EMPLOYEE
+              name: "Marina Staff"
+              email: "staff@example.com"
+              phone: "+1-555-0130"
+              password: "Password123!"
+              status: ACTIVE
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/admin/users/{id}:
+    get:
+      summary: Get user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+    patch:
+      summary: Update user details
+      description: Idempotency-Key is required when changing email/phone/status.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserUpdateRequest'
+            example:
+              name: "Updated Staff"
+              phone: "+1-555-0140"
+              status: ACTIVE
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+    delete:
+      summary: Disable user
+      description: Idempotency-Key is required.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Disabled user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/admin/users/{id}/locations:
+    patch:
+      summary: Assign user locations
+      description: Idempotency-Key is required.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserLocationUpdateRequest'
+            examples:
+              employee:
+                summary: Employee location assignment
+                value:
+                  locations:
+                    - location_id: 1
+                      role: LOCATION_MANAGER
+                    - location_id: 2
+                      role: LOCATION_EMPLOYEE
+              client:
+                summary: Client location assignment
+                value:
+                  location_id: 1
+      responses:
+        '200':
+          description: Updated assignments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /api/admin/impersonate/{userId}:
+    post:
+      summary: Start impersonation
+      description: Idempotency-Key is required. Requires fresh auth (password + OTP if enabled).
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImpersonationStartRequest'
+            example:
+              password: "password"
+              otp_code: "123456"
+      responses:
+        '200':
+          description: Impersonation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpersonationStartResponse'
+              example:
+                token: "1|impersonation_token_example"
+                session:
+                  id: 50
+                  started_at: "2026-03-05T10:15:00Z"
+                impersonated:
+                  id: 100
+                  type: CLIENT
+                  status: ACTIVE
+                  name: "Jane Client"
+                  first_name: "Jane"
+                  last_name: "Client"
+                  email: "jane.client@example.com"
+                  phone: "+1-555-0100"
+                  client_location_id: 1
+                  client_location:
+                    id: 1
+                    name: "Headquarters"
+                    code: "HQ"
+                  locations: []
+                  timezone: null
+                  locale: null
+                  address_line1: null
+                  address_line2: null
+                  city: null
+                  state: null
+                  postal_code: null
+                  country: null
+                  two_factor_enabled: false
+                  two_factor_confirmed_at: null
+                  email_changed_at: "2026-03-05T10:00:00Z"
+                  phone_changed_at: "2026-03-05T10:00:00Z"
+                  password_changed_at: "2026-03-05T10:00:00Z"
+                  created_at: "2026-03-05T10:00:00Z"
+                  updated_at: "2026-03-05T10:00:00Z"
+
+  /api/admin/impersonate/stop:
+    post:
+      summary: Stop impersonation
+      description: Idempotency-Key is required.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Impersonation stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpersonationStopResponse'
+              example:
+                token: "1|admin_token_new_example"
+                impersonator:
+                  id: 1
+                  type: ADMIN
+                  status: ACTIVE
+                  name: "Admin User"
+                  first_name: null
+                  last_name: null
+                  email: "admin@example.com"
+                  phone: null
+                  client_location_id: null
+                  client_location: null
+                  locations: []
+                  timezone: null
+                  locale: null
+                  address_line1: null
+                  address_line2: null
+                  city: null
+                  state: null
+                  postal_code: null
+                  country: null
+                  two_factor_enabled: false
+                  two_factor_confirmed_at: null
+                  email_changed_at: "2026-03-05T09:00:00Z"
+                  phone_changed_at: null
+                  password_changed_at: "2026-03-05T09:00:00Z"
+                  created_at: "2026-03-05T09:00:00Z"
+                  updated_at: "2026-03-05T09:00:00Z"
+
+  /api/admin/audit:
+    get:
+      summary: List audit logs
+      parameters:
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: user_id
+          schema:
+            type: integer
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+        - in: query
+          name: entity_id
+          schema:
+            type: integer
+        - in: query
+          name: risk_level
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH]
+        - in: query
+          name: result
+          schema:
+            type: string
+            enum: [SUCCESS, FAIL]
+        - in: query
+          name: search
+          description: Free-text search across action/entity/user/email/ip/device
+          schema:
+            type: string
+        - in: query
+          name: query
+          description: Alias for search
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum: [created_at, action, risk_level, result]
+        - in: query
+          name: sort_dir
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: Paginated audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+              example:
+                data:
+                  - id: 501
+                    created_at: "2026-03-05T12:30:00Z"
+                    actor_id: 1
+                    impersonator_id: null
+                    actor:
+                      id: 1
+                      type: ADMIN
+                      status: ACTIVE
+                      name: "Admin User"
+                      email: "admin@example.com"
+                      phone: null
+                    impersonator: null
+                    location_id: 2
+                    location:
+                      id: 2
+                      name: "Marina West"
+                      code: "MW"
+                    action: "task.update"
+                    entity_type: "App\\\\Models\\\\Task"
+                    entity_id: 44
+                    risk_level: "LOW"
+                    result: "SUCCESS"
+                    ip_address: "203.0.113.10"
+                    ip_hash: "c4be5f6c69c4e3b1a8b2bb9df3a1e0c9f5dbf1c1c8a5a4f7f6e9d0b1c2a3e4f5"
+                    user_agent: "Mozilla/5.0"
+                    device_id: "ios-123"
+                    request_id: "req-123"
+                    idempotency_key: "idem-123"
+                    metadata:
+                      method: "PATCH"
+                      path: "api/tasks/44"
+                      route: null
+                      impersonation_session_id: null
+                    snapshot_before:
+                      id: 44
+                      title: "Inspect hull"
+                      status: "New"
+                    snapshot_after:
+                      id: 44
+                      title: "Inspect hull"
+                      status: "Pending"
+                    updated_at: "2026-03-05T12:30:01Z"
+                links:
+                  first: "http://localhost:8000/api/admin/audit?page=1"
+                  last: "http://localhost:8000/api/admin/audit?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  path: "http://localhost:8000/api/admin/audit"
+                  per_page: 50
+                  to: 1
+                  total: 1
+
+  /api/admin/audit/{id}:
+    get:
+      summary: Get audit log detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Audit log detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+              example:
+                data:
+                  id: 501
+                  created_at: "2026-03-05T12:30:00Z"
+                  actor_id: 1
+                  impersonator_id: null
+                  actor:
+                    id: 1
+                    type: ADMIN
+                    status: ACTIVE
+                    name: "Admin User"
+                    email: "admin@example.com"
+                    phone: null
+                  impersonator: null
+                  location_id: 2
+                  location:
+                    id: 2
+                    name: "Marina West"
+                    code: "MW"
+                  action: "task.update"
+                  entity_type: "App\\\\Models\\\\Task"
+                  entity_id: 44
+                  risk_level: "LOW"
+                  result: "SUCCESS"
+                  ip_address: "203.0.113.10"
+                  ip_hash: "c4be5f6c69c4e3b1a8b2bb9df3a1e0c9f5dbf1c1c8a5a4f7f6e9d0b1c2a3e4f5"
+                  user_agent: "Mozilla/5.0"
+                  device_id: "ios-123"
+                  request_id: "req-123"
+                  idempotency_key: "idem-123"
+                  metadata:
+                    method: "PATCH"
+                    path: "api/tasks/44"
+                    route: null
+                    impersonation_session_id: null
+                  snapshot_before:
+                    id: 44
+                    title: "Inspect hull"
+                    status: "New"
+                  snapshot_after:
+                    id: 44
+                    title: "Inspect hull"
+                    status: "Pending"
+                  updated_at: "2026-03-05T12:30:01Z"
+
+  /api/public/users/employees:
+    get:
+      summary: List employees for task assignment
+      responses:
+        '200':
+          description: Employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskAssignee'
+              example:
+                - id: 1
+                  name: "Admin User"
+                  email: "admin@example.com"
+                  role: "ADMIN"
+                - id: 12
+                  name: "Staff User"
+                  email: "staff@example.com"
+                  role: "EMPLOYEE"
+
+  /api/boards:
+    get:
+      summary: Get task board
+      parameters:
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+              example:
+                id: 1
+                name: "Main Board"
+                owner_id: 1
+                location_id: 1
+                columns:
+                  - id: 10
+                    board_id: 1
+                    name: "To Do"
+                    position: 0
+                  - id: 11
+                    board_id: 1
+                    name: "In Progress"
+                    position: 1
+                  - id: 12
+                    board_id: 1
+                    name: "Done"
+                    position: 2
+
+  /api/columns:
+    post:
+      summary: Create column
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnStoreRequest'
+            example:
+              board_id: 1
+              name: "Review"
+              position: 3
+      responses:
+        '201':
+          description: Column created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+
+  /api/columns/{id}:
+    put:
+      summary: Update column
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnUpdateRequest'
+            example:
+              name: "QA"
+              position: 2
+      responses:
+        '200':
+          description: Column updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+    delete:
+      summary: Delete column
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Deleted"
+
+  /api/columns/reorder:
+    post:
+      summary: Reorder columns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnReorderRequest'
+            example:
+              columns:
+                - id: 10
+                  position: 0
+                - id: 11
+                  position: 1
+      responses:
+        '200':
+          description: Columns reordered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Columns reordered"
+
+  /api/tasks:
+    get:
+      summary: List tasks
+      responses:
+        '200':
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+              example:
+                - id: 1
+                  title: "Inspect hull"
+                  description: "Initial inspection"
+                  priority: "High"
+                  status: "New"
+                  assignment_status: "pending"
+                  assigned_to: 12
+                  user_id: null
+                  created_by: 1
+                  yacht_id: 5
+                  appointment_id: null
+                  due_date: "2026-03-10"
+                  reminder_at: null
+                  reminder_sent_at: null
+                  type: "assigned"
+                  column_id: 10
+                  position: 0
+                  location_id: 1
+                  client_visible: false
+                  created_at: "2026-03-05T12:00:00Z"
+                  updated_at: "2026-03-05T12:00:00Z"
+    post:
+      summary: Create task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskStoreRequest'
+            example:
+              title: "Inspect hull"
+              description: "Initial inspection"
+              priority: "High"
+              status: "New"
+              due_date: "2026-03-10"
+              type: "assigned"
+              assigned_to: 12
+              yacht_id: 5
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/my:
+    get:
+      summary: List my tasks
+      responses:
+        '200':
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+  /api/tasks/calendar:
+    get:
+      summary: Calendar tasks
+      parameters:
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Calendar tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskCalendarItem'
+              example:
+                - id: 1
+                  title: "Inspect hull"
+                  start: "2026-03-10"
+                  end: "2026-03-11"
+                  priority: "High"
+                  status: "New"
+                  type: "assigned"
+                  assigned_to: "Staff User"
+                  yacht: "Sea Breeze"
+                  color: "#d97706"
+
+  /api/tasks/reorder:
+    post:
+      summary: Reorder tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskReorderRequest'
+            example:
+              tasks:
+                - id: 1
+                  position: 0
+                  column_id: 10
+      responses:
+        '200':
+          description: Tasks reordered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Tasks reordered"
+
+  /api/tasks/{id}:
+    get:
+      summary: Get task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    put:
+      summary: Update task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdateRequest'
+            example:
+              title: "Inspect hull (updated)"
+              status: "In Progress"
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    delete:
+      summary: Delete task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Task deleted successfully"
+
+  /api/tasks/{id}/status:
+    patch:
+      summary: Update task status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskStatusRequest'
+            example:
+              status: "Done"
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/reschedule:
+    patch:
+      summary: Reschedule task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRescheduleRequest'
+            example:
+              due_date: "2026-03-15"
+              reminder_at: "2026-03-14T10:00:00Z"
+      responses:
+        '200':
+          description: Rescheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/reminder:
+    patch:
+      summary: Schedule task reminder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskReminderRequest'
+            example:
+              reminder_at: "2026-03-09T10:00:00Z"
+      responses:
+        '200':
+          description: Reminder scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/remind:
+    post:
+      summary: Send task reminder
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRemindRequest'
+            example:
+              realtime: true
+              email: false
+      responses:
+        '200':
+          description: Reminder sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskRemindResponse'
+
+  /api/tasks/{id}/accept:
+    patch:
+      summary: Accept task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/reject:
+    patch:
+      summary: Reject task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /api/tasks/{id}/activities:
+    get:
+      summary: Task activities and attachments
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Activities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskActivitiesResponse'
+
+  /api/tasks/{id}/comments:
+    post:
+      summary: Add task comment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCommentRequest'
+            example:
+              content: "Please attach inspection photos."
+      responses:
+        '201':
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskActivityLog'
+
+  /api/tasks/{id}/attachments:
+    post:
+      summary: Upload task attachment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TaskAttachmentRequest'
+      responses:
+        '201':
+          description: Attachment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAttachment'
+
+  /api/tasks/{taskId}/attachments/{attachmentId}:
+    delete:
+      summary: Delete task attachment
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: attachmentId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Attachment deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Attachment deleted successfully"
+
+  /api/task-automation-templates:
+    get:
+      summary: List task automation templates
+      parameters:
+        - in: query
+          name: trigger_event
+          schema:
+            type: string
+        - in: query
+          name: is_active
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskAutomationTemplate'
+    post:
+      summary: Create task automation template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationTemplateStoreRequest'
+            example:
+              name: "New Bid Follow-up"
+              trigger_event: "bid.created"
+              schedule_type: "relative"
+              delay_value: 1
+              delay_unit: "days"
+              title: "Follow up bid"
+              description: "Send a reminder"
+              priority: "Medium"
+              default_assignee_type: "admin"
+              notification_enabled: true
+              email_enabled: false
+              is_active: true
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomationTemplate'
+
+  /api/task-automation-templates/{id}:
+    get:
+      summary: Get task automation template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomationTemplate'
+    put:
+      summary: Update task automation template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationTemplateUpdateRequest'
+            example:
+              title: "Follow up bid (updated)"
+              is_active: false
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomationTemplate'
+    delete:
+      summary: Delete task automation template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Template deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Template deleted"
+
+  /api/task-automations:
+    get:
+      summary: List task automations
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: trigger_event
+          schema:
+            type: string
+        - in: query
+          name: related_type
+          schema:
+            type: string
+        - in: query
+          name: related_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Automations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskAutomation'
+    post:
+      summary: Create task automation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationStoreRequest'
+            example:
+              template_id: 1
+              trigger_event: "bid.created"
+              related_type: "bid"
+              related_id: 42
+      responses:
+        '201':
+          description: Automation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomation'
+
+  /api/task-automations/{id}:
+    get:
+      summary: Get task automation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Automation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomation'
+    patch:
+      summary: Update task automation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAutomationUpdateRequest'
+            example:
+              status: "completed"
+      responses:
+        '200':
+          description: Automation updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAutomation'
+    delete:
+      summary: Delete task automation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Automation deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Automation deleted"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [name, email, password, password_confirmation, location_id]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        password:
+          type: string
+        password_confirmation:
+          type: string
+        location_id:
+          type: integer
+        website:
+          type: string
+          description: Honeypot field, must be empty.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        device_name:
+          type: string
+
+    AdminUserStoreRequest:
+      type: object
+      required: [type, name, email, password]
+      properties:
+        type:
+          type: string
+          enum: [EMPLOYEE, CLIENT]
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        password:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED, BLOCKED]
+        location_id:
+          type: integer
+          description: Required when creating a CLIENT.
+
+    AdminUserUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED, BLOCKED]
+
+    AdminUserLocationUpdateRequest:
+      type: object
+      properties:
+        location_id:
+          type: integer
+        locations:
+          type: array
+          items:
+            type: object
+            properties:
+              location_id:
+                type: integer
+              role:
+                type: string
+                enum: [LOCATION_MANAGER, LOCATION_EMPLOYEE]
+
+    MeProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        timezone:
+          type: string
+        locale:
+          type: string
+        notifications_enabled:
+          type: boolean
+        email_notifications_enabled:
+          type: boolean
+
+    MePersonalRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+        email:
+          type: string
+
+    MeAddressRequest:
+      type: object
+      properties:
+        address_line1:
+          type: string
+        address_line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+
+    MeSecurityRequest:
+      type: object
+      required: [two_factor_enabled]
+      properties:
+        two_factor_enabled:
+          type: boolean
+        otp_secret:
+          type: string
+        otp_code:
+          type: string
+        password:
+          type: string
+
+    MePasswordRequest:
+      type: object
+      required: [current_password, password, password_confirmation]
+      properties:
+        current_password:
+          type: string
+        password:
+          type: string
+        password_confirmation:
+          type: string
+
+    ImpersonationStartRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+        otp_code:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [ADMIN, EMPLOYEE, CLIENT]
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED, BLOCKED]
+        name:
+          type: string
+        first_name:
+          type: string
+          nullable: true
+        last_name:
+          type: string
+          nullable: true
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        client_location_id:
+          type: integer
+          nullable: true
+        client_location:
+          $ref: '#/components/schemas/Location'
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationRole'
+        timezone:
+          type: string
+          nullable: true
+        locale:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        two_factor_enabled:
+          type: boolean
+        two_factor_confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        email_changed_at:
+          type: string
+          format: date-time
+          nullable: true
+        phone_changed_at:
+          type: string
+          format: date-time
+          nullable: true
+        password_changed_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_login_at:
+          type: string
+          format: date-time
+        notifications_enabled:
+          type: boolean
+        email_notifications_enabled:
+          type: boolean
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Location:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
+
+    LocationRole:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
+        role:
+          type: string
+          enum: [LOCATION_MANAGER, LOCATION_EMPLOYEE]
+
+    AuthResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+
+    UserResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+
+    MeResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+        impersonation:
+          type: object
+          nullable: true
+          properties:
+            session_id:
+              type: integer
+            impersonator:
+              $ref: '#/components/schemas/User'
+
+    UserListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        links:
+          type: object
+        meta:
+          type: object
+
+    AuditUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        status:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        actor_id:
+          type: integer
+          nullable: true
+        impersonator_id:
+          type: integer
+          nullable: true
+        actor:
+          $ref: '#/components/schemas/AuditUser'
+        impersonator:
+          $ref: '#/components/schemas/AuditUser'
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        location:
+          $ref: '#/components/schemas/Location'
+        action:
+          type: string
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+        risk_level:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        result:
+          type: string
+          enum: [SUCCESS, FAIL]
+        ip_address:
+          type: string
+          nullable: true
+        ip_hash:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        device_id:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        snapshot_before:
+          type: object
+          nullable: true
+        snapshot_after:
+          type: object
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    AuditLogResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AuditLog'
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        links:
+          type: object
+        meta:
+          type: object
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserNotification:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        notification_id:
+          type: integer
+        read:
+          type: boolean
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        notification:
+          $ref: '#/components/schemas/Notification'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SignDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+        sign_request_id:
+          type: integer
+        file_path:
+          type: string
+        sha256:
+          type: string
+        type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SignRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        location_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        provider:
+          type: string
+          enum: [signhost]
+        status:
+          type: string
+          enum: [DRAFT, REQUESTED, SENT, VIEWED, SIGNED, DECLINED, EXPIRED, FAILED]
+        signhost_transaction_id:
+          type: string
+          nullable: true
+        sign_url:
+          type: string
+          nullable: true
+        requested_by_user_id:
+          type: integer
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignDocument'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LegacySignhostTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        deal_id:
+          type: integer
+        signhost_transaction_id:
+          type: string
+        status:
+          type: string
+        signing_url_buyer:
+          type: string
+          nullable: true
+        signing_url_seller:
+          type: string
+          nullable: true
+        signed_pdf_path:
+          type: string
+          nullable: true
+        webhook_last_payload:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SignhostGenerateContractRequest:
+      type: object
+      required: [entity_type, entity_id, location_id]
+      properties:
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        location_id:
+          type: integer
+        title:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+
+    SignhostRequestCreateRequest:
+      type: object
+      required: [recipients, password]
+      properties:
+        sign_request_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        recipients:
+          type: array
+          items:
+            type: object
+            properties:
+              email:
+                type: string
+                nullable: true
+              name:
+                type: string
+                nullable: true
+              user_id:
+                type: integer
+                nullable: true
+              role:
+                type: string
+                nullable: true
+              send:
+                type: boolean
+                nullable: true
+        reference:
+          type: string
+          nullable: true
+        password:
+          type: string
+        otp_code:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+
+    SignhostRequestActionRequest:
+      type: object
+      required: [password]
+      properties:
+        sign_request_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+        password:
+          type: string
+        otp_code:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    SignhostRequestQuery:
+      type: object
+      properties:
+        sign_request_id:
+          type: integer
+          nullable: true
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: integer
+          nullable: true
+
+    SignhostWebhookPayload:
+      type: object
+      properties:
+        TransactionId:
+          type: string
+        Status:
+          type: string
+        File:
+          type: object
+          properties:
+            Id:
+              type: string
+        notification:
+          $ref: '#/components/schemas/Notification'
+
+    NotificationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserNotification'
+        meta:
+          type: object
+
+    ImpersonationStartResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        session:
+          type: object
+          properties:
+            id:
+              type: integer
+            started_at:
+              type: string
+              format: date-time
+        impersonated:
+          $ref: '#/components/schemas/User'
+
+    ImpersonationStopResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        impersonator:
+          $ref: '#/components/schemas/User'
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+
+    TaskAssignee:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    Board:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        owner_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Column'
+
+    Column:
+      type: object
+      properties:
+        id:
+          type: integer
+        board_id:
+          type: integer
+        name:
+          type: string
+        position:
+          type: integer
+        location_id:
+          type: integer
+          nullable: true
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+        status:
+          type: string
+        assignment_status:
+          type: string
+        assigned_to:
+          type: integer
+          nullable: true
+        user_id:
+          type: integer
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        yacht_id:
+          type: integer
+          nullable: true
+        appointment_id:
+          type: integer
+          nullable: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+        reminder_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        type:
+          type: string
+        column_id:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        location_id:
+          type: integer
+          nullable: true
+        client_visible:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskCalendarItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        start:
+          type: string
+          format: date
+        end:
+          type: string
+          format: date
+        priority:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+        assigned_to:
+          type: string
+          nullable: true
+        yacht:
+          type: string
+          nullable: true
+        color:
+          type: string
+
+    TaskActivityLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        action:
+          type: string
+        description:
+          type: string
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskAttachment:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        file_path:
+          type: string
+        file_name:
+          type: string
+        mime_type:
+          type: string
+          nullable: true
+        size:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskActivitiesResponse:
+      type: object
+      properties:
+        activities:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskActivityLog'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskAttachment'
+
+    TaskStoreRequest:
+      type: object
+      required: [title, priority, due_date, type]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        status:
+          type: string
+          enum: [New, Pending, To Do, In Progress, Done]
+        due_date:
+          type: string
+          format: date
+        reminder_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [personal, assigned]
+        assigned_to:
+          type: integer
+          nullable: true
+        yacht_id:
+          type: integer
+          nullable: true
+        appointment_id:
+          type: integer
+          nullable: true
+        column_id:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        client_visible:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        status:
+          type: string
+          enum: [New, Pending, To Do, In Progress, Done]
+        assigned_to:
+          type: integer
+          nullable: true
+        yacht_id:
+          type: integer
+          nullable: true
+        appointment_id:
+          type: integer
+          nullable: true
+        due_date:
+          type: string
+          format: date
+        reminder_at:
+          type: string
+          format: date-time
+        column_id:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        type:
+          type: string
+          enum: [personal, assigned]
+        client_visible:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [New, Pending, To Do, In Progress, Done]
+
+    TaskRescheduleRequest:
+      type: object
+      required: [due_date]
+      properties:
+        due_date:
+          type: string
+          format: date
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskReminderRequest:
+      type: object
+      properties:
+        reminder_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskRemindRequest:
+      type: object
+      properties:
+        realtime:
+          type: boolean
+        email:
+          type: boolean
+
+    TaskAttachmentRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+
+    TaskCommentRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    TaskRemindResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        notification:
+          $ref: '#/components/schemas/UserNotification'
+
+    TaskReorderRequest:
+      type: object
+      required: [tasks]
+      properties:
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              position:
+                type: integer
+              column_id:
+                type: integer
+
+    ColumnStoreRequest:
+      type: object
+      required: [board_id, name, position]
+      properties:
+        board_id:
+          type: integer
+        name:
+          type: string
+        position:
+          type: integer
+
+    ColumnUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        position:
+          type: integer
+
+    ColumnReorderRequest:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              position:
+                type: integer
+
+    TaskAutomationTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          nullable: true
+        trigger_event:
+          type: string
+        schedule_type:
+          type: string
+        delay_value:
+          type: integer
+          nullable: true
+        delay_unit:
+          type: string
+          nullable: true
+        fixed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cron_expression:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+        default_assignee_type:
+          type: string
+        notification_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        is_active:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskAutomationTemplateStoreRequest:
+      type: object
+      required: [trigger_event, schedule_type, title, priority, default_assignee_type]
+      properties:
+        name:
+          type: string
+          nullable: true
+        trigger_event:
+          type: string
+        schedule_type:
+          type: string
+          enum: [relative, fixed, recurring]
+        delay_value:
+          type: integer
+          nullable: true
+        delay_unit:
+          type: string
+          nullable: true
+        fixed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cron_expression:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        default_assignee_type:
+          type: string
+          enum: [admin, seller, buyer, harbor, creator, related_owner]
+        notification_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        is_active:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskAutomationTemplateUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        trigger_event:
+          type: string
+        schedule_type:
+          type: string
+          enum: [relative, fixed, recurring]
+        delay_value:
+          type: integer
+          nullable: true
+        delay_unit:
+          type: string
+          nullable: true
+        fixed_at:
+          type: string
+          format: date-time
+          nullable: true
+        cron_expression:
+          type: string
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent, Critical]
+        default_assignee_type:
+          type: string
+          enum: [admin, seller, buyer, harbor, creator, related_owner]
+        notification_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        is_active:
+          type: boolean
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskAutomation:
+      type: object
+      properties:
+        id:
+          type: integer
+        template_id:
+          type: integer
+        trigger_event:
+          type: string
+        related_type:
+          type: string
+          nullable: true
+        related_id:
+          type: integer
+          nullable: true
+        assigned_user_id:
+          type: integer
+          nullable: true
+        due_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+        created_task_id:
+          type: integer
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        template:
+          $ref: '#/components/schemas/TaskAutomationTemplate'
+
+    TaskAutomationStoreRequest:
+      type: object
+      required: [template_id]
+      properties:
+        template_id:
+          type: integer
+        trigger_event:
+          type: string
+          nullable: true
+        related_type:
+          type: string
+          nullable: true
+        related_id:
+          type: integer
+          nullable: true
+        assigned_user_id:
+          type: integer
+          nullable: true
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        base_at:
+          type: string
+          format: date-time
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+
+    TaskAutomationUpdateRequest:
+      type: object
+      properties:
+        due_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, canceled]
+        assigned_user_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
