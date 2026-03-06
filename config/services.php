@@ -50,6 +50,8 @@ return [
 
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
+    ],
+
     'signhost' => [
         'base_url' => env('SIGNHOST_BASE_URL', 'https://api.signhost.com/api/'),
         'app_key' => env('SIGNHOST_APP_KEY'),

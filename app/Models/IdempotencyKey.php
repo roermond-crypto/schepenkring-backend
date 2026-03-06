@@ -16,11 +16,16 @@ class IdempotencyKey extends Model
         'key',
         'action',
         'actor_id',
+        'response_code',
+        'response_body',
+        'expires_at',
         'created_at',
     ];
 
     protected $casts = [
         'created_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'response_code' => 'integer',
     ];
 
     public function actor(): BelongsTo
