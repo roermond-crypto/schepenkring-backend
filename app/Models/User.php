@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\Auditable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
@@ -14,6 +15,8 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
+    use HasFactory, Notifiable, HasApiTokens, Auditable;
+
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
 
@@ -30,6 +33,15 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'phone',
         'password',
+        'role',
+        'phone',
+        'avatar',
+        'is_active',
+        'invited_by',
+        'last_login_at',
+        'lockscreen_code',
+        'lockscreen_timeout',
+        'otp_enabled',
         'type',
         'status',
         'client_location_id',
@@ -52,25 +64,83 @@ class User extends Authenticatable implements MustVerifyEmail
         'email_notifications_enabled',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
         'otp_secret',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
+            'email_verified_at'  => 'datetime',
+            'last_login_at'      => 'datetime',
+            'password'           => 'hashed',
+            'is_active'          => 'boolean',
+            'lockscreen_timeout' => 'integer',
+            'otp_enabled'        => 'boolean',
+        ];
+    }
+
+    // ── Role helpers ─────────────────────────────────────
+
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isEmployee(): bool
+    {
+        return $this->role === 'employee';
+    }
+
+    public function isClient(): bool
+    {
+        return $this->role === 'client';
+    }
+
+    public function isStaff(): bool
+    {
+        return in_array($this->role, ['admin', 'employee']);
+    }
+
+    // ── Relationships ────────────────────────────────────
+
+    public function invitedBy()
+    {
+        return $this->belongsTo(User::class, 'invited_by');
+    }
+
+    public function invitees()
+    {
+        return $this->hasMany(User::class, 'invited_by');
+    }
+
+    public function notifications()
+    {
+        return $this->hasMany(AppNotification::class);
+    }
+
+    public function yachts()
+    {
+        return $this->hasMany(Yacht::class);
+    }
+
+    // ── Scopes ───────────────────────────────────────────
+
+    public function scopeByRole($query, string $role)
+    {
+        return $query->where('role', $role);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeStaff($query)
+    {
+        return $query->whereIn('role', ['admin', 'employee']);
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'type' => UserType::class,
