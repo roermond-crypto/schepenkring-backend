@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\PublicLeadController;
 use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
+use App\Http\Controllers\Api\SocialVideoController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
 use App\Http\Controllers\Api\Tasks\TaskAutomationController;
@@ -152,6 +153,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
     Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
     Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
+
+    // Social video automation (NauticSecure parity)
+    Route::post('social/schedule', [SocialVideoController::class, 'schedule']);
+    Route::get('social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('social/posts', [SocialVideoController::class, 'listPosts']);
+    Route::patch('social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
+    Route::post('social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
+    Route::post('social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
 
     // Signhost / contracts
     Route::post('contracts/generate', [SignhostController::class, 'generateContract']);

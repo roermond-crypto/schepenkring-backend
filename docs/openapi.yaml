@@ -1565,6 +1565,166 @@ paths:
                   message:
                     $ref: '#/components/schemas/ConversationMessage'
 
+  /api/social/schedule:
+    post:
+      summary: Schedule social video posts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialScheduleRequest'
+            example:
+              start_date: "2026-03-10"
+              cadence: "daily"
+              time: "10:30"
+              video_ids: [1, 2, 3]
+              publishers: ["facebook", "instagram"]
+              skip_weekends: true
+              yext_account_id: "acct_123"
+              yext_entity_id: "ent_456"
+      responses:
+        '200':
+          description: Scheduled posts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialScheduleResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/social/videos:
+    get:
+      summary: List marketing videos
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [queued, processing, ready, failed]
+        - in: query
+          name: yacht_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated videos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoListResponse'
+
+  /api/social/posts:
+    get:
+      summary: List scheduled video posts
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [scheduled, publishing, published, failed]
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Paginated posts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoPostListResponse'
+
+  /api/social/posts/{id}/reschedule:
+    patch:
+      summary: Reschedule a social post
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialPostRescheduleRequest'
+            example:
+              scheduled_at: "2026-03-12T10:30:00Z"
+      responses:
+        '200':
+          description: Post rescheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  post:
+                    $ref: '#/components/schemas/VideoPost'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/social/posts/{id}/retry:
+    post:
+      summary: Retry a failed social post
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Post queued for retry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  post:
+                    $ref: '#/components/schemas/VideoPost'
+
+  /api/social/videos/{id}/regenerate:
+    post:
+      summary: Regenerate a marketing video
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '202':
+          description: Regeneration queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  video:
+                    $ref: '#/components/schemas/Video'
+
   /broadcasting/auth:
     post:
       summary: Broadcast channel authentication
@@ -5919,4 +6079,209 @@ components:
           nullable: true
         location_id:
           type: integer
+          nullable: true
+
+    SocialScheduleRequest:
+      type: object
+      required: [start_date, cadence, time, video_ids]
+      properties:
+        start_date:
+          type: string
+          format: date
+        cadence:
+          type: string
+          enum: [daily]
+        time:
+          type: string
+          example: "10:30"
+        video_ids:
+          type: array
+          items:
+            type: integer
+        publishers:
+          type: array
+          items:
+            type: string
+          nullable: true
+        skip_weekends:
+          type: boolean
+          nullable: true
+        yext_account_id:
+          type: string
+          nullable: true
+        yext_entity_id:
+          type: string
+          nullable: true
+
+    SocialScheduleResponse:
+      type: object
+      properties:
+        scheduled:
+          type: array
+          items:
+            $ref: '#/components/schemas/VideoPostSummary'
+        count:
+          type: integer
+
+    SocialPostRescheduleRequest:
+      type: object
+      required: [scheduled_at]
+      properties:
+        scheduled_at:
+          type: string
+          format: date-time
+
+    VideoSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        yacht_id:
+          type: integer
+        status:
+          type: string
+          enum: [queued, processing, ready, failed]
+        template_type:
+          type: string
+          nullable: true
+        video_path:
+          type: string
+          nullable: true
+        video_url:
+          type: string
+          nullable: true
+        thumbnail_path:
+          type: string
+          nullable: true
+        thumbnail_url:
+          type: string
+          nullable: true
+        duration_seconds:
+          type: integer
+          nullable: true
+        file_size_bytes:
+          type: integer
+          nullable: true
+        checksum:
+          type: string
+          nullable: true
+        caption:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Video:
+      allOf:
+        - $ref: '#/components/schemas/VideoSummary'
+        - type: object
+          properties:
+            posts:
+              type: array
+              items:
+                $ref: '#/components/schemas/VideoPostSummary'
+              nullable: true
+
+    VideoPostSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        video_id:
+          type: integer
+        yext_post_id:
+          type: string
+          nullable: true
+        publishers:
+          type: array
+          items:
+            type: string
+          nullable: true
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [scheduled, publishing, published, failed]
+        views:
+          type: integer
+        impressions:
+          type: integer
+        clicks:
+          type: integer
+        engagement:
+          type: integer
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        yext_account_id:
+          type: string
+          nullable: true
+        yext_entity_id:
+          type: string
+          nullable: true
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VideoPost:
+      allOf:
+        - $ref: '#/components/schemas/VideoPostSummary'
+        - type: object
+          properties:
+            video:
+              $ref: '#/components/schemas/VideoSummary'
+              nullable: true
+
+    VideoListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Video'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
+
+    VideoPostListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/VideoPost'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
           nullable: true
