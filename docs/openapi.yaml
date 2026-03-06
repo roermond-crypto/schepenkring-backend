@@ -1598,6 +1598,237 @@ paths:
               example:
                 message: "deleted"
 
+  /api/admin/errors:
+    get:
+      summary: List platform errors
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: level
+          schema:
+            type: string
+        - in: query
+          name: source
+          schema:
+            type: string
+        - in: query
+          name: environment
+          schema:
+            type: string
+        - in: query
+          name: release
+          schema:
+            type: string
+        - in: query
+          name: route
+          schema:
+            type: string
+        - in: query
+          name: user_id
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: subject
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+        - in: query
+          name: sort_dir
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformErrorList'
+
+  /api/admin/errors/stats:
+    get:
+      summary: Platform error stats
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformErrorStats'
+
+  /api/admin/errors/{error}:
+    get:
+      summary: Get platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: include_reports
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Platform error
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlatformError'
+                  - type: object
+                    properties:
+                      error:
+                        $ref: '#/components/schemas/PlatformError'
+                      reports:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/IssueReport'
+
+  /api/admin/errors/{error}/resolve:
+    post:
+      summary: Resolve platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "resolved"
+
+  /api/admin/errors/{error}/ignore:
+    post:
+      summary: Ignore platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                days:
+                  type: integer
+                until_release:
+                  type: string
+      responses:
+        '200':
+          description: Ignored
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "ignored"
+
+  /api/admin/errors/{error}/note:
+    post:
+      summary: Add internal note to platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Noted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "noted"
+
+  /api/admin/errors/{error}/assign:
+    post:
+      summary: Assign platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "assigned"
+
+  /api/sentry/webhook:
+    post:
+      summary: Sentry webhook
+      security: []
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "ok"
+
   /api/admin/users:
     get:
       summary: List users
@@ -4375,6 +4606,206 @@ components:
           nullable: true
         pitch:
           type: number
+          nullable: true
+
+    PlatformError:
+      type: object
+      properties:
+        id:
+          type: integer
+        reference_code:
+          type: string
+        sentry_issue_id:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        level:
+          type: string
+          nullable: true
+        project:
+          type: string
+          nullable: true
+        environment:
+          type: string
+          nullable: true
+        release:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        route:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        occurrences_count:
+          type: integer
+        users_affected:
+          type: integer
+        first_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+        tags:
+          type: object
+          nullable: true
+        last_event_sample_json:
+          type: object
+          nullable: true
+        ai_user_message_nl:
+          type: string
+          nullable: true
+        ai_user_message_en:
+          type: string
+          nullable: true
+        ai_user_message_de:
+          type: string
+          nullable: true
+        ai_dev_summary:
+          type: string
+          nullable: true
+        ai_category:
+          type: string
+          nullable: true
+        ai_severity:
+          type: string
+          nullable: true
+        ai_user_steps:
+          type: array
+          items:
+            type: string
+          nullable: true
+        ai_suggested_checks:
+          type: array
+          items:
+            type: string
+          nullable: true
+        assigned_to_user_id:
+          type: integer
+          nullable: true
+        internal_note:
+          type: string
+          nullable: true
+        ignore_until:
+          type: string
+          format: date-time
+          nullable: true
+        ignore_release:
+          type: string
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PlatformErrorList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformError'
+        links:
+          type: object
+        meta:
+          type: object
+
+    PlatformErrorStats:
+      type: object
+      properties:
+        errors_last_24h:
+          type: integer
+        critical:
+          type: integer
+        regressions:
+          type: integer
+        users_affected:
+          type: integer
+
+    IssueReport:
+      type: object
+      properties:
+        id:
+          type: integer
+        platform_error_id:
+          type: integer
+          nullable: true
+        user_id:
+          type: integer
+          nullable: true
+        conversation_id:
+          type: string
+          nullable: true
+        message_id:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        subject:
+          type: string
+          nullable: true
+        description:
+          type: string
+        page_url:
+          type: string
+          nullable: true
+        error_reference:
+          type: string
+          nullable: true
+        source:
+          type: string
+        status:
+          type: string
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueReportFile'
+
+    IssueReportFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        original_name:
+          type: string
+          nullable: true
+        mime_type:
+          type: string
+          nullable: true
+        size:
+          type: integer
+          nullable: true
+        url:
+          type: string
           nullable: true
 
     NotificationListResponse:

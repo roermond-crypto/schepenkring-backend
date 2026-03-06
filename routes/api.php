@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\CopilotVoiceSettingsController;
 use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
+use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
 use App\Http\Controllers\Api\Me\MeController;
 use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
 use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublicLeadController;
+use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SignhostController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
@@ -201,6 +203,7 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('webhooks/signhost', [WebhookController::class, 'signhost']);
+Route::post('sentry/webhook', [SentryWebhookController::class, 'handle']);
 
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('users', [AdminUserController::class, 'index']);
@@ -232,6 +235,16 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('copilot/phrases', [CopilotActionPhraseController::class, 'store']);
     Route::put('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'update']);
     Route::delete('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'destroy']);
+});
+
+Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->group(function () {
+    Route::get('/', [PlatformErrorController::class, 'index']);
+    Route::get('/stats', [PlatformErrorController::class, 'stats']);
+    Route::get('/{error}', [PlatformErrorController::class, 'show']);
+    Route::post('/{error}/resolve', [PlatformErrorController::class, 'resolve']);
+    Route::post('/{error}/ignore', [PlatformErrorController::class, 'ignore']);
+    Route::post('/{error}/note', [PlatformErrorController::class, 'note']);
+    Route::post('/{error}/assign', [PlatformErrorController::class, 'assign']);
 });
 
 });

@@ -21,14 +21,16 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-         $middleware->api(append: [
+        $middleware->api(append: [
             \App\Http\Middleware\EnsureActiveUser::class,
             \App\Http\Middleware\ResolveImpersonation::class,
+            \App\Http\Middleware\SentryContextMiddleware::class,
         ]);
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'admin.errors' => \App\Http\Middleware\EnsureAdminOrStaff::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
