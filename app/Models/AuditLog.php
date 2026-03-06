@@ -2,54 +2,55 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AuditLog extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
+        'user_id',
         'action',
-        'risk_level',
-        'result',
-        'actor_id',
-        'impersonator_id',
-        'location_id',
-        'target_type',
-        'target_id',
-        'entity_type',
-        'entity_id',
-        'meta',
-        'snapshot_before',
-        'snapshot_after',
+        'auditable_type',
+        'auditable_id',
+        'old_values',
+        'new_values',
         'ip_address',
-        'ip_hash',
         'user_agent',
-        'device_id',
-        'request_id',
-        'idempotency_key',
+        'reason',
+        'metadata',
     ];
 
     protected $casts = [
-        'meta' => 'array',
-        'snapshot_before' => 'array',
-        'snapshot_after' => 'array',
+        'old_values' => 'array',
+        'new_values' => 'array',
+        'metadata'   => 'array',
     ];
 
-    public function actor(): BelongsTo
+    // ── Relationships ────────────────────────────────────
+
+    public function user()
     {
-        return $this->belongsTo(User::class, 'actor_id');
+        return $this->belongsTo(User::class);
     }
 
-    public function impersonator(): BelongsTo
+    public function auditable()
     {
-        return $this->belongsTo(User::class, 'impersonator_id');
+        return $this->morphTo();
     }
 
-    public function location(): BelongsTo
+    // ── Scopes ───────────────────────────────────────────
+
+    public function scopeForModel($query, string $type, int $id)
     {
-        return $this->belongsTo(Location::class, 'location_id');
+        return $query->where('auditable_type', $type)->where('auditable_id', $id);
+    }
+
+    public function scopeByAction($query, string $action)
+    {
+        return $query->where('action', $action);
+    }
+
+    public function scopeRecent($query, int $days = 30)
+    {
+        return $query->where('created_at', '>=', now()->subDays($days));
     }
 }
