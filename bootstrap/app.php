@@ -31,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
             'admin.errors' => \App\Http\Middleware\EnsureAdminOrStaff::class,
+            'bid.session' => \App\Http\Middleware\EnsureBidSession::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

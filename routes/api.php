@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
@@ -120,7 +121,15 @@ Route::prefix('public')->group(function () {
     Route::post('leads', [PublicLeadController::class, 'store']);
     Route::patch('conversations/{conversationId}/lead', [PublicLeadController::class, 'update']);
     Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
+    Route::post('bids/register', [\App\Http\Controllers\Api\BidWidgetController::class, 'register']);
+    Route::post('bids/verify', [\App\Http\Controllers\Api\BidWidgetController::class, 'verify']);
+    Route::get('bids/{yachtId}/state', [\App\Http\Controllers\Api\BidWidgetController::class, 'state']);
+    Route::post('bids/{yachtId}', [\App\Http\Controllers\Api\BidWidgetController::class, 'place'])
+        ->middleware('bid.session');
 });
+
+Route::post('analytics/track', [AnalyticsController::class, 'track']);
+Route::get('analytics/summary', [AnalyticsController::class, 'summary']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('me', [MeController::class, 'show']);

@@ -39,6 +39,16 @@ return [
         'maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
     ],
 
+    'ga4' => [
+        'property_id' => env('GA4_PROPERTY_ID'),
+        'client_email' => env('GA4_CLIENT_EMAIL'),
+        'private_key' => env('GA4_PRIVATE_KEY'),
+        'measurement_id' => env('GA4_MEASUREMENT_ID'),
+        'api_secret' => env('GA4_API_SECRET'),
+        'cache_ttl' => env('GA4_DATA_CACHE_TTL', 3600),
+        'dimension_harbor_id' => env('GA4_DIMENSION_HARBOR_ID', 'customEvent:harbor_id'),
+    ],
+
     'google' => [
         'maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
     ],

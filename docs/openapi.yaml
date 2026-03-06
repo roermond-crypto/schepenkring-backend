@@ -421,6 +421,54 @@ paths:
                 success: true
                 message: "All notifications marked as read"
 
+  /api/analytics/track:
+    post:
+      summary: Track analytics event
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyticsTrackRequest'
+            example:
+              external_id: "123"
+              name: "Boat 123"
+              model: "Model X"
+              price: "35000"
+              ref_code: "REF-123"
+              url: "https://schepenkring.example/boats/123"
+              specs:
+                length: "10m"
+              year: "2019"
+              location: "Amsterdam"
+              referrer: "https://google.com"
+              resolution: "1920x1080"
+              language: "nl"
+      responses:
+        '200':
+          description: Synced
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "synced"
+
+  /api/analytics/summary:
+    get:
+      summary: Analytics summary
+      security: []
+      responses:
+        '200':
+          description: Summary rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AnalyticsSummaryRow'
+
   /api/copilot/resolve:
     post:
       summary: Resolve copilot input
@@ -1181,6 +1229,160 @@ paths:
                 properties:
                   message:
                     $ref: '#/components/schemas/ConversationMessage'
+
+  /api/public/bids/register:
+    post:
+      summary: Register bidder (NAWTE) and send verification email
+      security: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidderRegisterRequest'
+            example:
+              full_name: "Jan de Vries"
+              address: "Havenstraat 10"
+              postal_code: "1012 AB"
+              city: "Amsterdam"
+              phone: "+31-6-12345678"
+              email: "jan@example.com"
+      responses:
+        '200':
+          description: Bidder already verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidRegisterResponse'
+              example:
+                status: "verified"
+                bidder:
+                  id: 12
+                  full_name: "Jan de Vries"
+                  email: "jan@example.com"
+                  verified_at: "2026-03-06T10:00:00Z"
+                session_token: "bid_session_token"
+                session_expires_at: "2027-03-06T10:00:00Z"
+        '202':
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidRegisterResponse'
+              example:
+                status: "verification_sent"
+                bidder:
+                  id: 12
+                  full_name: "Jan de Vries"
+                  email: "jan@example.com"
+                verification_sent_at: "2026-03-06T10:05:00Z"
+
+  /api/public/bids/verify:
+    post:
+      summary: Verify bidder email token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidderVerifyRequest'
+            example:
+              token: "verification_token"
+      responses:
+        '200':
+          description: Bidder verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidVerifyResponse'
+              example:
+                status: "verified"
+                bidder:
+                  id: 12
+                  full_name: "Jan de Vries"
+                  email: "jan@example.com"
+                  verified_at: "2026-03-06T10:06:00Z"
+                session_token: "bid_session_token"
+                session_expires_at: "2027-03-06T10:06:00Z"
+
+  /api/public/bids/{yachtId}/state:
+    get:
+      summary: Get current bid state for listing
+      security: []
+      parameters:
+        - in: path
+          name: yachtId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Bid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidStateResponse'
+              example:
+                yacht_id: 42
+                allow_bidding: true
+                current_bid: 45000
+                minimum_next_bid: 45500
+                min_increment: 500
+
+  /api/public/bids/{yachtId}:
+    post:
+      summary: Place a bid
+      security: []
+      parameters:
+        - in: path
+          name: yachtId
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: X-Bid-Token
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidPlaceRequest'
+            example:
+              amount: 46000
+      responses:
+        '201':
+          description: Bid placed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidPlaceResponse'
+              example:
+                bid:
+                  id: 88
+                  yacht_id: 42
+                  bidder_id: 12
+                  amount: 46000
+                  bidder_name: "Jan de Vries"
+                  bidder_email: "jan@example.com"
+                  bidder_phone: "+31-6-12345678"
+                  created_at: "2026-03-06T10:07:00Z"
+                current_bid: 46000
+                minimum_next_bid: 46500
 
   /api/leads:
     get:
@@ -4068,6 +4270,160 @@ components:
           type: string
           nullable: true
 
+    Bidder:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        address:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Bid:
+      type: object
+      properties:
+        id:
+          type: integer
+        yacht_id:
+          type: integer
+        bidder_id:
+          type: integer
+        amount:
+          type: number
+          format: float
+        bidder_name:
+          type: string
+        bidder_email:
+          type: string
+        bidder_phone:
+          type: string
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BidderRegisterRequest:
+      type: object
+      required: [full_name, address, postal_code, city, phone, email]
+      properties:
+        full_name:
+          type: string
+        address:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+
+    BidderVerifyRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    BidPlaceRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          format: float
+
+    BidRegisterResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        bidder:
+          $ref: '#/components/schemas/Bidder'
+        session_token:
+          type: string
+          nullable: true
+        session_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        verification_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    BidVerifyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        bidder:
+          $ref: '#/components/schemas/Bidder'
+        session_token:
+          type: string
+        session_expires_at:
+          type: string
+          format: date-time
+
+    BidStateResponse:
+      type: object
+      properties:
+        yacht_id:
+          type: integer
+        allow_bidding:
+          type: boolean
+        current_bid:
+          type: number
+          format: float
+          nullable: true
+        minimum_next_bid:
+          type: number
+          format: float
+        min_increment:
+          type: number
+          format: float
+
+    BidPlaceResponse:
+      type: object
+      properties:
+        bid:
+          $ref: '#/components/schemas/Bid'
+        current_bid:
+          type: number
+          format: float
+          nullable: true
+        minimum_next_bid:
+          type: number
+          format: float
+
     LeadUpdateRequest:
       type: object
       properties:
@@ -4607,6 +4963,65 @@ components:
         pitch:
           type: number
           nullable: true
+
+    AnalyticsTrackRequest:
+      type: object
+      properties:
+        external_id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        price:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        url:
+          type: string
+        specs:
+          type: object
+          nullable: true
+        year:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        referrer:
+          type: string
+          nullable: true
+        resolution:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+      required: [external_id, url]
+
+    AnalyticsSummaryRow:
+      type: object
+      properties:
+        external_id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        last_price:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        total_views:
+          type: integer
 
     PlatformError:
       type: object
