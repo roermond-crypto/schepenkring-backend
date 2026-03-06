@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\ImagePipelineController;
+use App\Http\Controllers\Api\SocialVideoController;
 
 // ──────────────────────────────────────────────────────────
 // Auth routes
@@ -66,6 +67,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead']);
         Route::post('/read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllAsRead']);
     });
+
+    // Social Media / Video Automation
+    // ================== SOCIAL VIDEO AUTOMATION ==================
+    Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
+    Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
+    Route::patch('/social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
+    Route::post('/social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
+    Route::post('/social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
 
     // Audit logs
     Route::get('audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
