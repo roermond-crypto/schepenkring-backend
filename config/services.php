@@ -35,6 +35,10 @@ return [
         ],
     ],
 
+    'google' => [
+        'maps_api_key' => env('GOOGLE_MAPS_API_KEY'),
+    ],
+
     'signhost' => [
         'base_url' => env('SIGNHOST_BASE_URL', 'https://api.signhost.com/api/'),
         'app_key' => env('SIGNHOST_APP_KEY'),

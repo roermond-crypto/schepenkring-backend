@@ -15,8 +15,39 @@ class LeadRepository
 
     public function queryForUser(User $user): Builder
     {
-        $query = Lead::query()->with(['location', 'client']);
+        $query = Lead::query()->with([
+            'conversation',
+            'location',
+            'assignedEmployee',
+            'convertedClient',
+        ]);
 
         return $this->locationAccess->scopeQuery($query, $user, 'location_id');
+    }
+
+    public function findForUserOrFail(int $id, User $user): Lead
+    {
+        return $this->queryForUser($user)->findOrFail($id);
+    }
+
+    public function findByConversationId(string $conversationId): ?Lead
+    {
+        return Lead::query()
+            ->with(['conversation', 'location', 'assignedEmployee', 'convertedClient'])
+            ->where('conversation_id', $conversationId)
+            ->first();
+    }
+
+    public function create(array $data): Lead
+    {
+        return Lead::create($data);
+    }
+
+    public function update(Lead $lead, array $data): Lead
+    {
+        $lead->fill($data);
+        $lead->save();
+
+        return $lead;
     }
 }

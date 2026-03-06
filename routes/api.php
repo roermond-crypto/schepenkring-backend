@@ -6,6 +6,9 @@ use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\ConversationMessageController;
+use App\Http\Controllers\Api\LeadController;
+use App\Http\Controllers\Api\LeadConversionController;
 use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
 use App\Http\Controllers\Api\Me\MeController;
 use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
@@ -13,6 +16,7 @@ use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
 use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
 use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PublicLeadController;
 use App\Http\Controllers\Api\SignhostController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
@@ -29,6 +33,12 @@ Route::prefix('auth')->group(function () {
     Route::post('logout', [SessionController::class, 'destroy'])->middleware('auth:sanctum');
 });
 
+Route::prefix('public')->group(function () {
+    Route::post('leads', [PublicLeadController::class, 'store']);
+    Route::patch('conversations/{conversationId}/lead', [PublicLeadController::class, 'update']);
+    Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
+});
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('me', [MeController::class, 'show']);
     Route::patch('me/profile', [MeProfileController::class, 'update']);
@@ -41,6 +51,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+
+    Route::get('leads', [LeadController::class, 'index']);
+    Route::get('leads/{id}', [LeadController::class, 'show']);
+    Route::patch('leads/{id}', [LeadController::class, 'update']);
+    Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
+
+    Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
+    Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
 
     Route::post('contracts/generate', [SignhostController::class, 'generateContract']);
     Route::post('signhost/request', [SignhostController::class, 'requestSignhost']);

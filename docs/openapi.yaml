@@ -910,6 +910,309 @@ paths:
               example:
                 message: "queued"
 
+  /api/public/leads:
+    post:
+      summary: Create lead from widget
+      security: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicLeadCreateRequest'
+            example:
+              location_id: 2
+              source_url: "https://schepenkring.example/boats/123"
+              referrer: "https://google.com"
+              utm_source: "google"
+              utm_medium: "cpc"
+              utm_campaign: "spring"
+              name: "Jane Lead"
+              email: "jane@example.com"
+              phone: "+31-6-12345678"
+              address_line1: "Harbor Street 1"
+              city: "Amsterdam"
+              country: "NL"
+              message: "Interested in the boat."
+              client_message_id: "msg-uuid-1"
+              delivery_state: "sent"
+              visitor_id: "visitor-uuid-1"
+      responses:
+        '201':
+          description: Lead created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+                  conversation:
+                    $ref: '#/components/schemas/Conversation'
+                  message:
+                    $ref: '#/components/schemas/ConversationMessage'
+              example:
+                lead:
+                  id: 123
+                  conversation_id: "c8f5c5d4-8d24-4dd2-bdf0-9c6ad3d4f9b1"
+                  location_id: 2
+                  status: "new"
+                  source_url: "https://schepenkring.example/boats/123"
+                  name: "Jane Lead"
+                  email: "jane@example.com"
+                  phone: "+31-6-12345678"
+                  created_at: "2026-03-06T10:00:00Z"
+                  updated_at: "2026-03-06T10:00:00Z"
+                conversation:
+                  id: "c8f5c5d4-8d24-4dd2-bdf0-9c6ad3d4f9b1"
+                  location_id: 2
+                  channel: "web_widget"
+                  status: "open"
+                  lead_id: 123
+                  created_at: "2026-03-06T10:00:00Z"
+                  updated_at: "2026-03-06T10:00:00Z"
+                message:
+                  id: "9b2d1f1f-3d60-44a9-9d0b-7a7f1fdf2d6c"
+                  conversation_id: "c8f5c5d4-8d24-4dd2-bdf0-9c6ad3d4f9b1"
+                  sender_type: "visitor"
+                  body: "Interested in the boat."
+                  client_message_id: "msg-uuid-1"
+                  delivery_state: "sent"
+                  created_at: "2026-03-06T10:00:00Z"
+                  updated_at: "2026-03-06T10:00:00Z"
+
+  /api/public/conversations/{conversationId}/lead:
+    patch:
+      summary: Update lead contact details from widget
+      security: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicLeadUpdateRequest'
+            example:
+              name: "Jane Lead"
+              email: "jane@example.com"
+              phone: "+31-6-12345678"
+              address_line1: "Harbor Street 1"
+              city: "Amsterdam"
+              country: "NL"
+      responses:
+        '200':
+          description: Lead updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+
+  /api/public/conversations/{conversationId}/messages:
+    post:
+      summary: Add message from widget
+      security: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationMessageStoreRequest'
+            example:
+              body: "Hello, any updates?"
+              client_message_id: "msg-uuid-2"
+              delivery_state: "sent"
+              visitor_id: "visitor-uuid-1"
+      responses:
+        '201':
+          description: Message created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: '#/components/schemas/ConversationMessage'
+
+  /api/leads:
+    get:
+      summary: List leads
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [new, contacted, interested, converted, closed]
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+        - in: query
+          name: assigned_employee_id
+          schema:
+            type: integer
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated leads
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadListResponse'
+
+  /api/leads/{id}:
+    get:
+      summary: Get lead
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lead
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+    patch:
+      summary: Update lead
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadUpdateRequest'
+            example:
+              status: "contacted"
+              assigned_employee_id: 12
+      responses:
+        '200':
+          description: Updated lead
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+
+  /api/leads/{id}/convert-to-client:
+    post:
+      summary: Convert lead to client
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lead converted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client:
+                    $ref: '#/components/schemas/User'
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+
+  /api/conversations/{conversationId}/messages:
+    get:
+      summary: List conversation messages
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMessageListResponse'
+    post:
+      summary: Add conversation message (staff)
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationMessageStoreRequest'
+            example:
+              body: "Thanks, we will follow up."
+              client_message_id: "msg-uuid-3"
+              delivery_state: "sent"
+      responses:
+        '201':
+          description: Message created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: '#/components/schemas/ConversationMessage'
+
   /broadcasting/auth:
     post:
       summary: Broadcast channel authentication
@@ -2899,8 +3202,353 @@ components:
           properties:
             Id:
               type: string
-        notification:
-          $ref: '#/components/schemas/Notification'
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversation_id:
+          type: string
+        location_id:
+          type: integer
+        status:
+          type: string
+          enum: [new, contacted, interested, converted, closed]
+        assigned_employee_id:
+          type: integer
+          nullable: true
+        source_url:
+          type: string
+        referrer:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        utm_term:
+          type: string
+          nullable: true
+        utm_content:
+          type: string
+          nullable: true
+        converted_client_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        gmaps_place_id:
+          type: string
+          nullable: true
+        formatted_address:
+          type: string
+          nullable: true
+        address_components:
+          type: object
+          nullable: true
+        lat:
+          type: number
+          format: float
+          nullable: true
+        lng:
+          type: number
+          format: float
+          nullable: true
+        confidence:
+          type: string
+          nullable: true
+        maps_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        location_id:
+          type: integer
+        channel:
+          type: string
+        status:
+          type: string
+          enum: [open, closed]
+        assigned_employee_id:
+          type: integer
+          nullable: true
+        lead_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConversationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        sender_type:
+          type: string
+          enum: [visitor, employee]
+        employee_id:
+          type: integer
+          nullable: true
+        body:
+          type: string
+          nullable: true
+        client_message_id:
+          type: string
+          nullable: true
+        delivery_state:
+          type: string
+          enum: [queued, sent, failed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PublicLeadCreateRequest:
+      type: object
+      required: [location_id, source_url, message]
+      properties:
+        location_id:
+          type: integer
+        source_url:
+          type: string
+        referrer:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        utm_term:
+          type: string
+          nullable: true
+        utm_content:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        message:
+          type: string
+        client_message_id:
+          type: string
+          nullable: true
+        delivery_state:
+          type: string
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+
+    PublicLeadUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+
+    ConversationMessageStoreRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+        client_message_id:
+          type: string
+          nullable: true
+        delivery_state:
+          type: string
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+
+    LeadUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [new, contacted, interested, converted, closed]
+        assigned_employee_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+        referrer:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        utm_term:
+          type: string
+          nullable: true
+        utm_content:
+          type: string
+          nullable: true
+
+    LeadListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lead'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
+
+    ConversationMessageListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
 
     NotificationListResponse:
       type: object
