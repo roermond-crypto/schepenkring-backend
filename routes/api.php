@@ -6,6 +6,9 @@ use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\CopilotAuditController;
+use App\Http\Controllers\Api\CopilotController;
+use App\Http\Controllers\Api\CopilotVoiceSettingsController;
 use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
@@ -25,6 +28,10 @@ use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
 use App\Http\Controllers\Api\Tasks\TaskController;
 use App\Http\Controllers\Api\Tasks\TaskUserController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
+use App\Http\Controllers\Api\Admin\CopilotActionController;
+use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
+use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -51,6 +58,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
+
+    Route::post('copilot/resolve', [CopilotController::class, 'resolve']);
+    Route::post('copilot/track', [CopilotController::class, 'track']);
+    Route::get('copilot/audit', [CopilotAuditController::class, 'index']);
+    Route::get('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'show']);
+    Route::put('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'update']);
 
     Route::get('leads', [LeadController::class, 'index']);
     Route::get('leads/{id}', [LeadController::class, 'show']);
@@ -129,4 +142,20 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
+
+    Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);
+    Route::post('copilot/draft', [CopilotActionWorkflowController::class, 'draft']);
+    Route::post('copilot/validate', [CopilotActionWorkflowController::class, 'validateAction']);
+    Route::post('copilot/execute', [CopilotActionWorkflowController::class, 'execute']);
+
+    Route::get('copilot/actions', [CopilotActionController::class, 'index']);
+    Route::post('copilot/actions', [CopilotActionController::class, 'store']);
+    Route::get('copilot/actions/{action}', [CopilotActionController::class, 'show']);
+    Route::put('copilot/actions/{action}', [CopilotActionController::class, 'update']);
+    Route::delete('copilot/actions/{action}', [CopilotActionController::class, 'destroy']);
+
+    Route::get('copilot/phrases', [CopilotActionPhraseController::class, 'index']);
+    Route::post('copilot/phrases', [CopilotActionPhraseController::class, 'store']);
+    Route::put('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'update']);
+    Route::delete('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'destroy']);
 });

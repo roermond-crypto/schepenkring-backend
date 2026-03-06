@@ -420,7 +420,131 @@ paths:
               example:
                 success: true
                 message: "All notifications marked as read"
-                count: 5
+
+  /api/copilot/resolve:
+    post:
+      summary: Resolve copilot input
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotResolveRequest'
+            example:
+              text: "Open boat 12"
+              source: "header"
+              context:
+                language: "nl"
+      responses:
+        '200':
+          description: Copilot resolution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotResolveResponse'
+
+  /api/copilot/track:
+    post:
+      summary: Track copilot event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotTrackRequest'
+            example:
+              event: "clicked"
+              action_id: "boat.view"
+              deeplink: "/admin/boats/12"
+      responses:
+        '200':
+          description: Tracked
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "tracked"
+
+  /api/copilot/audit:
+    get:
+      summary: List copilot audit events
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+            enum: [header, chatpage, voice]
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: failed_only
+          schema:
+            type: boolean
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CopilotAuditEvent'
+                  meta:
+                    type: object
+                  links:
+                    type: object
+
+  /api/copilot/voice-settings:
+    get:
+      summary: Get copilot voice settings
+      responses:
+        '200':
+          description: Voice settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotVoiceSettings'
+    put:
+      summary: Update copilot voice settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotVoiceSettings'
+            example:
+              tts_enabled: true
+              tts_voice_id: "en-US-Neural2-A"
+              stt_language: "nl"
+              speaking_rate: 1.0
+              pitch: 0.0
+      responses:
+        '200':
+          description: Updated voice settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotVoiceSettings'
 
   /api/contracts/generate:
     post:
@@ -1224,6 +1348,255 @@ paths:
             application/json:
               schema:
                 type: object
+
+  /api/admin/copilot/action-catalog:
+    get:
+      summary: Get copilot action catalog
+      responses:
+        '200':
+          description: Action catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalog'
+
+  /api/admin/copilot/draft:
+    post:
+      summary: Draft a copilot action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotDraftRequest'
+      responses:
+        '200':
+          description: Draft result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotDraftResponse'
+
+  /api/admin/copilot/validate:
+    post:
+      summary: Validate copilot action payload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotValidateRequest'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotValidateResponse'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /api/admin/copilot/execute:
+    post:
+      summary: Execute a copilot action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotExecuteRequest'
+      responses:
+        '200':
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotExecuteResponse'
+        '409':
+          description: Confirmation required
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "Confirmation required"
+
+  /api/admin/copilot/actions:
+    get:
+      summary: List copilot actions
+      parameters:
+        - in: query
+          name: enabled
+          schema:
+            type: boolean
+        - in: query
+          name: module
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Copilot actions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CopilotAction'
+    post:
+      summary: Create copilot action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotAction'
+      responses:
+        '201':
+          description: Copilot action created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotAction'
+
+  /api/admin/copilot/actions/{action}:
+    get:
+      summary: Get copilot action
+      parameters:
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Copilot action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotAction'
+    put:
+      summary: Update copilot action
+      parameters:
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotAction'
+      responses:
+        '200':
+          description: Copilot action updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotAction'
+    delete:
+      summary: Delete copilot action
+      parameters:
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Copilot action deleted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "deleted"
+
+  /api/admin/copilot/phrases:
+    get:
+      summary: List copilot phrases
+      parameters:
+        - in: query
+          name: action_id
+          schema:
+            type: integer
+        - in: query
+          name: language
+          schema:
+            type: string
+        - in: query
+          name: enabled
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Copilot phrases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CopilotActionPhrase'
+    post:
+      summary: Create copilot phrase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotActionPhrase'
+      responses:
+        '201':
+          description: Copilot phrase created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotActionPhrase'
+
+  /api/admin/copilot/phrases/{phrase}:
+    put:
+      summary: Update copilot phrase
+      parameters:
+        - in: path
+          name: phrase
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotActionPhrase'
+      responses:
+        '200':
+          description: Copilot phrase updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotActionPhrase'
+    delete:
+      summary: Delete copilot phrase
+      parameters:
+        - in: path
+          name: phrase
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Copilot phrase deleted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "deleted"
 
   /api/admin/users:
     get:
@@ -3548,6 +3921,460 @@ components:
           nullable: true
         meta:
           type: object
+          nullable: true
+
+    ActionCatalog:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCatalogItem'
+      required: [generated_at, count, actions]
+
+    ActionCatalogItem:
+      type: object
+      properties:
+        action_id:
+          type: string
+        title:
+          type: string
+        short_description:
+          type: string
+        description:
+          type: string
+        module:
+          type: string
+        required_role:
+          type: string
+        permission_key:
+          type: string
+        security_level:
+          type: string
+          enum: [low, medium, high]
+        input_schema:
+          type: object
+        example_inputs:
+          type: array
+          items:
+            type: object
+        example_prompts:
+          type: array
+          items:
+            type: string
+        side_effects:
+          type: array
+          items:
+            type: string
+        idempotency_rules:
+          type: array
+          items:
+            type: string
+        rate_limit_class:
+          type: string
+        fresh_auth_required_minutes:
+          type: integer
+        confirmation_required:
+          type: boolean
+        route_template:
+          type: string
+        query_template:
+          type: string
+          nullable: true
+        required_params:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        phrases:
+          type: array
+          items:
+            type: string
+      required: [action_id, title]
+
+    CopilotResolveRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        source:
+          type: string
+          enum: [header, chatpage, voice]
+        context:
+          type: object
+      required: [text]
+
+    CopilotResolveResponse:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CopilotResolvedAction'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CopilotSearchResult'
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CopilotAnswer'
+        clarifying_question:
+          type: string
+          nullable: true
+        needs_confirmation:
+          type: boolean
+        confidence:
+          type: number
+        source:
+          type: string
+
+    CopilotResolvedAction:
+      type: object
+      properties:
+        action_id:
+          type: string
+        title:
+          type: string
+        deeplink:
+          type: string
+        risk_level:
+          type: string
+        confirmation_required:
+          type: boolean
+        params:
+          type: object
+        score:
+          type: number
+        reason:
+          type: string
+
+    CopilotSearchResult:
+      type: object
+      properties:
+        type:
+          type: string
+        id:
+          type: integer
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        score:
+          type: number
+        deeplink:
+          type: string
+          nullable: true
+
+    CopilotAnswer:
+      type: object
+      properties:
+        question:
+          type: string
+        answer:
+          type: string
+        category:
+          type: string
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              action_id:
+                type: string
+
+    CopilotTrackRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [header, chatpage, voice]
+        event:
+          type: string
+        input_text:
+          type: string
+        action_id:
+          type: string
+        action_params:
+          type: object
+        deeplink:
+          type: string
+        confidence:
+          type: number
+        status:
+          type: string
+        failure_reason:
+          type: string
+        request_id:
+          type: string
+      required: [event]
+
+    CopilotDraftRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        language:
+          type: string
+        module:
+          type: string
+        top_k:
+          type: integer
+        context:
+          type: object
+      required: [prompt]
+
+    CopilotDraftResponse:
+      type: object
+      properties:
+        draft_id:
+          type: string
+        prompt:
+          type: string
+        selected_action:
+          type: object
+        candidates:
+          type: array
+          items:
+            type: object
+        confidence:
+          type: number
+        clarifying_question:
+          type: string
+          nullable: true
+
+    CopilotValidateRequest:
+      type: object
+      properties:
+        action_id:
+          type: string
+        payload:
+          type: object
+      required: [action_id]
+
+    CopilotValidateResponse:
+      type: object
+      properties:
+        validation_token:
+          type: string
+        action_id:
+          type: string
+        requires_confirmation:
+          type: boolean
+        payload:
+          type: object
+
+    CopilotExecuteRequest:
+      type: object
+      properties:
+        validation_token:
+          type: string
+        confirm:
+          type: boolean
+      required: [validation_token]
+
+    CopilotExecuteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        action_id:
+          type: string
+        payload:
+          type: object
+        execution:
+          type: object
+
+    CopilotAction:
+      type: object
+      properties:
+        id:
+          type: integer
+        action_id:
+          type: string
+        title:
+          type: string
+        short_description:
+          type: string
+          nullable: true
+        module:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        route_template:
+          type: string
+        query_template:
+          type: string
+          nullable: true
+        required_params:
+          type: array
+          items:
+            type: string
+        input_schema:
+          type: object
+          nullable: true
+        example_inputs:
+          type: array
+          items:
+            type: object
+        example_prompts:
+          type: array
+          items:
+            type: string
+        side_effects:
+          type: array
+          items:
+            type: string
+        idempotency_rules:
+          type: array
+          items:
+            type: string
+        rate_limit_class:
+          type: string
+          nullable: true
+        fresh_auth_required_minutes:
+          type: integer
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        permission_key:
+          type: string
+          nullable: true
+        required_role:
+          type: string
+          nullable: true
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+        confirmation_required:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CopilotActionPhrase:
+      type: object
+      properties:
+        id:
+          type: integer
+        copilot_action_id:
+          type: integer
+        phrase:
+          type: string
+        language:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CopilotAuditEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        source:
+          type: string
+        stage:
+          type: string
+          nullable: true
+        input_text:
+          type: string
+          nullable: true
+        resolved_action_candidates:
+          type: array
+          items:
+            type: object
+        matching_detail:
+          type: object
+          nullable: true
+        selected_action_id:
+          type: string
+          nullable: true
+        selected_action_params:
+          type: object
+          nullable: true
+        deeplink_returned:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+        status:
+          type: string
+        failure_reason:
+          type: string
+          nullable: true
+        validation_result:
+          type: object
+          nullable: true
+        execution_result:
+          type: object
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        user_correction_action_id:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    CopilotVoiceSettings:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        tts_voice_id:
+          type: string
+          nullable: true
+        tts_enabled:
+          type: boolean
+        stt_language:
+          type: string
+          nullable: true
+        speaking_rate:
+          type: number
+          nullable: true
+        pitch:
+          type: number
           nullable: true
 
     NotificationListResponse:
