@@ -5,8 +5,15 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\ImagePipelineController;
 
 // ──────────────────────────────────────────────────────────
+// Auth routes
+// ──────────────────────────────────────────────────────────
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [\App\Http\Controllers\Api\AuthController::class, 'login']);
+    Route::post('/logout', [\App\Http\Controllers\Api\AuthController::class, 'logout'])->middleware('auth:sanctum');
+});
+
+// ──────────────────────────────────────────────────────────
 // PUBLIC routes (no auth needed for dev/testing)
-// Auth will be enforced after merging with GitHub login code
 // ──────────────────────────────────────────────────────────
 
 // Yachts CRUD
