@@ -1230,6 +1230,32 @@ paths:
                   message:
                     $ref: '#/components/schemas/ConversationMessage'
 
+  /api/public/locations:
+    get:
+      summary: List locations (public)
+      security: []
+      parameters:
+        - in: query
+          name: include_inactive
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Location'
+              example:
+                - id: 1
+                  name: "Schepenkring Amsterdam"
+                  code: "AMS"
+                - id: 2
+                  name: "Schepenkring Friesland"
+                  code: "FRL"
+
   /api/public/bids/register:
     post:
       summary: Register bidder (NAWTE) and send verification email
