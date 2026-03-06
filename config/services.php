@@ -35,4 +35,21 @@ return [
         ],
     ],
 
+    // ── NauticSecure Image Pipeline ──
+
+    'cloudinary' => [
+        'cloud_name'       => env('CLOUDINARY_CLOUD_NAME'),
+        'api_key'          => env('CLOUDINARY_API_KEY'),
+        'api_secret'       => env('CLOUDINARY_API_SECRET'),
+        'enhance_enabled'  => env('CLOUDINARY_ENHANCE_ENABLED', false),
+    ],
+
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+    ],
+
 ];
