@@ -1565,6 +1565,181 @@ paths:
                   message:
                     $ref: '#/components/schemas/ConversationMessage'
 
+  /api/chat/widget/init:
+    post:
+      summary: Initialize chat widget session
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatWidgetInitRequest'
+            example:
+              visitor_id: "visitor-uuid"
+              harbor_id: 1
+      responses:
+        '200':
+          description: Widget session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatWidgetInitResponse'
+
+  /api/chat/conversations:
+    post:
+      summary: Create chat conversation (widget)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatConversationCreateRequest'
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversation'
+        '401':
+          description: Invalid session token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+    get:
+      summary: List chat conversations
+      parameters:
+        - in: query
+          name: harbor_id
+          schema:
+            type: integer
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: priority
+          schema:
+            type: string
+        - in: query
+          name: assigned_only
+          schema:
+            type: boolean
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Conversation list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversationListResponse'
+
+  /api/chat/conversations/{id}:
+    get:
+      summary: Get chat conversation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversation'
+    patch:
+      summary: Update chat conversation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatConversationUpdateRequest'
+      responses:
+        '200':
+          description: Updated conversation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversation'
+
+  /api/chat/conversations/{id}/messages:
+    post:
+      summary: Add chat message
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageCreateRequest'
+      responses:
+        '201':
+          description: Message created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+
+  /api/chat/conversations/{id}/stream:
+    get:
+      summary: Stream recent chat messages
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/chat/messages/{id}/thumbs-up:
+    post:
+      summary: Thumbs up a chat answer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Saved for training
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
   /api/social/schedule:
     post:
       summary: Schedule social video posts
@@ -6284,4 +6459,305 @@ components:
           nullable: true
         meta:
           type: object
+          nullable: true
+
+    ChatWidgetInitRequest:
+      type: object
+      properties:
+        visitor_id:
+          type: string
+          nullable: true
+        harbor_id:
+          type: integer
+          nullable: true
+
+    ChatWidgetInitResponse:
+      type: object
+      properties:
+        visitor_id:
+          type: string
+        session_id:
+          type: string
+        session_jwt:
+          type: string
+
+    ChatContact:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        whatsapp_user_id:
+          type: string
+          nullable: true
+        language_preferred:
+          type: string
+          nullable: true
+        do_not_contact:
+          type: boolean
+        consent_marketing:
+          type: boolean
+        consent_service_messages:
+          type: boolean
+
+    ChatConversation:
+      type: object
+      properties:
+        id:
+          type: string
+        harbor_id:
+          type: integer
+        location_id:
+          type: integer
+        boat_id:
+          type: integer
+          nullable: true
+        contact_id:
+          type: string
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+        priority:
+          type: string
+        channel_origin:
+          type: string
+          nullable: true
+        ai_mode:
+          type: string
+          nullable: true
+        language_preferred:
+          type: string
+          nullable: true
+        language_detected:
+          type: string
+          nullable: true
+        page_url:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        last_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_customer_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_staff_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        first_response_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        assigned_to:
+          type: integer
+          nullable: true
+        contact:
+          $ref: '#/components/schemas/ChatContact'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          nullable: true
+
+    ChatConversationCreateRequest:
+      type: object
+      properties:
+        visitor_id:
+          type: string
+          nullable: true
+        session_jwt:
+          type: string
+          nullable: true
+        contact:
+          type: object
+          nullable: true
+        boat_id:
+          type: integer
+          nullable: true
+        page_url:
+          type: string
+          nullable: true
+        harbor_id:
+          type: integer
+          nullable: true
+        widget_harbor_id:
+          type: integer
+          nullable: true
+        channel_origin:
+          type: string
+          nullable: true
+        ai_mode:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          nullable: true
+        language_preferred:
+          type: string
+          nullable: true
+        language_detected:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        reuse:
+          type: boolean
+          nullable: true
+
+    ChatConversationUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [open, pending, solved]
+        priority:
+          type: string
+          enum: [low, normal, high]
+        ai_mode:
+          type: string
+          enum: [auto, assist, off]
+        harbor_id:
+          type: integer
+          nullable: true
+        assign_to:
+          type: integer
+          nullable: true
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        sender_type:
+          type: string
+        text:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+        channel:
+          type: string
+          nullable: true
+        external_message_id:
+          type: string
+          nullable: true
+        message_type:
+          type: string
+        status:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatAttachment'
+          nullable: true
+
+    ChatAttachment:
+      type: object
+      properties:
+        id:
+          type: string
+        message_id:
+          type: string
+          nullable: true
+        storage_key:
+          type: string
+        mime_type:
+          type: string
+        size:
+          type: integer
+        checksum:
+          type: string
+          nullable: true
+
+    ChatMessageCreateRequest:
+      type: object
+      properties:
+        sender_type:
+          type: string
+          enum: [visitor, admin, ai, system]
+        text:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+        channel:
+          type: string
+          nullable: true
+        external_message_id:
+          type: string
+          nullable: true
+        message_type:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        attachments:
+          type: array
+          nullable: true
+        contact:
+          type: object
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+        session_jwt:
+          type: string
+          nullable: true
+
+    ChatConversationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatConversation'
+        next_cursor:
+          type: string
           nullable: true

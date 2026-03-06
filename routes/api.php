@@ -19,6 +19,9 @@ use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
+use App\Http\Controllers\Api\ChatConversationController;
+use App\Http\Controllers\Api\ChatMessageController;
+use App\Http\Controllers\Api\ChatWidgetController;
 use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
@@ -101,6 +104,11 @@ Route::prefix('public')->group(function () {
     Route::post('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
 });
 
+// Chat widget (public)
+Route::post('chat/widget/init', [ChatWidgetController::class, 'init']);
+Route::post('chat/conversations', [ChatConversationController::class, 'store']);
+Route::post('chat/conversations/{id}/messages', [ChatMessageController::class, 'store']);
+
 // Public analytics
 Route::post('analytics/track', [AnalyticsController::class, 'track']);
 Route::get('analytics/summary', [AnalyticsController::class, 'summary']);
@@ -153,6 +161,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
     Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
     Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
+
+    // Chat inbox (staff & authenticated users)
+    Route::get('chat/conversations', [ChatConversationController::class, 'index']);
+    Route::get('chat/conversations/{id}', [ChatConversationController::class, 'show']);
+    Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
+    Route::get('chat/conversations/{id}/stream', [ChatConversationController::class, 'stream']);
+    Route::post('chat/messages/{id}/thumbs-up', [ChatMessageController::class, 'thumbsUp']);
 
     // Social video automation (NauticSecure parity)
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);
