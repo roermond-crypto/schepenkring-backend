@@ -3,6 +3,38 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\ImagePipelineController;
+use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
+use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
+use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
+use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\CopilotAuditController;
+use App\Http\Controllers\Api\CopilotController;
+use App\Http\Controllers\Api\CopilotVoiceSettingsController;
+use App\Http\Controllers\Api\ConversationMessageController;
+use App\Http\Controllers\Api\LeadController;
+use App\Http\Controllers\Api\LeadConversionController;
+use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
+use App\Http\Controllers\Api\Me\MeController;
+use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
+use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
+use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
+use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PublicLeadController;
+use App\Http\Controllers\Api\SignhostController;
+use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
+use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
+use App\Http\Controllers\Api\Tasks\TaskAutomationController;
+use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
+use App\Http\Controllers\Api\Tasks\TaskController;
+use App\Http\Controllers\Api\Tasks\TaskUserController;
+use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
+use App\Http\Controllers\Api\Admin\CopilotActionController;
+use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
+use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
 
 // ──────────────────────────────────────────────────────────
 // PUBLIC routes (no auth needed for dev/testing)
@@ -74,39 +106,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk', [\App\Http\Controllers\Api\SettingsController::class, 'bulkUpdate']);
         });
     });
-use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
-use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
-use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
-use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
-use App\Http\Controllers\Api\Auth\RegisterController;
-use App\Http\Controllers\Api\Auth\SessionController;
-use App\Http\Controllers\Api\CopilotAuditController;
-use App\Http\Controllers\Api\CopilotController;
-use App\Http\Controllers\Api\CopilotVoiceSettingsController;
-use App\Http\Controllers\Api\ConversationMessageController;
-use App\Http\Controllers\Api\LeadController;
-use App\Http\Controllers\Api\LeadConversionController;
-use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
-use App\Http\Controllers\Api\Me\MeController;
-use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
-use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
-use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
-use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
-use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\PublicLeadController;
-use App\Http\Controllers\Api\SignhostController;
-use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
-use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
-use App\Http\Controllers\Api\Tasks\TaskAutomationController;
-use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
-use App\Http\Controllers\Api\Tasks\TaskController;
-use App\Http\Controllers\Api\Tasks\TaskUserController;
-use App\Http\Controllers\Api\WebhookController;
-use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
-use App\Http\Controllers\Api\Admin\CopilotActionController;
-use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
-use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
-use Illuminate\Support\Facades\Route;
+
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [RegisterController::class, 'store'])->middleware('throttle:5,1');
@@ -232,4 +232,6 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('copilot/phrases', [CopilotActionPhraseController::class, 'store']);
     Route::put('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'update']);
     Route::delete('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'destroy']);
+});
+
 });
