@@ -11,21 +11,24 @@ class Lead extends Model
     use HasFactory;
 
     protected $fillable = [
-        'conversation_id',
         'location_id',
-        'status',
+        'client_id',
+        'converted_client_id',
+        'conversation_id',
         'assigned_employee_id',
+        'status',
+        'source',
         'source_url',
+        'notes',
+        'name',
+        'email',
+        'phone',
         'referrer',
         'utm_source',
         'utm_medium',
         'utm_campaign',
         'utm_term',
         'utm_content',
-        'converted_client_id',
-        'name',
-        'email',
-        'phone',
         'address_line1',
         'address_line2',
         'city',
@@ -68,5 +71,11 @@ class Lead extends Model
     public function convertedClient(): BelongsTo
     {
         return $this->belongsTo(User::class, 'converted_client_id');
+    }
+
+    // Retaining client method to avoid breaking existing code just in case
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'client_id');
     }
 }

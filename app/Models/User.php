@@ -18,7 +18,6 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasFactory, Notifiable, HasApiTokens, Auditable;
 
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -73,28 +72,23 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function casts(): array
     {
         return [
-            'last_login_at'      => 'datetime',
-            'password'           => 'hashed',
-            'is_active'          => 'boolean',
-            'lockscreen_timeout' => 'integer',
-            'otp_enabled'        => 'boolean',
-            'email_verified_at' => 'datetime',
-            'type' => UserType::class,
-            'status' => UserStatus::class,
-            'date_of_birth' => 'date',
-            'two_factor_enabled' => 'boolean',
-            'two_factor_confirmed_at' => 'datetime',
-            'email_changed_at' => 'datetime',
-            'phone_changed_at' => 'datetime',
-            'password_changed_at' => 'datetime',
-            'notifications_enabled' => 'boolean',
+            'email_verified_at'           => 'datetime',
+            'last_login_at'               => 'datetime',
+            'password'                    => 'hashed',
+            'is_active'                   => 'boolean',
+            'lockscreen_timeout'          => 'integer',
+            'otp_enabled'                 => 'boolean',
+            'type'                        => UserType::class,
+            'status'                      => UserStatus::class,
+            'date_of_birth'               => 'date',
+            'two_factor_enabled'          => 'boolean',
+            'two_factor_confirmed_at'     => 'datetime',
+            'email_changed_at'            => 'datetime',
+            'phone_changed_at'            => 'datetime',
+            'password_changed_at'         => 'datetime',
+            'notifications_enabled'       => 'boolean',
             'email_notifications_enabled' => 'boolean',
         ];
-    }
-
-    public function isStaff(): bool
-    {
-        return in_array($this->role, ['admin', 'employee']);
     }
 
     // ── Relationships ────────────────────────────────────
@@ -113,7 +107,6 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(AppNotification::class);
     }
-
     public function yachts()
     {
         return $this->hasMany(Yacht::class);
@@ -135,7 +128,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $query->whereIn('role', ['admin', 'employee']);
     }
-
+    // ── Relations ──────────────────────────────────────────
     public function locations(): BelongsToMany
     {
         return $this->belongsToMany(Location::class)
@@ -183,5 +176,10 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isActive(): bool
     {
         return $this->status === UserStatus::ACTIVE;
+    }
+
+    public function isStaff(): bool
+    {
+        return $this->isAdmin() || $this->isEmployee();
     }
 }

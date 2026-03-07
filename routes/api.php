@@ -71,7 +71,14 @@ Route::prefix('auth')->group(function () {
 // Yachts
 Route::apiResource('yachts', YachtController::class);
 
-// Image pipeline
+// ── CRM Public Chat Widget ──────────
+Route::post('public/leads', [PublicLeadController::class, 'store']);
+Route::prefix('public/conversations/{conversationId}')->group(function () {
+    Route::post('messages', [PublicConversationMessageController::class, 'store']);
+    Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
+});
+
+// ── Image Pipeline ──────────
 Route::prefix('yachts/{yachtId}/images')->group(function () {
     Route::post('/upload', [ImagePipelineController::class, 'upload']);
     Route::get('/', [ImagePipelineController::class, 'index']);
