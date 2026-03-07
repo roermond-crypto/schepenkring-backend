@@ -275,7 +275,6 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk', [SettingsController::class, 'bulkUpdate']);
         });
     });
-});
 
 // ──────────────────────────────────────────────────────────
 // Admin routes
