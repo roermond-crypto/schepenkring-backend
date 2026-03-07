@@ -34,6 +34,16 @@ class AuditLog extends Model
         'snapshot_after'  => 'array',
     ];
 
+    /**
+     * The model's default values for attributes.
+     *
+     * @var array
+     */
+    protected $attributes = [
+        'risk_level' => 'INFO',
+        'result' => 'SUCCESS',
+    ];
+
     // ── Relationships ────────────────────────────────────
 
     public function user()
