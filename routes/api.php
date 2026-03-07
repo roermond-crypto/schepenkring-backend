@@ -32,12 +32,6 @@ use App\Http\Controllers\Api\LeadConversionController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
 use App\Http\Controllers\Api\SocialVideoController;
-use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
-use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
-use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
-use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
-use App\Http\Controllers\Api\Auth\RegisterController;
-use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
 use App\Http\Controllers\Api\Me\MeController;
 use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
@@ -49,7 +43,6 @@ use App\Http\Controllers\Api\PublicLeadController;
 use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
-use App\Http\Controllers\Api\SocialVideoController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
 use App\Http\Controllers\Api\Tasks\TaskAutomationController;
@@ -62,7 +55,6 @@ use App\Http\Controllers\Api\YachtController;
 
 // ──────────────────────────────────────────────────────────
 // Public routes (no auth needed for dev/testing)
-use App\Http\Controllers\Api\WebhookController;
 
 // ──────────────────────────────────────────────────────────
 // Auth routes
@@ -275,7 +267,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk', [SettingsController::class, 'bulkUpdate']);
         });
     });
-});
+
 
 // ──────────────────────────────────────────────────────────
 // Admin routes
