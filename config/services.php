@@ -50,12 +50,26 @@ return [
 
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
+    ],
+
     'signhost' => [
         'base_url' => env('SIGNHOST_BASE_URL', 'https://api.signhost.com/api/'),
         'app_key' => env('SIGNHOST_APP_KEY'),
         'user_token' => env('SIGNHOST_USER_TOKEN'),
         'shared_secret' => env('SIGNHOST_SHARED_SECRET'),
         'webhook_auth' => env('SIGNHOST_WEBHOOK_AUTH'),
+    ],
+
+    'yext' => [
+        'api_key' => env('YEXT_API_KEY'),
+        'account_id' => env('YEXT_ACCOUNT_ID'),
+        'entity_id' => env('YEXT_ENTITY_ID'),
+        'api_base' => env('YEXT_API_BASE', 'https://api.yextapis.com'),
+        'api_version' => env('YEXT_API_VERSION', '20240101'),
+        'use_publisher_targets' => env('YEXT_USE_PUBLISHER_TARGETS', true),
+        'use_video_upload' => env('YEXT_USE_VIDEO_UPLOAD', false),
+        'video_publishers' => array_filter(array_map('trim', explode(',', env('YEXT_VIDEO_PUBLISHERS', 'facebook,instagram')))),
+        'analytics_endpoint' => env('YEXT_ANALYTICS_ENDPOINT'),
     ],
 
 ];

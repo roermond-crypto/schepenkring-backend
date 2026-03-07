@@ -3,6 +3,28 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\ImagePipelineController;
+use App\Http\Controllers\Api\SocialVideoController;
+use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
+use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
+use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
+use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
+use App\Http\Controllers\Api\Me\MeController;
+use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
+use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
+use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
+use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\SignhostController;
+use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
+use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
+use App\Http\Controllers\Api\Tasks\TaskAutomationController;
+use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
+use App\Http\Controllers\Api\Tasks\TaskController;
+use App\Http\Controllers\Api\Tasks\TaskUserController;
+use App\Http\Controllers\Api\WebhookController;
 
 // ──────────────────────────────────────────────────────────
 // Auth routes
@@ -67,6 +89,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllAsRead']);
     });
 
+    // Social Media / Video Automation
+    // ================== SOCIAL VIDEO AUTOMATION ==================
+    Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
+    Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
+    Route::patch('/social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
+    Route::post('/social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
+    Route::post('/social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
+
     // Audit logs
     Route::get('audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
     Route::get('audit-logs/{type}/{id}', [\App\Http\Controllers\Api\AuditLogController::class, 'forResource']);
@@ -81,28 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk', [\App\Http\Controllers\Api\SettingsController::class, 'bulkUpdate']);
         });
     });
-use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
-use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
-use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
-use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
-use App\Http\Controllers\Api\Auth\RegisterController;
-use App\Http\Controllers\Api\Auth\SessionController;
-use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
-use App\Http\Controllers\Api\Me\MeController;
-use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
-use App\Http\Controllers\Api\Me\PersonalController as MePersonalController;
-use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
-use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
-use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\SignhostController;
-use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
-use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
-use App\Http\Controllers\Api\Tasks\TaskAutomationController;
-use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
-use App\Http\Controllers\Api\Tasks\TaskController;
-use App\Http\Controllers\Api\Tasks\TaskUserController;
-use App\Http\Controllers\Api\WebhookController;
-use Illuminate\Support\Facades\Route;
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [RegisterController::class, 'store'])->middleware('throttle:5,1');
