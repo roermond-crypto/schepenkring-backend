@@ -73,30 +73,23 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function casts(): array
     {
         return [
-            'email_verified_at'  => 'datetime',
             'last_login_at'      => 'datetime',
             'password'           => 'hashed',
             'is_active'          => 'boolean',
             'lockscreen_timeout' => 'integer',
             'otp_enabled'        => 'boolean',
+            'email_verified_at' => 'datetime',
+            'type' => UserType::class,
+            'status' => UserStatus::class,
+            'date_of_birth' => 'date',
+            'two_factor_enabled' => 'boolean',
+            'two_factor_confirmed_at' => 'datetime',
+            'email_changed_at' => 'datetime',
+            'phone_changed_at' => 'datetime',
+            'password_changed_at' => 'datetime',
+            'notifications_enabled' => 'boolean',
+            'email_notifications_enabled' => 'boolean',
         ];
-    }
-
-    // ── Role helpers ─────────────────────────────────────
-
-    public function isAdmin(): bool
-    {
-        return $this->role === 'admin';
-    }
-
-    public function isEmployee(): bool
-    {
-        return $this->role === 'employee';
-    }
-
-    public function isClient(): bool
-    {
-        return $this->role === 'client';
     }
 
     public function isStaff(): bool
@@ -116,7 +109,7 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(User::class, 'invited_by');
     }
 
-    public function notifications()
+    public function appNotifications()
     {
         return $this->hasMany(AppNotification::class);
     }
@@ -141,20 +134,6 @@ class User extends Authenticatable implements MustVerifyEmail
     public function scopeStaff($query)
     {
         return $query->whereIn('role', ['admin', 'employee']);
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'type' => UserType::class,
-            'status' => UserStatus::class,
-            'date_of_birth' => 'date',
-            'two_factor_enabled' => 'boolean',
-            'two_factor_confirmed_at' => 'datetime',
-            'email_changed_at' => 'datetime',
-            'phone_changed_at' => 'datetime',
-            'password_changed_at' => 'datetime',
-            'last_login_at' => 'datetime',
-            'notifications_enabled' => 'boolean',
-            'email_notifications_enabled' => 'boolean',
-        ];
     }
 
     public function locations(): BelongsToMany
