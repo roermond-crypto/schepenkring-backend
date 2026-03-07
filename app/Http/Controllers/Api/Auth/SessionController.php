@@ -16,7 +16,7 @@ class SessionController extends Controller
         $result = $action->execute($request->validated());
 
         return response()->json([
-            'data' => new UserResource($result['user']->load(['locations', 'clientLocation'])),
+            'user' => new UserResource($result['user']->load(['locations', 'clientLocation'])),
             'token' => $result['token'],
         ]);
     }

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
 use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\SessionController;
+use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
 use App\Http\Controllers\Api\Me\MeController;
 use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
@@ -25,6 +26,9 @@ use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
 use App\Http\Controllers\Api\Tasks\TaskController;
 use App\Http\Controllers\Api\Tasks\TaskUserController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\ConversationMessageController;
+use App\Http\Controllers\Api\PublicLeadController;
+use App\Http\Controllers\Api\PublicConversationMessageController;
 
 // ──────────────────────────────────────────────────────────
 // Auth routes
@@ -40,6 +44,13 @@ Route::prefix('auth')->group(function () {
 
 // Yachts CRUD
 Route::apiResource('yachts', \App\Http\Controllers\Api\YachtController::class);
+
+// ── CRM Public Chat Widget ──────────
+Route::post('public/leads', [PublicLeadController::class, 'store']);
+Route::prefix('public/conversations/{conversationId}')->group(function () {
+    Route::post('messages', [PublicConversationMessageController::class, 'store']);
+    Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
+});
 
 // ── Image Pipeline ──────────
 Route::prefix('yachts/{yachtId}/images')->group(function () {
@@ -121,6 +132,15 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+    // CRM / Leads
+    Route::get('leads', [LeadController::class, 'index']);
+    Route::get('leads/{id}', [LeadController::class, 'show']);
+    Route::patch('leads/{id}', [LeadController::class, 'update']);
+    
+    // CRM / Conversations & Messages
+    Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
+    Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
+
     Route::get('me', [MeController::class, 'show']);
     Route::patch('me/profile', [MeProfileController::class, 'update']);
     Route::patch('me/personal', [MePersonalController::class, 'update']);

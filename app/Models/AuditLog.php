@@ -7,22 +7,31 @@ use Illuminate\Database\Eloquent\Model;
 class AuditLog extends Model
 {
     protected $fillable = [
-        'user_id',
+        'actor_id',
+        'impersonator_id',
         'action',
-        'auditable_type',
-        'auditable_id',
-        'old_values',
-        'new_values',
+        'risk_level',
+        'result',
+        'location_id',
+        'target_type',
+        'target_id',
+        'entity_type',
+        'entity_id',
+        'meta',
+        'snapshot_before',
+        'snapshot_after',
         'ip_address',
+        'ip_hash',
         'user_agent',
-        'reason',
-        'metadata',
+        'device_id',
+        'request_id',
+        'idempotency_key',
     ];
 
     protected $casts = [
-        'old_values' => 'array',
-        'new_values' => 'array',
-        'metadata'   => 'array',
+        'meta'            => 'array',
+        'snapshot_before' => 'array',
+        'snapshot_after'  => 'array',
     ];
 
     // ── Relationships ────────────────────────────────────
