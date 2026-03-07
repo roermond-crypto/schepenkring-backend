@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('boat_checklist_statuses', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('boat_id')->constrained('yachts')->onDelete('cascade');
+            $table->unsignedBigInteger('boat_id')->index();
             $table->foreignId('checklist_item_id')->constrained('checklist_items')->onDelete('cascade');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->enum('status', ['pending', 'completed'])->default('pending');
