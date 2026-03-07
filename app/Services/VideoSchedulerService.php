@@ -9,8 +9,15 @@ use Illuminate\Support\Collection;
 
 class VideoSchedulerService
 {
-    public function scheduleVideos(array $videoIds, string $startDate, string $time, bool $skipWeekends, array $publishers = [], ?string $yextAccountId = null, ?string $yextEntityId = null): Collection
-    {
+    public function scheduleVideos(
+        array $videoIds,
+        string $startDate,
+        string $time,
+        bool $skipWeekends,
+        array $publishers = [],
+        ?string $yextAccountId = null,
+        ?string $yextEntityId = null
+    ): Collection {
         $scheduled = collect();
         $cursor = Carbon::parse($startDate . ' ' . $time);
 
@@ -50,8 +57,14 @@ class VideoSchedulerService
         return $scheduled;
     }
 
-    public function scheduleNextAvailable(Video $video, string $time, bool $skipWeekends, array $publishers = [], ?string $yextAccountId = null, ?string $yextEntityId = null): ?VideoPost
-    {
+    public function scheduleNextAvailable(
+        Video $video,
+        string $time,
+        bool $skipWeekends,
+        array $publishers = [],
+        ?string $yextAccountId = null,
+        ?string $yextEntityId = null
+    ): ?VideoPost {
         if ($video->status !== 'ready') {
             return null;
         }

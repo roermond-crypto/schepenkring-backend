@@ -33,6 +33,8 @@ class RenderMarketingVideo implements ShouldQueue
 
     public function handle(): void
     {
+        // Stub implementation to keep the API contract intact.
+        Log::info('RenderMarketingVideo stub executed', ['video_id' => $this->videoId]);
         $video = Video::find($this->videoId);
         if (!$video) {
             Log::error("Marketing video {$this->videoId} not found");
