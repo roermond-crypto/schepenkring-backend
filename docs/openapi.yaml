@@ -420,7 +420,179 @@ paths:
               example:
                 success: true
                 message: "All notifications marked as read"
-                count: 5
+
+  /api/analytics/track:
+    post:
+      summary: Track analytics event
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyticsTrackRequest'
+            example:
+              external_id: "123"
+              name: "Boat 123"
+              model: "Model X"
+              price: "35000"
+              ref_code: "REF-123"
+              url: "https://schepenkring.example/boats/123"
+              specs:
+                length: "10m"
+              year: "2019"
+              location: "Amsterdam"
+              referrer: "https://google.com"
+              resolution: "1920x1080"
+              language: "nl"
+      responses:
+        '200':
+          description: Synced
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "synced"
+
+  /api/analytics/summary:
+    get:
+      summary: Analytics summary
+      security: []
+      responses:
+        '200':
+          description: Summary rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AnalyticsSummaryRow'
+
+  /api/copilot/resolve:
+    post:
+      summary: Resolve copilot input
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotResolveRequest'
+            example:
+              text: "Open boat 12"
+              source: "header"
+              context:
+                language: "nl"
+      responses:
+        '200':
+          description: Copilot resolution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotResolveResponse'
+
+  /api/copilot/track:
+    post:
+      summary: Track copilot event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotTrackRequest'
+            example:
+              event: "clicked"
+              action_id: "boat.view"
+              deeplink: "/admin/boats/12"
+      responses:
+        '200':
+          description: Tracked
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "tracked"
+
+  /api/copilot/audit:
+    get:
+      summary: List copilot audit events
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+            enum: [header, chatpage, voice]
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: failed_only
+          schema:
+            type: boolean
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CopilotAuditEvent'
+                  meta:
+                    type: object
+                  links:
+                    type: object
+
+  /api/copilot/voice-settings:
+    get:
+      summary: Get copilot voice settings
+      responses:
+        '200':
+          description: Voice settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotVoiceSettings'
+    put:
+      summary: Update copilot voice settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotVoiceSettings'
+            example:
+              tts_enabled: true
+              tts_voice_id: "en-US-Neural2-A"
+              stt_language: "nl"
+              speaking_rate: 1.0
+              pitch: 0.0
+      responses:
+        '200':
+          description: Updated voice settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotVoiceSettings'
 
   /api/contracts/generate:
     post:
@@ -910,6 +1082,824 @@ paths:
               example:
                 message: "queued"
 
+  /api/public/leads:
+    post:
+      summary: Create lead from widget
+      security: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicLeadCreateRequest'
+            example:
+              location_id: 2
+              source_url: "https://schepenkring.example/boats/123"
+              referrer: "https://google.com"
+              utm_source: "google"
+              utm_medium: "cpc"
+              utm_campaign: "spring"
+              name: "Jane Lead"
+              email: "jane@example.com"
+              phone: "+31-6-12345678"
+              address_line1: "Harbor Street 1"
+              city: "Amsterdam"
+              country: "NL"
+              message: "Interested in the boat."
+              client_message_id: "msg-uuid-1"
+              delivery_state: "sent"
+              visitor_id: "visitor-uuid-1"
+      responses:
+        '201':
+          description: Lead created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+                  conversation:
+                    $ref: '#/components/schemas/Conversation'
+                  message:
+                    $ref: '#/components/schemas/ConversationMessage'
+              example:
+                lead:
+                  id: 123
+                  conversation_id: "c8f5c5d4-8d24-4dd2-bdf0-9c6ad3d4f9b1"
+                  location_id: 2
+                  status: "new"
+                  source_url: "https://schepenkring.example/boats/123"
+                  name: "Jane Lead"
+                  email: "jane@example.com"
+                  phone: "+31-6-12345678"
+                  created_at: "2026-03-06T10:00:00Z"
+                  updated_at: "2026-03-06T10:00:00Z"
+                conversation:
+                  id: "c8f5c5d4-8d24-4dd2-bdf0-9c6ad3d4f9b1"
+                  location_id: 2
+                  channel: "web_widget"
+                  status: "open"
+                  lead_id: 123
+                  created_at: "2026-03-06T10:00:00Z"
+                  updated_at: "2026-03-06T10:00:00Z"
+                message:
+                  id: "9b2d1f1f-3d60-44a9-9d0b-7a7f1fdf2d6c"
+                  conversation_id: "c8f5c5d4-8d24-4dd2-bdf0-9c6ad3d4f9b1"
+                  sender_type: "visitor"
+                  body: "Interested in the boat."
+                  client_message_id: "msg-uuid-1"
+                  delivery_state: "sent"
+                  created_at: "2026-03-06T10:00:00Z"
+                  updated_at: "2026-03-06T10:00:00Z"
+
+  /api/public/conversations/{conversationId}/lead:
+    patch:
+      summary: Update lead contact details from widget
+      security: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicLeadUpdateRequest'
+            example:
+              name: "Jane Lead"
+              email: "jane@example.com"
+              phone: "+31-6-12345678"
+              address_line1: "Harbor Street 1"
+              city: "Amsterdam"
+              country: "NL"
+      responses:
+        '200':
+          description: Lead updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+
+  /api/public/conversations/{conversationId}/messages:
+    post:
+      summary: Add message from widget
+      security: []
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationMessageStoreRequest'
+            example:
+              body: "Hello, any updates?"
+              client_message_id: "msg-uuid-2"
+              delivery_state: "sent"
+              visitor_id: "visitor-uuid-1"
+      responses:
+        '201':
+          description: Message created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: '#/components/schemas/ConversationMessage'
+
+  /api/public/locations:
+    get:
+      summary: List locations (public)
+      security: []
+      parameters:
+        - in: query
+          name: include_inactive
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Location'
+              example:
+                - id: 1
+                  name: "Schepenkring Amsterdam"
+                  code: "AMS"
+                - id: 2
+                  name: "Schepenkring Friesland"
+                  code: "FRL"
+
+  /api/public/bids/register:
+    post:
+      summary: Register bidder (NAWTE) and send verification email
+      security: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidderRegisterRequest'
+            example:
+              full_name: "Jan de Vries"
+              address: "Havenstraat 10"
+              postal_code: "1012 AB"
+              city: "Amsterdam"
+              phone: "+31-6-12345678"
+              email: "jan@example.com"
+      responses:
+        '200':
+          description: Bidder already verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidRegisterResponse'
+              example:
+                status: "verified"
+                bidder:
+                  id: 12
+                  full_name: "Jan de Vries"
+                  email: "jan@example.com"
+                  verified_at: "2026-03-06T10:00:00Z"
+                session_token: "bid_session_token"
+                session_expires_at: "2027-03-06T10:00:00Z"
+        '202':
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidRegisterResponse'
+              example:
+                status: "verification_sent"
+                bidder:
+                  id: 12
+                  full_name: "Jan de Vries"
+                  email: "jan@example.com"
+                verification_sent_at: "2026-03-06T10:05:00Z"
+
+  /api/public/bids/verify:
+    post:
+      summary: Verify bidder email token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidderVerifyRequest'
+            example:
+              token: "verification_token"
+      responses:
+        '200':
+          description: Bidder verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidVerifyResponse'
+              example:
+                status: "verified"
+                bidder:
+                  id: 12
+                  full_name: "Jan de Vries"
+                  email: "jan@example.com"
+                  verified_at: "2026-03-06T10:06:00Z"
+                session_token: "bid_session_token"
+                session_expires_at: "2027-03-06T10:06:00Z"
+
+  /api/public/bids/{yachtId}/state:
+    get:
+      summary: Get current bid state for listing
+      security: []
+      parameters:
+        - in: path
+          name: yachtId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Bid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidStateResponse'
+              example:
+                yacht_id: 42
+                allow_bidding: true
+                current_bid: 45000
+                minimum_next_bid: 45500
+                min_increment: 500
+
+  /api/public/bids/{yachtId}:
+    post:
+      summary: Place a bid
+      security: []
+      parameters:
+        - in: path
+          name: yachtId
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: X-Bid-Token
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidPlaceRequest'
+            example:
+              amount: 46000
+      responses:
+        '201':
+          description: Bid placed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidPlaceResponse'
+              example:
+                bid:
+                  id: 88
+                  yacht_id: 42
+                  bidder_id: 12
+                  amount: 46000
+                  bidder_name: "Jan de Vries"
+                  bidder_email: "jan@example.com"
+                  bidder_phone: "+31-6-12345678"
+                  created_at: "2026-03-06T10:07:00Z"
+                current_bid: 46000
+                minimum_next_bid: 46500
+
+  /api/leads:
+    get:
+      summary: List leads
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [new, contacted, interested, converted, closed]
+        - in: query
+          name: location_id
+          schema:
+            type: integer
+        - in: query
+          name: assigned_employee_id
+          schema:
+            type: integer
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated leads
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadListResponse'
+
+  /api/leads/{id}:
+    get:
+      summary: Get lead
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lead
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+    patch:
+      summary: Update lead
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadUpdateRequest'
+            example:
+              status: "contacted"
+              assigned_employee_id: 12
+      responses:
+        '200':
+          description: Updated lead
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+
+  /api/leads/{id}/convert-to-client:
+    post:
+      summary: Convert lead to client
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lead converted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client:
+                    $ref: '#/components/schemas/User'
+                  lead:
+                    $ref: '#/components/schemas/Lead'
+
+  /api/conversations/{conversationId}/messages:
+    get:
+      summary: List conversation messages
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationMessageListResponse'
+    post:
+      summary: Add conversation message (staff)
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationMessageStoreRequest'
+            example:
+              body: "Thanks, we will follow up."
+              client_message_id: "msg-uuid-3"
+              delivery_state: "sent"
+      responses:
+        '201':
+          description: Message created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: '#/components/schemas/ConversationMessage'
+
+  /api/chat/widget/init:
+    post:
+      summary: Initialize chat widget session
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatWidgetInitRequest'
+            example:
+              visitor_id: "visitor-uuid"
+              harbor_id: 1
+      responses:
+        '200':
+          description: Widget session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatWidgetInitResponse'
+
+  /api/chat/conversations:
+    post:
+      summary: Create chat conversation (widget)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatConversationCreateRequest'
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversation'
+        '401':
+          description: Invalid session token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+    get:
+      summary: List chat conversations
+      parameters:
+        - in: query
+          name: harbor_id
+          schema:
+            type: integer
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: priority
+          schema:
+            type: string
+        - in: query
+          name: assigned_only
+          schema:
+            type: boolean
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Conversation list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversationListResponse'
+
+  /api/chat/conversations/{id}:
+    get:
+      summary: Get chat conversation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversation'
+    patch:
+      summary: Update chat conversation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatConversationUpdateRequest'
+      responses:
+        '200':
+          description: Updated conversation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatConversation'
+
+  /api/chat/conversations/{id}/messages:
+    post:
+      summary: Add chat message
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageCreateRequest'
+      responses:
+        '201':
+          description: Message created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+
+  /api/chat/conversations/{id}/stream:
+    get:
+      summary: Stream recent chat messages
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/chat/messages/{id}/thumbs-up:
+    post:
+      summary: Thumbs up a chat answer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Saved for training
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/social/schedule:
+    post:
+      summary: Schedule social video posts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialScheduleRequest'
+            example:
+              start_date: "2026-03-10"
+              cadence: "daily"
+              time: "10:30"
+              video_ids: [1, 2, 3]
+              publishers: ["facebook", "instagram"]
+              skip_weekends: true
+              yext_account_id: "acct_123"
+              yext_entity_id: "ent_456"
+      responses:
+        '200':
+          description: Scheduled posts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialScheduleResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/social/videos:
+    get:
+      summary: List marketing videos
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [queued, processing, ready, failed]
+        - in: query
+          name: yacht_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated videos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoListResponse'
+
+  /api/social/posts:
+    get:
+      summary: List scheduled video posts
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [scheduled, publishing, published, failed]
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Paginated posts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoPostListResponse'
+
+  /api/social/posts/{id}/reschedule:
+    patch:
+      summary: Reschedule a social post
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialPostRescheduleRequest'
+            example:
+              scheduled_at: "2026-03-12T10:30:00Z"
+      responses:
+        '200':
+          description: Post rescheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  post:
+                    $ref: '#/components/schemas/VideoPost'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/social/posts/{id}/retry:
+    post:
+      summary: Retry a failed social post
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Post queued for retry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  post:
+                    $ref: '#/components/schemas/VideoPost'
+
+  /api/social/videos/{id}/regenerate:
+    post:
+      summary: Regenerate a marketing video
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '202':
+          description: Regeneration queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  video:
+                    $ref: '#/components/schemas/Video'
+
   /broadcasting/auth:
     post:
       summary: Broadcast channel authentication
@@ -921,6 +1911,486 @@ paths:
             application/json:
               schema:
                 type: object
+
+  /api/admin/copilot/action-catalog:
+    get:
+      summary: Get copilot action catalog
+      responses:
+        '200':
+          description: Action catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalog'
+
+  /api/admin/copilot/draft:
+    post:
+      summary: Draft a copilot action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotDraftRequest'
+      responses:
+        '200':
+          description: Draft result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotDraftResponse'
+
+  /api/admin/copilot/validate:
+    post:
+      summary: Validate copilot action payload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotValidateRequest'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotValidateResponse'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /api/admin/copilot/execute:
+    post:
+      summary: Execute a copilot action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotExecuteRequest'
+      responses:
+        '200':
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotExecuteResponse'
+        '409':
+          description: Confirmation required
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "Confirmation required"
+
+  /api/admin/copilot/actions:
+    get:
+      summary: List copilot actions
+      parameters:
+        - in: query
+          name: enabled
+          schema:
+            type: boolean
+        - in: query
+          name: module
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Copilot actions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CopilotAction'
+    post:
+      summary: Create copilot action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotAction'
+      responses:
+        '201':
+          description: Copilot action created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotAction'
+
+  /api/admin/copilot/actions/{action}:
+    get:
+      summary: Get copilot action
+      parameters:
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Copilot action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotAction'
+    put:
+      summary: Update copilot action
+      parameters:
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotAction'
+      responses:
+        '200':
+          description: Copilot action updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotAction'
+    delete:
+      summary: Delete copilot action
+      parameters:
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Copilot action deleted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "deleted"
+
+  /api/admin/copilot/phrases:
+    get:
+      summary: List copilot phrases
+      parameters:
+        - in: query
+          name: action_id
+          schema:
+            type: integer
+        - in: query
+          name: language
+          schema:
+            type: string
+        - in: query
+          name: enabled
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Copilot phrases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CopilotActionPhrase'
+    post:
+      summary: Create copilot phrase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotActionPhrase'
+      responses:
+        '201':
+          description: Copilot phrase created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotActionPhrase'
+
+  /api/admin/copilot/phrases/{phrase}:
+    put:
+      summary: Update copilot phrase
+      parameters:
+        - in: path
+          name: phrase
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopilotActionPhrase'
+      responses:
+        '200':
+          description: Copilot phrase updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopilotActionPhrase'
+    delete:
+      summary: Delete copilot phrase
+      parameters:
+        - in: path
+          name: phrase
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Copilot phrase deleted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "deleted"
+
+  /api/admin/errors:
+    get:
+      summary: List platform errors
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: level
+          schema:
+            type: string
+        - in: query
+          name: source
+          schema:
+            type: string
+        - in: query
+          name: environment
+          schema:
+            type: string
+        - in: query
+          name: release
+          schema:
+            type: string
+        - in: query
+          name: route
+          schema:
+            type: string
+        - in: query
+          name: user_id
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: subject
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+        - in: query
+          name: sort_dir
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformErrorList'
+
+  /api/admin/errors/stats:
+    get:
+      summary: Platform error stats
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformErrorStats'
+
+  /api/admin/errors/{error}:
+    get:
+      summary: Get platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: include_reports
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Platform error
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlatformError'
+                  - type: object
+                    properties:
+                      error:
+                        $ref: '#/components/schemas/PlatformError'
+                      reports:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/IssueReport'
+
+  /api/admin/errors/{error}/resolve:
+    post:
+      summary: Resolve platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "resolved"
+
+  /api/admin/errors/{error}/ignore:
+    post:
+      summary: Ignore platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                days:
+                  type: integer
+                until_release:
+                  type: string
+      responses:
+        '200':
+          description: Ignored
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "ignored"
+
+  /api/admin/errors/{error}/note:
+    post:
+      summary: Add internal note to platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Noted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "noted"
+
+  /api/admin/errors/{error}/assign:
+    post:
+      summary: Assign platform error
+      parameters:
+        - in: path
+          name: error
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "assigned"
+
+  /api/sentry/webhook:
+    post:
+      summary: Sentry webhook
+      security: []
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: "ok"
 
   /api/admin/users:
     get:
@@ -2899,8 +4369,1220 @@ components:
           properties:
             Id:
               type: string
-        notification:
-          $ref: '#/components/schemas/Notification'
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversation_id:
+          type: string
+        location_id:
+          type: integer
+        status:
+          type: string
+          enum: [new, contacted, interested, converted, closed]
+        assigned_employee_id:
+          type: integer
+          nullable: true
+        source_url:
+          type: string
+        referrer:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        utm_term:
+          type: string
+          nullable: true
+        utm_content:
+          type: string
+          nullable: true
+        converted_client_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        gmaps_place_id:
+          type: string
+          nullable: true
+        formatted_address:
+          type: string
+          nullable: true
+        address_components:
+          type: object
+          nullable: true
+        lat:
+          type: number
+          format: float
+          nullable: true
+        lng:
+          type: number
+          format: float
+          nullable: true
+        confidence:
+          type: string
+          nullable: true
+        maps_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        location_id:
+          type: integer
+        channel:
+          type: string
+        status:
+          type: string
+          enum: [open, closed]
+        assigned_employee_id:
+          type: integer
+          nullable: true
+        lead_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConversationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        sender_type:
+          type: string
+          enum: [visitor, employee]
+        employee_id:
+          type: integer
+          nullable: true
+        body:
+          type: string
+          nullable: true
+        client_message_id:
+          type: string
+          nullable: true
+        delivery_state:
+          type: string
+          enum: [queued, sent, failed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PublicLeadCreateRequest:
+      type: object
+      required: [location_id, source_url, message]
+      properties:
+        location_id:
+          type: integer
+        source_url:
+          type: string
+        referrer:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        utm_term:
+          type: string
+          nullable: true
+        utm_content:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        message:
+          type: string
+        client_message_id:
+          type: string
+          nullable: true
+        delivery_state:
+          type: string
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+
+    PublicLeadUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+
+    ConversationMessageStoreRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+        client_message_id:
+          type: string
+          nullable: true
+        delivery_state:
+          type: string
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+
+    Bidder:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        address:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Bid:
+      type: object
+      properties:
+        id:
+          type: integer
+        yacht_id:
+          type: integer
+        bidder_id:
+          type: integer
+        amount:
+          type: number
+          format: float
+        bidder_name:
+          type: string
+        bidder_email:
+          type: string
+        bidder_phone:
+          type: string
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BidderRegisterRequest:
+      type: object
+      required: [full_name, address, postal_code, city, phone, email]
+      properties:
+        full_name:
+          type: string
+        address:
+          type: string
+        postal_code:
+          type: string
+        city:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+
+    BidderVerifyRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    BidPlaceRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          format: float
+
+    BidRegisterResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        bidder:
+          $ref: '#/components/schemas/Bidder'
+        session_token:
+          type: string
+          nullable: true
+        session_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        verification_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    BidVerifyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        bidder:
+          $ref: '#/components/schemas/Bidder'
+        session_token:
+          type: string
+        session_expires_at:
+          type: string
+          format: date-time
+
+    BidStateResponse:
+      type: object
+      properties:
+        yacht_id:
+          type: integer
+        allow_bidding:
+          type: boolean
+        current_bid:
+          type: number
+          format: float
+          nullable: true
+        minimum_next_bid:
+          type: number
+          format: float
+        min_increment:
+          type: number
+          format: float
+
+    BidPlaceResponse:
+      type: object
+      properties:
+        bid:
+          $ref: '#/components/schemas/Bid'
+        current_bid:
+          type: number
+          format: float
+          nullable: true
+        minimum_next_bid:
+          type: number
+          format: float
+
+    LeadUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [new, contacted, interested, converted, closed]
+        assigned_employee_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address_line1:
+          type: string
+          nullable: true
+        address_line2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+        referrer:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        utm_term:
+          type: string
+          nullable: true
+        utm_content:
+          type: string
+          nullable: true
+
+    LeadListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lead'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
+
+    ConversationMessageListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
+
+    ActionCatalog:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionCatalogItem'
+      required: [generated_at, count, actions]
+
+    ActionCatalogItem:
+      type: object
+      properties:
+        action_id:
+          type: string
+        title:
+          type: string
+        short_description:
+          type: string
+        description:
+          type: string
+        module:
+          type: string
+        required_role:
+          type: string
+        permission_key:
+          type: string
+        security_level:
+          type: string
+          enum: [low, medium, high]
+        input_schema:
+          type: object
+        example_inputs:
+          type: array
+          items:
+            type: object
+        example_prompts:
+          type: array
+          items:
+            type: string
+        side_effects:
+          type: array
+          items:
+            type: string
+        idempotency_rules:
+          type: array
+          items:
+            type: string
+        rate_limit_class:
+          type: string
+        fresh_auth_required_minutes:
+          type: integer
+        confirmation_required:
+          type: boolean
+        route_template:
+          type: string
+        query_template:
+          type: string
+          nullable: true
+        required_params:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        phrases:
+          type: array
+          items:
+            type: string
+      required: [action_id, title]
+
+    CopilotResolveRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        source:
+          type: string
+          enum: [header, chatpage, voice]
+        context:
+          type: object
+      required: [text]
+
+    CopilotResolveResponse:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CopilotResolvedAction'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CopilotSearchResult'
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CopilotAnswer'
+        clarifying_question:
+          type: string
+          nullable: true
+        needs_confirmation:
+          type: boolean
+        confidence:
+          type: number
+        source:
+          type: string
+
+    CopilotResolvedAction:
+      type: object
+      properties:
+        action_id:
+          type: string
+        title:
+          type: string
+        deeplink:
+          type: string
+        risk_level:
+          type: string
+        confirmation_required:
+          type: boolean
+        params:
+          type: object
+        score:
+          type: number
+        reason:
+          type: string
+
+    CopilotSearchResult:
+      type: object
+      properties:
+        type:
+          type: string
+        id:
+          type: integer
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        score:
+          type: number
+        deeplink:
+          type: string
+          nullable: true
+
+    CopilotAnswer:
+      type: object
+      properties:
+        question:
+          type: string
+        answer:
+          type: string
+        category:
+          type: string
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              action_id:
+                type: string
+
+    CopilotTrackRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [header, chatpage, voice]
+        event:
+          type: string
+        input_text:
+          type: string
+        action_id:
+          type: string
+        action_params:
+          type: object
+        deeplink:
+          type: string
+        confidence:
+          type: number
+        status:
+          type: string
+        failure_reason:
+          type: string
+        request_id:
+          type: string
+      required: [event]
+
+    CopilotDraftRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+        language:
+          type: string
+        module:
+          type: string
+        top_k:
+          type: integer
+        context:
+          type: object
+      required: [prompt]
+
+    CopilotDraftResponse:
+      type: object
+      properties:
+        draft_id:
+          type: string
+        prompt:
+          type: string
+        selected_action:
+          type: object
+        candidates:
+          type: array
+          items:
+            type: object
+        confidence:
+          type: number
+        clarifying_question:
+          type: string
+          nullable: true
+
+    CopilotValidateRequest:
+      type: object
+      properties:
+        action_id:
+          type: string
+        payload:
+          type: object
+      required: [action_id]
+
+    CopilotValidateResponse:
+      type: object
+      properties:
+        validation_token:
+          type: string
+        action_id:
+          type: string
+        requires_confirmation:
+          type: boolean
+        payload:
+          type: object
+
+    CopilotExecuteRequest:
+      type: object
+      properties:
+        validation_token:
+          type: string
+        confirm:
+          type: boolean
+      required: [validation_token]
+
+    CopilotExecuteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        action_id:
+          type: string
+        payload:
+          type: object
+        execution:
+          type: object
+
+    CopilotAction:
+      type: object
+      properties:
+        id:
+          type: integer
+        action_id:
+          type: string
+        title:
+          type: string
+        short_description:
+          type: string
+          nullable: true
+        module:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        route_template:
+          type: string
+        query_template:
+          type: string
+          nullable: true
+        required_params:
+          type: array
+          items:
+            type: string
+        input_schema:
+          type: object
+          nullable: true
+        example_inputs:
+          type: array
+          items:
+            type: object
+        example_prompts:
+          type: array
+          items:
+            type: string
+        side_effects:
+          type: array
+          items:
+            type: string
+        idempotency_rules:
+          type: array
+          items:
+            type: string
+        rate_limit_class:
+          type: string
+          nullable: true
+        fresh_auth_required_minutes:
+          type: integer
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        permission_key:
+          type: string
+          nullable: true
+        required_role:
+          type: string
+          nullable: true
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+        confirmation_required:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CopilotActionPhrase:
+      type: object
+      properties:
+        id:
+          type: integer
+        copilot_action_id:
+          type: integer
+        phrase:
+          type: string
+        language:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CopilotAuditEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        source:
+          type: string
+        stage:
+          type: string
+          nullable: true
+        input_text:
+          type: string
+          nullable: true
+        resolved_action_candidates:
+          type: array
+          items:
+            type: object
+        matching_detail:
+          type: object
+          nullable: true
+        selected_action_id:
+          type: string
+          nullable: true
+        selected_action_params:
+          type: object
+          nullable: true
+        deeplink_returned:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+        status:
+          type: string
+        failure_reason:
+          type: string
+          nullable: true
+        validation_result:
+          type: object
+          nullable: true
+        execution_result:
+          type: object
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        user_correction_action_id:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          nullable: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    CopilotVoiceSettings:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        tts_voice_id:
+          type: string
+          nullable: true
+        tts_enabled:
+          type: boolean
+        stt_language:
+          type: string
+          nullable: true
+        speaking_rate:
+          type: number
+          nullable: true
+        pitch:
+          type: number
+          nullable: true
+
+    AnalyticsTrackRequest:
+      type: object
+      properties:
+        external_id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        price:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        url:
+          type: string
+        specs:
+          type: object
+          nullable: true
+        year:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        referrer:
+          type: string
+          nullable: true
+        resolution:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+      required: [external_id, url]
+
+    AnalyticsSummaryRow:
+      type: object
+      properties:
+        external_id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        last_price:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        total_views:
+          type: integer
+
+    PlatformError:
+      type: object
+      properties:
+        id:
+          type: integer
+        reference_code:
+          type: string
+        sentry_issue_id:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        level:
+          type: string
+          nullable: true
+        project:
+          type: string
+          nullable: true
+        environment:
+          type: string
+          nullable: true
+        release:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        route:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        occurrences_count:
+          type: integer
+        users_affected:
+          type: integer
+        first_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+        tags:
+          type: object
+          nullable: true
+        last_event_sample_json:
+          type: object
+          nullable: true
+        ai_user_message_nl:
+          type: string
+          nullable: true
+        ai_user_message_en:
+          type: string
+          nullable: true
+        ai_user_message_de:
+          type: string
+          nullable: true
+        ai_dev_summary:
+          type: string
+          nullable: true
+        ai_category:
+          type: string
+          nullable: true
+        ai_severity:
+          type: string
+          nullable: true
+        ai_user_steps:
+          type: array
+          items:
+            type: string
+          nullable: true
+        ai_suggested_checks:
+          type: array
+          items:
+            type: string
+          nullable: true
+        assigned_to_user_id:
+          type: integer
+          nullable: true
+        internal_note:
+          type: string
+          nullable: true
+        ignore_until:
+          type: string
+          format: date-time
+          nullable: true
+        ignore_release:
+          type: string
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PlatformErrorList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformError'
+        links:
+          type: object
+        meta:
+          type: object
+
+    PlatformErrorStats:
+      type: object
+      properties:
+        errors_last_24h:
+          type: integer
+        critical:
+          type: integer
+        regressions:
+          type: integer
+        users_affected:
+          type: integer
+
+    IssueReport:
+      type: object
+      properties:
+        id:
+          type: integer
+        platform_error_id:
+          type: integer
+          nullable: true
+        user_id:
+          type: integer
+          nullable: true
+        conversation_id:
+          type: string
+          nullable: true
+        message_id:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        subject:
+          type: string
+          nullable: true
+        description:
+          type: string
+        page_url:
+          type: string
+          nullable: true
+        error_reference:
+          type: string
+          nullable: true
+        source:
+          type: string
+        status:
+          type: string
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueReportFile'
+
+    IssueReportFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        original_name:
+          type: string
+          nullable: true
+        mime_type:
+          type: string
+          nullable: true
+        size:
+          type: integer
+          nullable: true
+        url:
+          type: string
+          nullable: true
 
     NotificationListResponse:
       type: object
@@ -3572,4 +6254,510 @@ components:
           nullable: true
         location_id:
           type: integer
+          nullable: true
+
+    SocialScheduleRequest:
+      type: object
+      required: [start_date, cadence, time, video_ids]
+      properties:
+        start_date:
+          type: string
+          format: date
+        cadence:
+          type: string
+          enum: [daily]
+        time:
+          type: string
+          example: "10:30"
+        video_ids:
+          type: array
+          items:
+            type: integer
+        publishers:
+          type: array
+          items:
+            type: string
+          nullable: true
+        skip_weekends:
+          type: boolean
+          nullable: true
+        yext_account_id:
+          type: string
+          nullable: true
+        yext_entity_id:
+          type: string
+          nullable: true
+
+    SocialScheduleResponse:
+      type: object
+      properties:
+        scheduled:
+          type: array
+          items:
+            $ref: '#/components/schemas/VideoPostSummary'
+        count:
+          type: integer
+
+    SocialPostRescheduleRequest:
+      type: object
+      required: [scheduled_at]
+      properties:
+        scheduled_at:
+          type: string
+          format: date-time
+
+    VideoSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        yacht_id:
+          type: integer
+        status:
+          type: string
+          enum: [queued, processing, ready, failed]
+        template_type:
+          type: string
+          nullable: true
+        video_path:
+          type: string
+          nullable: true
+        video_url:
+          type: string
+          nullable: true
+        thumbnail_path:
+          type: string
+          nullable: true
+        thumbnail_url:
+          type: string
+          nullable: true
+        duration_seconds:
+          type: integer
+          nullable: true
+        file_size_bytes:
+          type: integer
+          nullable: true
+        checksum:
+          type: string
+          nullable: true
+        caption:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        generated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Video:
+      allOf:
+        - $ref: '#/components/schemas/VideoSummary'
+        - type: object
+          properties:
+            posts:
+              type: array
+              items:
+                $ref: '#/components/schemas/VideoPostSummary'
+              nullable: true
+
+    VideoPostSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        video_id:
+          type: integer
+        yext_post_id:
+          type: string
+          nullable: true
+        publishers:
+          type: array
+          items:
+            type: string
+          nullable: true
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [scheduled, publishing, published, failed]
+        views:
+          type: integer
+        impressions:
+          type: integer
+        clicks:
+          type: integer
+        engagement:
+          type: integer
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        yext_account_id:
+          type: string
+          nullable: true
+        yext_entity_id:
+          type: string
+          nullable: true
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VideoPost:
+      allOf:
+        - $ref: '#/components/schemas/VideoPostSummary'
+        - type: object
+          properties:
+            video:
+              $ref: '#/components/schemas/VideoSummary'
+              nullable: true
+
+    VideoListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Video'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
+
+    VideoPostListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/VideoPost'
+        links:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          nullable: true
+
+    ChatWidgetInitRequest:
+      type: object
+      properties:
+        visitor_id:
+          type: string
+          nullable: true
+        harbor_id:
+          type: integer
+          nullable: true
+
+    ChatWidgetInitResponse:
+      type: object
+      properties:
+        visitor_id:
+          type: string
+        session_id:
+          type: string
+        session_jwt:
+          type: string
+
+    ChatContact:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        whatsapp_user_id:
+          type: string
+          nullable: true
+        language_preferred:
+          type: string
+          nullable: true
+        do_not_contact:
+          type: boolean
+        consent_marketing:
+          type: boolean
+        consent_service_messages:
+          type: boolean
+
+    ChatConversation:
+      type: object
+      properties:
+        id:
+          type: string
+        harbor_id:
+          type: integer
+        location_id:
+          type: integer
+        boat_id:
+          type: integer
+          nullable: true
+        contact_id:
+          type: string
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+        priority:
+          type: string
+        channel_origin:
+          type: string
+          nullable: true
+        ai_mode:
+          type: string
+          nullable: true
+        language_preferred:
+          type: string
+          nullable: true
+        language_detected:
+          type: string
+          nullable: true
+        page_url:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        last_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_customer_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_staff_message_at:
+          type: string
+          format: date-time
+          nullable: true
+        first_response_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        assigned_to:
+          type: integer
+          nullable: true
+        contact:
+          $ref: '#/components/schemas/ChatContact'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          nullable: true
+
+    ChatConversationCreateRequest:
+      type: object
+      properties:
+        visitor_id:
+          type: string
+          nullable: true
+        session_jwt:
+          type: string
+          nullable: true
+        contact:
+          type: object
+          nullable: true
+        boat_id:
+          type: integer
+          nullable: true
+        page_url:
+          type: string
+          nullable: true
+        harbor_id:
+          type: integer
+          nullable: true
+        widget_harbor_id:
+          type: integer
+          nullable: true
+        channel_origin:
+          type: string
+          nullable: true
+        ai_mode:
+          type: string
+          nullable: true
+        priority:
+          type: string
+          nullable: true
+        language_preferred:
+          type: string
+          nullable: true
+        language_detected:
+          type: string
+          nullable: true
+        utm_source:
+          type: string
+          nullable: true
+        utm_medium:
+          type: string
+          nullable: true
+        utm_campaign:
+          type: string
+          nullable: true
+        ref_code:
+          type: string
+          nullable: true
+        reuse:
+          type: boolean
+          nullable: true
+
+    ChatConversationUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [open, pending, solved]
+        priority:
+          type: string
+          enum: [low, normal, high]
+        ai_mode:
+          type: string
+          enum: [auto, assist, off]
+        harbor_id:
+          type: integer
+          nullable: true
+        assign_to:
+          type: integer
+          nullable: true
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        sender_type:
+          type: string
+        text:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+        channel:
+          type: string
+          nullable: true
+        external_message_id:
+          type: string
+          nullable: true
+        message_type:
+          type: string
+        status:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatAttachment'
+          nullable: true
+
+    ChatAttachment:
+      type: object
+      properties:
+        id:
+          type: string
+        message_id:
+          type: string
+          nullable: true
+        storage_key:
+          type: string
+        mime_type:
+          type: string
+        size:
+          type: integer
+        checksum:
+          type: string
+          nullable: true
+
+    ChatMessageCreateRequest:
+      type: object
+      properties:
+        sender_type:
+          type: string
+          enum: [visitor, admin, ai, system]
+        text:
+          type: string
+          nullable: true
+        language:
+          type: string
+          nullable: true
+        channel:
+          type: string
+          nullable: true
+        external_message_id:
+          type: string
+          nullable: true
+        message_type:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        attachments:
+          type: array
+          nullable: true
+        contact:
+          type: object
+          nullable: true
+        visitor_id:
+          type: string
+          nullable: true
+        session_jwt:
+          type: string
+          nullable: true
+
+    ChatConversationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatConversation'
+        next_cursor:
+          type: string
           nullable: true

@@ -13,6 +13,7 @@ class Lead extends Model
     protected $fillable = [
         'location_id',
         'client_id',
+        'converted_client_id',
         'conversation_id',
         'assigned_employee_id',
         'status',
@@ -22,16 +23,44 @@ class Lead extends Model
         'name',
         'email',
         'phone',
+        'referrer',
+        'utm_source',
+        'utm_medium',
+        'utm_campaign',
+        'utm_term',
+        'utm_content',
+        'address_line1',
+        'address_line2',
+        'city',
+        'state',
+        'postal_code',
+        'country',
+        'gmaps_place_id',
+        'formatted_address',
+        'address_components',
+        'lat',
+        'lng',
+        'confidence',
+        'maps_url',
+        'geocode_query_hash',
+        'last_geocode_at',
     ];
 
-    public function location(): BelongsTo
-    {
-        return $this->belongsTo(Location::class);
-    }
+    protected $casts = [
+        'address_components' => 'array',
+        'lat' => 'decimal:7',
+        'lng' => 'decimal:7',
+        'last_geocode_at' => 'datetime',
+    ];
 
     public function conversation(): BelongsTo
     {
         return $this->belongsTo(Conversation::class);
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
     }
 
     public function assignedEmployee(): BelongsTo
@@ -41,7 +70,7 @@ class Lead extends Model
 
     public function convertedClient(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'client_id');
+        return $this->belongsTo(User::class, 'converted_client_id');
     }
 
     // Retaining client method to avoid breaking existing code just in case

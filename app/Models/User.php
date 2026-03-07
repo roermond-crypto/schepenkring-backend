@@ -103,6 +103,10 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(User::class, 'invited_by');
     }
 
+    public function appNotifications()
+    {
+        return $this->hasMany(AppNotification::class);
+    }
     public function yachts()
     {
         return $this->hasMany(Yacht::class);

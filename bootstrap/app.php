@@ -11,6 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        __DIR__.'/../app/Console/Commands',
+    ])
     ->withBroadcasting(__DIR__.'/../routes/channels.php', ['middleware' => ['auth:sanctum']])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
@@ -18,15 +21,17 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-        $middleware->alias([
-            'role' => \App\Http\Middleware\EnsureUserHasRole::class,
-            'admin' => \App\Http\Middleware\EnsureAdmin::class,
-            'idempotent' => \App\Http\Middleware\IdempotencyMiddleware::class,
-        ]);
-
         $middleware->api(append: [
             \App\Http\Middleware\EnsureActiveUser::class,
             \App\Http\Middleware\ResolveImpersonation::class,
+            \App\Http\Middleware\SentryContextMiddleware::class,
+        ]);
+
+        $middleware->alias([
+            'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'admin' => \App\Http\Middleware\EnsureAdmin::class,
+            'admin.errors' => \App\Http\Middleware\EnsureAdminOrStaff::class,
+            'bid.session' => \App\Http\Middleware\EnsureBidSession::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

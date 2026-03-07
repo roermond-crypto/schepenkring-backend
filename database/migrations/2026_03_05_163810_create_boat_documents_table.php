@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('boat_documents', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('boat_id')->constrained('yachts')->onDelete('cascade');
+            $table->unsignedBigInteger('boat_id')->index();
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->string('file_path');
             $table->string('file_type')->nullable(); // pdf, docx, etc

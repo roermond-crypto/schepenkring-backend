@@ -41,6 +41,24 @@ class CreateUserAction
             'password_changed_at' => now(),
         ];
 
+        foreach ([
+            'first_name',
+            'last_name',
+            'date_of_birth',
+            'timezone',
+            'locale',
+            'address_line1',
+            'address_line2',
+            'city',
+            'state',
+            'postal_code',
+            'country',
+        ] as $field) {
+            if (array_key_exists($field, $data)) {
+                $payload[$field] = $data[$field];
+            }
+        }
+
         if ($type === UserType::CLIENT) {
             if (empty($data['location_id'])) {
                 throw ValidationException::withMessages([
