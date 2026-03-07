@@ -2,12 +2,18 @@
 
 namespace App\Jobs;
 
+use App\Models\Video;
+use App\Models\Yacht;
+use App\Services\FFmpegService;
+use App\Services\VideoCaptionService;
+use App\Services\VideoSchedulerService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class RenderMarketingVideo implements ShouldQueue
 {
@@ -29,5 +35,170 @@ class RenderMarketingVideo implements ShouldQueue
     {
         // Stub implementation to keep the API contract intact.
         Log::info('RenderMarketingVideo stub executed', ['video_id' => $this->videoId]);
+        $video = Video::find($this->videoId);
+        if (!$video) {
+            Log::error("Marketing video {$this->videoId} not found");
+            return;
+        }
+
+        $yacht = $video->yacht;
+        if (!$yacht) {
+            $this->failJob($video, 'Yacht not found');
+            return;
+        }
+
+        $ffmpeg = new FFmpegService();
+        if (!$ffmpeg->isAvailable()) {
+            $this->failJob($video, 'FFmpeg is not installed or not accessible');
+            return;
+        }
+
+        $video->update(['status' => 'processing']);
+
+        try {
+            $imagePaths = $this->collectImages($yacht);
+            if (empty($imagePaths)) {
+                $this->failJob($video, 'No images found for this yacht');
+                return;
+            }
+
+            $workDir = sys_get_temp_dir() . '/marketing_video_' . $video->id;
+            if (!is_dir($workDir)) {
+                mkdir($workDir, 0777, true);
+            }
+
+            $slideshowPath = "{$workDir}/slideshow.mp4";
+            $thumbPath = "{$workDir}/thumb.jpg";
+
+            $overlayLines = $this->buildOverlayLines($yacht);
+            $secondsPerImage = (int) config('video_automation.seconds_per_image', 2);
+
+            $ffmpeg->renderVerticalSlideshow($imagePaths, $slideshowPath, $secondsPerImage, $overlayLines);
+            $ffmpeg->createThumbnail($slideshowPath, $thumbPath, 1);
+
+            $storagePath = "videos/marketing/yacht-{$yacht->id}-" . time() . '.mp4';
+            $thumbStoragePath = "videos/marketing/yacht-{$yacht->id}-" . time() . '-thumb.jpg';
+
+            Storage::disk('public')->put($storagePath, file_get_contents($slideshowPath));
+            Storage::disk('public')->put($thumbStoragePath, file_get_contents($thumbPath));
+
+            $storageFullPath = Storage::disk('public')->path($storagePath);
+            $duration = $ffmpeg->getDuration($storageFullPath);
+            $fileSize = filesize($storageFullPath) ?: null;
+            $checksum = hash_file('sha256', $storageFullPath);
+
+            $caption = app(VideoCaptionService::class)->buildCaption($yacht);
+
+            $video->update([
+                'status' => 'ready',
+                'video_path' => $storagePath,
+                'video_url' => Storage::disk('public')->url($storagePath),
+                'thumbnail_path' => $thumbStoragePath,
+                'thumbnail_url' => Storage::disk('public')->url($thumbStoragePath),
+                'duration_seconds' => $duration,
+                'file_size_bytes' => $fileSize,
+                'checksum' => $checksum,
+                'caption' => $caption,
+                'generated_at' => now(),
+            ]);
+
+            $this->cleanup($workDir);
+
+            if (config('video_automation.auto_schedule')) {
+                $scheduler = app(VideoSchedulerService::class);
+                $scheduler->scheduleNextAvailable(
+                    $video,
+                    config('video_automation.schedule_time', '10:30'),
+                    (bool) config('video_automation.skip_weekends', false),
+                    config('video_automation.default_publishers', []),
+                    config('services.yext.account_id'),
+                    config('services.yext.entity_id')
+                );
+            }
+
+            Log::info('Marketing video rendered', ['video_id' => $video->id, 'yacht_id' => $yacht->id]);
+        } catch (\Throwable $e) {
+            $this->failJob($video, $e->getMessage());
+            Log::error("Marketing video failed for yacht {$yacht->id}: {$e->getMessage()}");
+        }
+    }
+
+    private function collectImages(Yacht $yacht): array
+    {
+        $paths = [];
+
+        if ($yacht->main_image) {
+            $mainPath = Storage::disk('public')->path($yacht->main_image);
+            if (file_exists($mainPath)) {
+                $paths[] = $mainPath;
+            }
+        }
+
+        if ($yacht->images) {
+            foreach ($yacht->images as $image) {
+                $imgPath = $image->image_path ?? $image->path ?? null;
+                if ($imgPath) {
+                    $fullPath = Storage::disk('public')->path($imgPath);
+                    if (file_exists($fullPath)) {
+                        $paths[] = $fullPath;
+                    }
+                }
+            }
+        }
+
+        $max = (int) config('video_automation.max_images', 15);
+        $min = (int) config('video_automation.min_images', 8);
+        $paths = array_slice($paths, 0, max($max, 1));
+
+        if (count($paths) < $min && count($paths) > 0) {
+            $idx = 0;
+            while (count($paths) < $min) {
+                $paths[] = $paths[$idx % count($paths)];
+                $idx++;
+            }
+        }
+
+        return $paths;
+    }
+
+    private function buildOverlayLines(Yacht $yacht): array
+    {
+        $lines = [];
+        $name = trim((string) $yacht->boat_name);
+        if ($name !== '') {
+            $lines[] = $name;
+        }
+
+        $price = $yacht->price ?? $yacht->sale_price;
+        if ($price !== null) {
+            $lines[] = '€' . number_format((float) $price, 0, '.', ',');
+        }
+
+        if ($yacht->location_city) {
+            $lines[] = $yacht->location_city;
+        }
+
+        $lines[] = config('video_automation.cta_text');
+
+        return $lines;
+    }
+
+    private function cleanup(string $workDir): void
+    {
+        if (!is_dir($workDir)) {
+            return;
+        }
+        foreach (glob("{$workDir}/*") as $file) {
+            @unlink($file);
+        }
+        @rmdir($workDir);
+    }
+
+    private function failJob(Video $video, string $error): void
+    {
+        $video->update([
+            'status' => 'failed',
+            'error_message' => $error,
+        ]);
     }
 }

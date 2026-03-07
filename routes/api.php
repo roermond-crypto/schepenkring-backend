@@ -31,6 +31,13 @@ use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
+use App\Http\Controllers\Api\SocialVideoController;
+use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
+use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
+use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
+use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
 use App\Http\Controllers\Api\Me\MeController;
 use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
@@ -55,6 +62,18 @@ use App\Http\Controllers\Api\YachtController;
 
 // ──────────────────────────────────────────────────────────
 // Public routes (no auth needed for dev/testing)
+use App\Http\Controllers\Api\WebhookController;
+
+// ──────────────────────────────────────────────────────────
+// Auth routes
+// ──────────────────────────────────────────────────────────
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [\App\Http\Controllers\Api\AuthController::class, 'login']);
+    Route::post('/logout', [\App\Http\Controllers\Api\AuthController::class, 'logout'])->middleware('auth:sanctum');
+});
+
+// ──────────────────────────────────────────────────────────
+// PUBLIC routes (no auth needed for dev/testing)
 // ──────────────────────────────────────────────────────────
 
 // Yachts
@@ -143,6 +162,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
     });
 
+    // Social Media / Video Automation
+    // ================== SOCIAL VIDEO AUTOMATION ==================
+    Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
+    Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
+    Route::patch('/social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
+    Route::post('/social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
+    Route::post('/social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
+
     // Audit logs
     Route::get('audit-logs', [AuditLogController::class, 'index']);
     Route::get('audit-logs/{type}/{id}', [AuditLogController::class, 'forResource']);
@@ -153,6 +181,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('copilot/audit', [CopilotAuditController::class, 'index']);
     Route::get('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'show']);
     Route::put('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'update']);
+    // Admin-only routes
+    Route::middleware('role:admin')->group(function () {
+        Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+        Route::prefix('settings')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
+            Route::get('/{key}', [\App\Http\Controllers\Api\SettingsController::class, 'show']);
+            Route::put('/', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
+            Route::post('/bulk', [\App\Http\Controllers\Api\SettingsController::class, 'bulkUpdate']);
+        });
+    });
+});
 
     // Leads & conversations
     Route::get('leads', [LeadController::class, 'index']);
