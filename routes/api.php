@@ -11,7 +11,9 @@ use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonation
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
+use App\Http\Controllers\Api\Admin\YachtshiftImportController;
 use App\Http\Controllers\Api\AiPipelineController;
+
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\RegisterController;
@@ -287,6 +289,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}', [AdminUserController::class, 'update']);
     Route::delete('users/{id}', [AdminUserController::class, 'destroy']);
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
+    
+    // Yachts (Admin)
+    Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
