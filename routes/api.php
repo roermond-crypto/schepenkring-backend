@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
 use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublicLeadController;
+use App\Http\Controllers\Api\PublicConversationMessageController;
 use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
@@ -114,9 +115,6 @@ Route::prefix('auth')->group(function () {
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
-    Route::post('leads', [PublicLeadController::class, 'store']);
-    Route::patch('conversations/{conversationId}/lead', [PublicLeadController::class, 'update']);
-    Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
 
     Route::post('bids/register', [BidWidgetController::class, 'register']);
     Route::post('bids/verify', [BidWidgetController::class, 'verify']);
@@ -182,20 +180,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('copilot/audit', [CopilotAuditController::class, 'index']);
     Route::get('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'show']);
     Route::put('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'update']);
-    // Admin-only routes
-    Route::middleware('role:admin')->group(function () {
-        Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
-        Route::prefix('settings')->group(function () {
-            Route::get('/', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
-            Route::get('/{key}', [\App\Http\Controllers\Api\SettingsController::class, 'show']);
-            Route::put('/', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
-            Route::post('/bulk', [\App\Http\Controllers\Api\SettingsController::class, 'bulkUpdate']);
-        });
-    });
-});
-
     // Leads & conversations
     Route::get('leads', [LeadController::class, 'index']);
+    Route::post('leads', [LeadController::class, 'store']);
     Route::get('leads/{id}', [LeadController::class, 'show']);
     Route::patch('leads/{id}', [LeadController::class, 'update']);
     Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
@@ -276,6 +263,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk', [SettingsController::class, 'bulkUpdate']);
         });
     });
+});
 
 
 // ──────────────────────────────────────────────────────────
