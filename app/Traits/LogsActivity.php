@@ -2,6 +2,8 @@
 
 namespace App\Traits;
 
+use App\Enums\UserStatus;
+use App\Enums\UserType;
 use App\Models\ActivityLog;
 use App\Models\Notification;
 
@@ -60,8 +62,8 @@ trait LogsActivity
 
     protected function getAdminIds(): array
     {
-        return \App\Models\User::where('role', 'Admin')
-            ->where('status', 'Active')
+        return \App\Models\User::where('type', UserType::ADMIN->value)
+            ->where('status', UserStatus::ACTIVE->value)
             ->pluck('id')
             ->toArray();
     }

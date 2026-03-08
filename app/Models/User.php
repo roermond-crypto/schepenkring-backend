@@ -18,6 +18,7 @@ class User extends Authenticatable implements MustVerifyEmail
     use HasFactory, Notifiable, HasApiTokens, Auditable;
 
     /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -91,6 +92,11 @@ class User extends Authenticatable implements MustVerifyEmail
         ];
     }
 
+    public function isStaff(): bool
+    {
+        return in_array($this->role, ['admin', 'employee']);
+    }
+
     // ── Relationships ────────────────────────────────────
 
     public function invitedBy()
@@ -116,7 +122,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function scopeByRole($query, string $role)
     {
-        return $query->where('role', $role);
+        $type = self::normalizeRoleToTypeValue($role);
+
+        if (! $type) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('type', $type);
     }
 
     public function scopeActive($query)
@@ -126,7 +138,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function scopeStaff($query)
     {
-        return $query->whereIn('role', ['admin', 'employee']);
+        return $query->whereIn('type', [
+            UserType::ADMIN->value,
+            UserType::EMPLOYEE->value,
+        ]);
     }
     // ── Relations ──────────────────────────────────────────
     public function locations(): BelongsToMany
@@ -176,10 +191,5 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isActive(): bool
     {
         return $this->status === UserStatus::ACTIVE;
-    }
-
-    public function isStaff(): bool
-    {
-        return $this->isAdmin() || $this->isEmployee();
     }
 }

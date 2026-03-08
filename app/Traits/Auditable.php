@@ -2,6 +2,8 @@
 
 namespace App\Traits;
 
+use App\Enums\AuditResult;
+use App\Enums\RiskLevel;
 use App\Models\AuditLog;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Request;
@@ -49,24 +51,17 @@ trait Auditable
         ?array $metadata = null,
         ?string $riskLevel = 'INFO',
     ): AuditLog {
-        $actorId = null;
-        try {
-            $actorId = Auth::id();
-        } catch (\Exception $e) {
-            // Ignore errors if Auth is not available
-        }
-
         return AuditLog::create([
-            'actor_id'        => $actorId,
-            'action'          => $action,
-            'risk_level'      => $riskLevel,
-            'target_type'     => static::class,
-            'target_id'       => $this->getKey(),
-            'snapshot_before' => $oldValues,
-            'snapshot_after'  => $newValues,
-            'ip_address'      => Request::ip(),
-            'user_agent'      => Request::userAgent(),
-            'meta'            => $metadata,
+            'user_id'        => Auth::id(),
+            'action'         => $action,
+            'auditable_type' => static::class,
+            'auditable_id'   => $this->getKey(),
+            'old_values'     => $oldValues,
+            'new_values'     => $newValues,
+            'ip_address'     => Request::ip(),
+            'user_agent'     => Request::userAgent(),
+            'reason'         => $reason,
+            'metadata'       => $metadata,
         ]);
     }
 
@@ -75,6 +70,6 @@ trait Auditable
      */
     public function auditLogs()
     {
-        return $this->morphMany(AuditLog::class, 'auditable');
+        return $this->morphMany(AuditLog::class, 'entity');
     }
 }

@@ -23,11 +23,14 @@ class EnsureUserHasRole
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        if (!in_array($user->role, $roles)) {
+        $normalizedRoles = array_map('strtolower', $roles);
+        $userRole = strtolower((string) $user->role);
+
+        if (! in_array($userRole, $normalizedRoles, true)) {
             return response()->json([
                 'message' => 'You do not have permission to access this resource.',
-                'required_roles' => $roles,
-                'your_role' => $user->role,
+                'required_roles' => $normalizedRoles,
+                'your_role' => $userRole,
             ], 403);
         }
 
