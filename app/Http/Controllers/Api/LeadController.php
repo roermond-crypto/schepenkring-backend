@@ -19,6 +19,23 @@ class LeadController extends Controller
         return $query->paginate($request->input('per_page', 20));
     }
 
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'source' => 'required|string',
+            'status' => 'required|string',
+            'name' => 'sometimes|string|nullable',
+            'email' => 'sometimes|email|nullable',
+            'phone' => 'sometimes|string|nullable',
+            'notes' => 'sometimes|string|nullable',
+        ]);
+
+        $lead = Lead::create($validated);
+        $lead->load(['conversation', 'location', 'assignedEmployee', 'convertedClient']);
+
+        return response()->json($lead, 201);
+    }
+
     public function show($id)
     {
         return Lead::with(['conversation', 'location', 'assignedEmployee', 'convertedClient'])->findOrFail($id);
