@@ -2,64 +2,62 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Leads\CreateLeadFromWidgetAction;
-use App\Actions\Leads\UpdateLeadFromWidgetAction;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Api\Leads\LeadWidgetStoreRequest;
-use App\Http\Requests\Api\Leads\LeadWidgetUpdateRequest;
-use App\Repositories\LeadRepository;
-use App\Services\IdempotencyService;
+use App\Models\Conversation;
+use App\Models\Lead;
+use App\Models\Location;
+use App\Models\Message;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PublicLeadController extends Controller
 {
-    public function store(LeadWidgetStoreRequest $request, CreateLeadFromWidgetAction $action, IdempotencyService $idempotency)
+    public function store(Request $request)
     {
-        $idempotencyResult = $idempotency->begin($request);
-        if ($idempotencyResult['status'] === 'missing') {
-            $idempotencyResult = null;
-        } else {
-            if ($idempotencyResult['status'] === 'conflict') {
-                return response()->json(['message' => 'Idempotency-Key reuse with different request.'], 409);
-            }
-            if ($idempotencyResult['status'] === 'processing') {
-                return response()->json(['message' => 'Request already in progress.'], 409);
-            }
-            if ($idempotencyResult['status'] === 'replay') {
-                return $idempotencyResult['response'];
-            }
-        }
-
-        $result = $action->execute($request->validated());
-
-        $response = response()->json([
-            'lead' => $result['lead']->load(['location']),
-            'conversation' => $result['conversation'],
-            'message' => $result['message'],
-        ], 201);
-
-        if ($idempotencyResult && ! empty($idempotencyResult['record'])) {
-            $idempotency->storeResponse($idempotencyResult['record'], $response);
-        }
-
-        return $response;
-    }
-
-    public function update(
-        string $conversationId,
-        LeadWidgetUpdateRequest $request,
-        LeadRepository $leads,
-        UpdateLeadFromWidgetAction $action
-    ) {
-        $lead = $leads->findByConversationId($conversationId);
-        if (! $lead) {
-            return response()->json(['message' => 'Lead not found.'], 404);
-        }
-
-        $updated = $action->execute($lead, $request->validated());
-
-        return response()->json([
-            'lead' => $updated->load(['location', 'conversation']),
+        $validated = $request->validate([
+            'location_id' => 'required|exists:locations,id',
+            'source_url' => 'nullable|string',
+            'name' => 'sometimes|nullable|string',
+            'email' => 'sometimes|nullable|email',
+            'phone' => 'sometimes|nullable|string',
+            'message' => 'required|string',
+            'client_message_id' => 'required|string',
+            'visitor_id' => 'nullable|string'
         ]);
+
+        return DB::transaction(function () use ($validated) {
+            $lead = Lead::create([
+                'location_id' => $validated['location_id'],
+                'source' => 'web_widget',
+                'source_url' => $validated['source_url'] ?? null,
+                'name' => $validated['name'] ?? null,
+                'email' => $validated['email'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'status' => 'new'
+            ]);
+
+            $conversation = Conversation::create([
+                'location_id' => $validated['location_id'],
+                'channel' => 'web_widget',
+                'lead_id' => $lead->id,
+                'status' => 'open'
+            ]);
+
+            $lead->update(['conversation_id' => $conversation->id]);
+
+            $message = Message::create([
+                'conversation_id' => $conversation->id,
+                'sender_type' => 'visitor',
+                'body' => $validated['message'],
+                'client_message_id' => $validated['client_message_id'],
+                'delivery_state' => 'sent',
+            ]);
+
+            return response()->json([
+                'lead' => $lead->load('location'),
+                'conversation' => $conversation,
+                'message' => $message,
+            ], 201);
+        });
     }
 }

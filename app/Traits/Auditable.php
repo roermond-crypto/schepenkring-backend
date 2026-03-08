@@ -49,31 +49,19 @@ trait Auditable
         ?array $oldValues = null,
         ?array $newValues = null,
         ?array $metadata = null,
-        ?string $reason = null,
+        ?string $riskLevel = 'INFO',
     ): AuditLog {
-        $ipAddress = Request::ip();
-
         return AuditLog::create([
-            'action' => $action,
-            'risk_level' => RiskLevel::LOW->value,
-            'result' => AuditResult::SUCCESS->value,
-            'actor_id' => Auth::id(),
-            'location_id' => $this->location_id ?? $this->client_location_id ?? Auth::user()?->client_location_id,
-            'target_type' => static::class,
-            'target_id' => $this->getKey(),
-            'entity_type' => static::class,
-            'entity_id' => $this->getKey(),
-            'meta' => array_filter([
-                'reason' => $reason,
-                'metadata' => $metadata,
-                'path' => Request::path(),
-                'method' => Request::method(),
-            ], static fn ($value) => $value !== null),
-            'snapshot_before' => $oldValues,
-            'snapshot_after' => $newValues,
-            'ip_address' => $ipAddress,
-            'ip_hash' => $ipAddress ? hash('sha256', $ipAddress) : null,
-            'user_agent' => Request::userAgent(),
+            'user_id'        => Auth::id(),
+            'action'         => $action,
+            'auditable_type' => static::class,
+            'auditable_id'   => $this->getKey(),
+            'old_values'     => $oldValues,
+            'new_values'     => $newValues,
+            'ip_address'     => Request::ip(),
+            'user_agent'     => Request::userAgent(),
+            'reason'         => $reason,
+            'metadata'       => $metadata,
         ]);
     }
 

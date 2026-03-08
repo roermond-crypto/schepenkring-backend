@@ -11,7 +11,9 @@ use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonation
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
+use App\Http\Controllers\Api\Admin\YachtshiftImportController;
 use App\Http\Controllers\Api\AiPipelineController;
+
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\RegisterController;
@@ -40,6 +42,7 @@ use App\Http\Controllers\Api\Me\ProfileController as MeProfileController;
 use App\Http\Controllers\Api\Me\SecurityController as MeSecurityController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublicLeadController;
+use App\Http\Controllers\Api\PublicConversationMessageController;
 use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
@@ -71,7 +74,14 @@ Route::prefix('auth')->group(function () {
 // Yachts
 Route::apiResource('yachts', YachtController::class);
 
-// Image pipeline
+// ── CRM Public Chat Widget ──────────
+Route::post('public/leads', [PublicLeadController::class, 'store']);
+Route::prefix('public/conversations/{conversationId}')->group(function () {
+    Route::post('messages', [PublicConversationMessageController::class, 'store']);
+    Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
+});
+
+// ── Image Pipeline ──────────
 Route::prefix('yachts/{yachtId}/images')->group(function () {
     Route::post('/upload', [ImagePipelineController::class, 'upload']);
     Route::get('/', [ImagePipelineController::class, 'index']);
@@ -105,9 +115,6 @@ Route::prefix('auth')->group(function () {
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
-    Route::post('leads', [PublicLeadController::class, 'store']);
-    Route::patch('conversations/{conversationId}/lead', [PublicLeadController::class, 'update']);
-    Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
 
     Route::post('bids/register', [BidWidgetController::class, 'register']);
     Route::post('bids/verify', [BidWidgetController::class, 'verify']);
@@ -190,6 +197,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Leads & conversations
     Route::get('leads', [LeadController::class, 'index']);
+    Route::post('leads', [LeadController::class, 'store']);
     Route::get('leads/{id}', [LeadController::class, 'show']);
     Route::patch('leads/{id}', [LeadController::class, 'update']);
     Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
@@ -294,6 +302,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}', [AdminUserController::class, 'update']);
     Route::delete('users/{id}', [AdminUserController::class, 'destroy']);
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
+    
+    // Yachts (Admin)
+    Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);

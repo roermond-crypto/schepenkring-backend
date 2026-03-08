@@ -9,19 +9,12 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 class AuditLog extends Model
 {
     protected $fillable = [
+        'user_id',
         'action',
-        'risk_level',
-        'result',
-        'actor_id',
-        'impersonator_id',
-        'location_id',
-        'target_type',
-        'target_id',
-        'entity_type',
-        'entity_id',
-        'meta',
-        'snapshot_before',
-        'snapshot_after',
+        'auditable_type',
+        'auditable_id',
+        'old_values',
+        'new_values',
         'ip_address',
         'ip_hash',
         'user_agent',
@@ -31,9 +24,9 @@ class AuditLog extends Model
     ];
 
     protected $casts = [
-        'meta' => 'array',
-        'snapshot_before' => 'array',
-        'snapshot_after' => 'array',
+        'old_values' => 'array',
+        'new_values' => 'array',
+        'metadata'   => 'array',
     ];
 
     // ── Relationships ────────────────────────────────────

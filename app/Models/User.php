@@ -17,6 +17,9 @@ class User extends Authenticatable implements MustVerifyEmail
 {
     use HasFactory, Notifiable, HasApiTokens, Auditable;
 
+    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasApiTokens, HasFactory, Notifiable;
+
     /**
      * The attributes that are mass assignable.
      *
@@ -70,28 +73,28 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function casts(): array
     {
         return [
-            'last_login_at'      => 'datetime',
-            'password'           => 'hashed',
-            'is_active'          => 'boolean',
-            'lockscreen_timeout' => 'integer',
-            'otp_enabled'        => 'boolean',
-            'email_verified_at' => 'datetime',
-            'type' => UserType::class,
-            'status' => UserStatus::class,
-            'date_of_birth' => 'date',
-            'two_factor_enabled' => 'boolean',
-            'two_factor_confirmed_at' => 'datetime',
-            'email_changed_at' => 'datetime',
-            'phone_changed_at' => 'datetime',
-            'password_changed_at' => 'datetime',
-            'notifications_enabled' => 'boolean',
+            'email_verified_at'           => 'datetime',
+            'last_login_at'               => 'datetime',
+            'password'                    => 'hashed',
+            'is_active'                   => 'boolean',
+            'lockscreen_timeout'          => 'integer',
+            'otp_enabled'                 => 'boolean',
+            'type'                        => UserType::class,
+            'status'                      => UserStatus::class,
+            'date_of_birth'               => 'date',
+            'two_factor_enabled'          => 'boolean',
+            'two_factor_confirmed_at'     => 'datetime',
+            'email_changed_at'            => 'datetime',
+            'phone_changed_at'            => 'datetime',
+            'password_changed_at'         => 'datetime',
+            'notifications_enabled'       => 'boolean',
             'email_notifications_enabled' => 'boolean',
         ];
     }
 
     public function isStaff(): bool
     {
-        return $this->isAdmin() || $this->isEmployee();
+        return in_array($this->role, ['admin', 'employee']);
     }
 
     // ── Relationships ────────────────────────────────────
@@ -110,7 +113,6 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(AppNotification::class);
     }
-
     public function yachts()
     {
         return $this->hasMany(Yacht::class);
@@ -141,7 +143,7 @@ class User extends Authenticatable implements MustVerifyEmail
             UserType::EMPLOYEE->value,
         ]);
     }
-
+    // ── Relations ──────────────────────────────────────────
     public function locations(): BelongsToMany
     {
         return $this->belongsToMany(Location::class)
@@ -189,67 +191,5 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isActive(): bool
     {
         return $this->status === UserStatus::ACTIVE;
-    }
-
-    public function hasRole(string $role): bool
-    {
-        $normalized = self::normalizeRoleName($role);
-
-        return $normalized !== null && $this->role === $normalized;
-    }
-
-    public function getRoleAttribute(): ?string
-    {
-        $rawRole = $this->attributes['role'] ?? null;
-        if (is_string($rawRole) && $rawRole !== '') {
-            return strtolower($rawRole);
-        }
-
-        $type = $this->type;
-        if ($type instanceof UserType) {
-            return self::normalizeRoleName($type->value);
-        }
-
-        if (is_string($type) && $type !== '') {
-            return self::normalizeRoleName($type);
-        }
-
-        return null;
-    }
-
-    public function setRoleAttribute(?string $value): void
-    {
-        $type = self::normalizeRoleToTypeValue($value);
-
-        if ($type !== null) {
-            $this->attributes['type'] = $type;
-        }
-    }
-
-    private static function normalizeRoleToTypeValue(?string $role): ?string
-    {
-        if (! is_string($role) || trim($role) === '') {
-            return null;
-        }
-
-        return match (strtolower(trim($role))) {
-            'admin' => UserType::ADMIN->value,
-            'employee' => UserType::EMPLOYEE->value,
-            'client' => UserType::CLIENT->value,
-            default => in_array(strtoupper($role), array_map(
-                static fn (UserType $type) => $type->value,
-                UserType::cases()
-            ), true) ? strtoupper($role) : null,
-        };
-    }
-
-    private static function normalizeRoleName(?string $role): ?string
-    {
-        return match (self::normalizeRoleToTypeValue($role)) {
-            UserType::ADMIN->value => 'admin',
-            UserType::EMPLOYEE->value => 'employee',
-            UserType::CLIENT->value => 'client',
-            default => null,
-        };
     }
 }
