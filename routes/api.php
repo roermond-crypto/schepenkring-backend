@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
 use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
 use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
+use App\Http\Controllers\Api\Admin\HarborController as AdminHarborController;
 use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
@@ -301,6 +302,11 @@ Route::middleware('auth:sanctum')->group(function () {
 // Admin routes
 // ──────────────────────────────────────────────────────────
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    // Harbors
+    Route::get('harbors', [AdminHarborController::class, 'index']);
+    Route::get('harbors/performance', [AdminHarborController::class, 'performance']);
+    Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
+
     // Users
     Route::get('users', [AdminUserController::class, 'index']);
     Route::post('users', [AdminUserController::class, 'store']);
