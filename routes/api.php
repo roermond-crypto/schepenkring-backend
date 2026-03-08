@@ -104,6 +104,12 @@ Route::prefix('yachts/{yachtId}/documents')->group(function () {
     Route::post('/', [BoatDocumentController::class, 'store']);
     Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
 });
+Route::prefix('yachts/{yachtId}/boat-videos')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\BoatVideoController::class, 'index']);
+    Route::post('/', [\App\Http\Controllers\Api\BoatVideoController::class, 'store']);
+    Route::delete('/{id}', [\App\Http\Controllers\Api\BoatVideoController::class, 'destroy']);
+});
+Route::post('boat-videos/{id}/publish', [\App\Http\Controllers\Api\BoatVideoController::class, 'publish']);
 
 // Auth
 Route::prefix('auth')->group(function () {
