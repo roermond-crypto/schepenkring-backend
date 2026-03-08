@@ -154,6 +154,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Account settings
     Route::get('me', [MeController::class, 'show']);
     Route::patch('me/profile', [MeProfileController::class, 'update']);
+    Route::post('me/avatar', [\App\Http\Controllers\Api\Me\AvatarController::class, 'update']);
     Route::patch('me/personal', [MePersonalController::class, 'update']);
     Route::patch('me/address', [MeAddressController::class, 'update']);
     Route::patch('me/security', [MeSecurityController::class, 'update']);
