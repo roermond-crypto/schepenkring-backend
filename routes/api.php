@@ -110,6 +110,8 @@ Route::prefix('yachts/{yachtId}/boat-videos')->group(function () {
     Route::delete('/{id}', [\App\Http\Controllers\Api\BoatVideoController::class, 'destroy']);
 });
 Route::post('boat-videos/{id}/publish', [\App\Http\Controllers\Api\BoatVideoController::class, 'publish']);
+Route::get('yachts/{id}/video-settings', [\App\Http\Controllers\Api\BoatVideoSettingController::class, 'show']);
+Route::put('yachts/{id}/video-settings', [\App\Http\Controllers\Api\BoatVideoSettingController::class, 'update']);
 
 // Auth
 Route::prefix('auth')->group(function () {
