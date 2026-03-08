@@ -81,7 +81,7 @@ Route::prefix('yachts/{yachtId}/images')->group(function () {
     Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
 });
 Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
-Route::post('yachts/{id}/gallery', [ImagePipelineController::class, 'upload']); // Legacy gallery route
+Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
 
 // AI pipeline
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
@@ -173,6 +173,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('copilot/audit', [CopilotAuditController::class, 'index']);
     Route::get('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'show']);
     Route::put('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'update']);
+
     // Admin-only routes
     Route::middleware('role:admin')->group(function () {
         Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
@@ -182,8 +183,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/', [\App\Http\Controllers\Api\SettingsController::class, 'update']);
             Route::post('/bulk', [\App\Http\Controllers\Api\SettingsController::class, 'bulkUpdate']);
         });
+
+        Route::get('audit', [AdminAuditLogController::class, 'index']);
+        Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
     });
-});
 
     // Leads & conversations
     Route::get('leads', [LeadController::class, 'index']);
@@ -267,6 +270,17 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk', [SettingsController::class, 'bulkUpdate']);
         });
     });
+
+    Route::middleware('admin.errors')->prefix('errors')->group(function () {
+        Route::get('/', [PlatformErrorController::class, 'index']);
+        Route::get('/stats', [PlatformErrorController::class, 'stats']);
+        Route::get('/{error}', [PlatformErrorController::class, 'show']);
+        Route::post('/{error}/resolve', [PlatformErrorController::class, 'resolve']);
+        Route::post('/{error}/ignore', [PlatformErrorController::class, 'ignore']);
+        Route::post('/{error}/note', [PlatformErrorController::class, 'note']);
+        Route::post('/{error}/assign', [PlatformErrorController::class, 'assign']);
+    });
+});
 
 
 // ──────────────────────────────────────────────────────────

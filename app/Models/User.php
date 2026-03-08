@@ -17,9 +17,6 @@ class User extends Authenticatable implements MustVerifyEmail
 {
     use HasFactory, Notifiable, HasApiTokens, Auditable;
 
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
-
     /**
      * The attributes that are mass assignable.
      *
@@ -94,7 +91,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isStaff(): bool
     {
-        return in_array($this->role, ['admin', 'employee']);
+        return $this->isAdmin() || $this->isEmployee();
     }
 
     // ── Relationships ────────────────────────────────────
@@ -123,7 +120,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function scopeByRole($query, string $role)
     {
-        return $query->where('role', $role);
+        $type = self::normalizeRoleToTypeValue($role);
+
+        if (! $type) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('type', $type);
     }
 
     public function scopeActive($query)
@@ -133,7 +136,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function scopeStaff($query)
     {
-        return $query->whereIn('role', ['admin', 'employee']);
+        return $query->whereIn('type', [
+            UserType::ADMIN->value,
+            UserType::EMPLOYEE->value,
+        ]);
     }
 
     public function locations(): BelongsToMany
@@ -183,5 +189,67 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isActive(): bool
     {
         return $this->status === UserStatus::ACTIVE;
+    }
+
+    public function hasRole(string $role): bool
+    {
+        $normalized = self::normalizeRoleName($role);
+
+        return $normalized !== null && $this->role === $normalized;
+    }
+
+    public function getRoleAttribute(): ?string
+    {
+        $rawRole = $this->attributes['role'] ?? null;
+        if (is_string($rawRole) && $rawRole !== '') {
+            return strtolower($rawRole);
+        }
+
+        $type = $this->type;
+        if ($type instanceof UserType) {
+            return self::normalizeRoleName($type->value);
+        }
+
+        if (is_string($type) && $type !== '') {
+            return self::normalizeRoleName($type);
+        }
+
+        return null;
+    }
+
+    public function setRoleAttribute(?string $value): void
+    {
+        $type = self::normalizeRoleToTypeValue($value);
+
+        if ($type !== null) {
+            $this->attributes['type'] = $type;
+        }
+    }
+
+    private static function normalizeRoleToTypeValue(?string $role): ?string
+    {
+        if (! is_string($role) || trim($role) === '') {
+            return null;
+        }
+
+        return match (strtolower(trim($role))) {
+            'admin' => UserType::ADMIN->value,
+            'employee' => UserType::EMPLOYEE->value,
+            'client' => UserType::CLIENT->value,
+            default => in_array(strtoupper($role), array_map(
+                static fn (UserType $type) => $type->value,
+                UserType::cases()
+            ), true) ? strtoupper($role) : null,
+        };
+    }
+
+    private static function normalizeRoleName(?string $role): ?string
+    {
+        return match (self::normalizeRoleToTypeValue($role)) {
+            UserType::ADMIN->value => 'admin',
+            UserType::EMPLOYEE->value => 'employee',
+            UserType::CLIENT->value => 'client',
+            default => null,
+        };
     }
 }

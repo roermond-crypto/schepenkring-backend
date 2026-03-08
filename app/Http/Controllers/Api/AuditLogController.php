@@ -16,12 +16,20 @@ class AuditLogController extends Controller
         $query = AuditLog::with('user:id,name,email,avatar')
             ->orderByDesc('created_at');
 
-        // Filter by auditable
-        if ($request->filled('auditable_type')) {
-            $query->where('auditable_type', $request->auditable_type);
+        $auditableType = $request->input('auditable_type', $request->input('entity_type'));
+        if ($auditableType) {
+            $query->where(function ($builder) use ($auditableType) {
+                $builder->where('entity_type', $auditableType)
+                    ->orWhere('target_type', $auditableType);
+            });
         }
-        if ($request->filled('auditable_id')) {
-            $query->where('auditable_id', $request->auditable_id);
+
+        $auditableId = $request->input('auditable_id', $request->input('entity_id'));
+        if ($auditableId) {
+            $query->where(function ($builder) use ($auditableId) {
+                $builder->where('entity_id', $auditableId)
+                    ->orWhere('target_id', $auditableId);
+            });
         }
 
         // Filter by action
@@ -31,7 +39,7 @@ class AuditLogController extends Controller
 
         // Filter by user
         if ($request->filled('user_id')) {
-            $query->where('user_id', $request->user_id);
+            $query->where('actor_id', $request->user_id);
         }
 
         // Date range
