@@ -60,6 +60,7 @@ use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\YachtController;
+use App\Http\Controllers\Api\YachtDraftController;
 
 // ──────────────────────────────────────────────────────────
 // Public routes (no auth needed for dev/testing)
@@ -159,6 +160,14 @@ Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'sto
 // Authenticated routes
 // ──────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
+    // Yacht draft persistence
+    Route::get('yacht-drafts', [YachtDraftController::class, 'index']);
+    Route::post('yacht-drafts', [YachtDraftController::class, 'store']);
+    Route::get('yacht-drafts/{draftId}', [YachtDraftController::class, 'show']);
+    Route::patch('yacht-drafts/{draftId}', [YachtDraftController::class, 'update']);
+    Route::post('yacht-drafts/{draftId}/attach-yacht', [YachtDraftController::class, 'attachYacht']);
+    Route::post('yacht-drafts/{draftId}/commit', [YachtDraftController::class, 'commit']);
+
     // Current user & lockscreen
     Route::get('user', function (Request $request) {
         return $request->user();

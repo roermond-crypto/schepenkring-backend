@@ -13,7 +13,9 @@ return new class extends Migration
     public function up(): void
     {
         // Modify the enum column to include 'published'
-        DB::statement("ALTER TABLE videos MODIFY COLUMN status ENUM('queued', 'processing', 'ready', 'failed', 'published') DEFAULT 'queued'");
+        if (!app()->runningUnitTests()) {
+            DB::statement("ALTER TABLE videos MODIFY COLUMN status ENUM('queued', 'processing', 'ready', 'failed', 'published') DEFAULT 'queued'");
+        }
     }
 
     /**
@@ -21,6 +23,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("ALTER TABLE videos MODIFY COLUMN status ENUM('queued', 'processing', 'ready', 'failed') DEFAULT 'queued'");
+        if (!app()->runningUnitTests()) {
+            DB::statement("ALTER TABLE videos MODIFY COLUMN status ENUM('queued', 'processing', 'ready', 'failed') DEFAULT 'queued'");
+        }
     }
 };
