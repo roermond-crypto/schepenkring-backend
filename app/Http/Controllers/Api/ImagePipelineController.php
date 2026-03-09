@@ -208,10 +208,17 @@ class ImagePipelineController extends Controller
 
             Storage::disk('public')->copy($image->original_temp_url, $keptPath);
 
-            $image->update([
+            $updateData = [
                 'keep_original'     => true,
                 'original_kept_url' => $keptPath,
-            ]);
+            ];
+
+            // Auto-approve if currently ready for review
+            if ($image->status === 'ready_for_review') {
+                $updateData['status'] = 'approved';
+            }
+
+            $image->update($updateData);
         } else {
             // Remove kept original if toggled off
             if ($image->original_kept_url) {
