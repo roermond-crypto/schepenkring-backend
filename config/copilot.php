@@ -10,6 +10,15 @@ return [
     'ai_model' => env('COPILOT_AI_MODEL', 'gpt-4o-mini'),
     'ai_provider' => env('COPILOT_AI_PROVIDER', 'openai'),
     'answer_ai_enabled' => (bool) env('COPILOT_ANSWER_AI_ENABLED', false),
+    'learning' => [
+        'enabled' => (bool) env('COPILOT_LEARNING_ENABLED', true),
+        'min_occurrences' => (int) env('COPILOT_LEARNING_MIN_OCCURRENCES', 3),
+        'lookback_days' => (int) env('COPILOT_LEARNING_LOOKBACK_DAYS', 30),
+        'refresh_interval_seconds' => (int) env('COPILOT_LEARNING_REFRESH_INTERVAL', 300),
+        'memory_top_k' => (int) env('COPILOT_MEMORY_TOP_K', 5),
+        'auto_create_enabled' => (bool) env('COPILOT_AUTO_CREATE_ENABLED', false),
+        'auto_create_threshold' => (float) env('COPILOT_AUTO_CREATE_THRESHOLD', 0.9),
+    ],
     'default_action_map' => [
         'invoice' => 'invoice.view',
         'boat' => 'boat.view',

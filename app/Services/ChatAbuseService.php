@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BlockedContact;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -9,7 +10,27 @@ class ChatAbuseService
 {
     public function ensureNotBlocked(?string $email, ?string $phone, ?string $whatsappId, ?string $ip): void
     {
-        // Phase 1: no blocklists yet.
+        foreach ([
+            ['type' => 'email', 'value' => $email],
+            ['type' => 'phone', 'value' => $phone],
+            ['type' => 'whatsapp', 'value' => $whatsappId],
+            ['type' => 'ip', 'value' => $ip],
+        ] as $entry) {
+            if (! $entry['value']) {
+                continue;
+            }
+
+            $blocked = BlockedContact::where('type', $entry['type'])
+                ->where('value', $entry['value'])
+                ->where(function ($query) {
+                    $query->whereNull('blocked_until')->orWhere('blocked_until', '>', now());
+                })
+                ->exists();
+
+            if ($blocked) {
+                abort(403, 'Contact is blocked.');
+            }
+        }
     }
 
     public function rateLimit(Request $request, ?string $visitorId, ?string $contactKey): void

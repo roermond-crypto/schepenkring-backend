@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Support\AuditResourceType;
 use Illuminate\Http\Request;
 
 class AuditLogController extends Controller
@@ -16,11 +17,13 @@ class AuditLogController extends Controller
         $query = AuditLog::with('user:id,name,email,avatar')
             ->orderByDesc('created_at');
 
-        $auditableType = $request->input('auditable_type', $request->input('entity_type'));
-        if ($auditableType) {
-            $query->where(function ($builder) use ($auditableType) {
-                $builder->where('entity_type', $auditableType)
-                    ->orWhere('target_type', $auditableType);
+        $auditableTypes = AuditResourceType::resolveMany(
+            $request->input('auditable_type', $request->input('entity_type'))
+        );
+        if (count($auditableTypes) > 0) {
+            $query->where(function ($builder) use ($auditableTypes) {
+                $builder->whereIn('entity_type', $auditableTypes)
+                    ->orWhereIn('target_type', $auditableTypes);
             });
         }
 
@@ -58,8 +61,10 @@ class AuditLogController extends Controller
      */
     public function forResource(Request $request, string $type, int $id)
     {
+        $resolvedType = AuditResourceType::resolve($type) ?? $type;
+
         return AuditLog::with('user:id,name,email,avatar')
-            ->forModel($type, $id)
+            ->forModel($resolvedType, $id)
             ->orderByDesc('created_at')
             ->paginate($request->input('per_page', 25));
     }

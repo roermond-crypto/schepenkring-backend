@@ -2,19 +2,23 @@
 
 namespace App\Services;
 
+use App\Jobs\InitiateOutboundCall;
+use App\Jobs\SendWhatsAppMessage;
 use App\Models\Attachment;
 use App\Models\Conversation;
-use App\Models\Location;
 use App\Models\Message;
 use App\Models\User;
+use App\Support\CopilotLanguage;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ChatConversationService
 {
     public function __construct(
         private ChatContactService $contactService,
-        private ChatAbuseService $abuseService
+        private ChatAbuseService $abuseService,
+        private CopilotLanguage $language
     ) {
     }
 
@@ -26,18 +30,18 @@ class ChatConversationService
         $phone = $contact?->phone ?? ($payload['contact']['phone'] ?? null);
         $whatsappId = $contact?->whatsapp_user_id ?? ($payload['contact']['whatsapp_user_id'] ?? null);
 
-        if (!($payload['allow_blocked_contacts'] ?? false)) {
+        if (! ($payload['allow_blocked_contacts'] ?? false)) {
             $this->abuseService->ensureNotBlocked($email, $phone, $whatsappId, $request->ip());
         }
-        if (!($payload['skip_rate_limit'] ?? false)) {
+        if (! ($payload['skip_rate_limit'] ?? false)) {
             $this->abuseService->rateLimit($request, $payload['visitor_id'] ?? null, $email ?? $phone ?? $whatsappId);
         }
 
         $visitorId = $payload['visitor_id'] ?? null;
         $boatId = $payload['boat_id'] ?? null;
         $harborId = $payload['harbor_id'] ?? $payload['widget_harbor_id'] ?? null;
-        if (!$harborId) {
-            $harborId = Location::query()->value('id') ?? 1;
+        if (! $harborId) {
+            $harborId = \App\Models\Location::query()->value('id') ?? 1;
         }
         $harborId = (int) $harborId;
 
@@ -62,8 +66,8 @@ class ChatConversationService
             'channel' => $channelOrigin,
             'channel_origin' => $channelOrigin,
             'ai_mode' => $payload['ai_mode'] ?? 'auto',
-            'language_preferred' => $payload['language_preferred'] ?? $contact?->language_preferred,
-            'language_detected' => $payload['language_detected'] ?? null,
+            'language_preferred' => $this->language->normalize($payload['language_preferred'] ?? $contact?->language_preferred),
+            'language_detected' => $this->language->normalize($payload['language_detected'] ?? null),
             'page_url' => $payload['page_url'] ?? null,
             'utm_source' => $payload['utm_source'] ?? null,
             'utm_medium' => $payload['utm_medium'] ?? null,
@@ -88,10 +92,10 @@ class ChatConversationService
         $phone = $contact?->phone ?? ($payload['contact']['phone'] ?? null);
         $whatsappId = $contact?->whatsapp_user_id ?? ($payload['contact']['whatsapp_user_id'] ?? null);
 
-        if (!($payload['allow_blocked_contacts'] ?? false)) {
+        if (! ($payload['allow_blocked_contacts'] ?? false)) {
             $this->abuseService->ensureNotBlocked($email, $phone, $whatsappId, $request->ip());
         }
-        if (!($payload['skip_rate_limit'] ?? false)) {
+        if (! ($payload['skip_rate_limit'] ?? false)) {
             $this->abuseService->rateLimit($request, $conversation->visitor_id, $email ?? $phone ?? $whatsappId);
         }
 
@@ -100,7 +104,7 @@ class ChatConversationService
             if ($contact && $contact->id !== $conversation->contact_id) {
                 $conversation->contact_id = $contact->id;
             }
-            if (!$conversation->user_id && $contact?->user_id) {
+            if (! $conversation->user_id && $contact?->user_id) {
                 $conversation->user_id = $contact->user_id;
             }
             $conversation->save();
@@ -111,19 +115,31 @@ class ChatConversationService
             $senderType = 'admin';
         }
 
+        $metadata = $payload['metadata'] ?? null;
+        if ($user && (($payload['message_type'] ?? null) === 'call')) {
+            $metadata = array_merge($metadata ?? [], [
+                'initiated_by_user_id' => $user->id,
+            ]);
+        }
+
         $message = Message::create([
             'conversation_id' => $conversation->id,
             'sender_type' => $senderType,
             'employee_id' => $user?->id,
             'text' => $payload['text'] ?? null,
             'body' => $payload['text'] ?? null,
-            'language' => $payload['language'] ?? $conversation->language_preferred,
+            'language' => $this->language->normalize($payload['language'] ?? $conversation->language_preferred),
             'channel' => $payload['channel'] ?? 'web',
             'external_message_id' => $payload['external_message_id'] ?? null,
             'message_type' => $payload['message_type'] ?? 'text',
             'status' => $payload['status'] ?? null,
-            'metadata' => $payload['metadata'] ?? null,
+            'metadata' => $metadata,
         ]);
+
+        if ($message->channel === 'whatsapp' && $message->sender_type !== 'visitor' && ! $message->status) {
+            $message->status = 'queued';
+            $message->save();
+        }
 
         $attachments = $payload['attachments'] ?? [];
         $this->storeAttachments($message, $attachments);
@@ -132,17 +148,82 @@ class ChatConversationService
         $conversation->last_message_at = $now;
         if ($message->sender_type === 'visitor') {
             $conversation->last_customer_message_at = $now;
+            if ($message->channel === 'whatsapp') {
+                $conversation->last_inbound_at = $now;
+                $conversation->window_expires_at = $now->copy()->addHours(24);
+            }
         } else {
             $conversation->last_staff_message_at = $now;
         }
         $conversation->save();
 
+        if ($message->sender_type !== 'visitor' && $message->channel === 'whatsapp') {
+            SendWhatsAppMessage::dispatch($message->id);
+        }
+
+        if ($message->sender_type !== 'visitor' && $message->message_type === 'call') {
+            if (! $message->status) {
+                $message->status = 'queued';
+                $message->save();
+            }
+            InitiateOutboundCall::dispatch($message->id);
+        }
+
         return $message;
+    }
+
+    public function syncLanguageContext(Conversation $conversation, array $resolvedLanguage, ?User $user = null, ?string $senderType = null, bool $persistPreference = false): void
+    {
+        $language = $this->language->normalize($resolvedLanguage['language'] ?? null);
+        if (! $language) {
+            return;
+        }
+
+        $senderType = $senderType ?: 'visitor';
+        $isHumanMessage = ! in_array($senderType, ['ai', 'system'], true);
+        $conversationChanged = false;
+
+        if (($persistPreference || empty($conversation->language_preferred)) && $isHumanMessage && $conversation->language_preferred !== $language) {
+            $conversation->language_preferred = $language;
+            $conversationChanged = true;
+        }
+
+        if (! empty($resolvedLanguage['detected_from_input']) && $conversation->language_detected !== $language) {
+            $conversation->language_detected = $language;
+            $conversationChanged = true;
+        }
+
+        if ($conversationChanged) {
+            $conversation->save();
+        }
+
+        $conversation->loadMissing('contact');
+        if ($conversation->contact && $senderType === 'visitor' && ($persistPreference || !empty($resolvedLanguage['detected_from_input']))) {
+            if ($conversation->contact->language_preferred !== $language) {
+                $conversation->contact->language_preferred = $language;
+                $conversation->contact->save();
+            }
+        }
+
+        if ($user && $isHumanMessage && ($persistPreference || !empty($resolvedLanguage['detected_from_input'])) && $user->locale !== $language) {
+            $user->forceFill([
+                'locale' => $language,
+            ])->saveQuietly();
+        }
+    }
+
+    public function recordEvent(Conversation $conversation, string $type, array $payload = []): void
+    {
+        Log::info('Conversation event', [
+            'conversation_id' => $conversation->id,
+            'type' => $type,
+            'payload' => $payload,
+        ]);
     }
 
     private function findReusableConversation(?string $visitorId, ?string $contactId, ?int $boatId, int $harborId): ?Conversation
     {
-        if (!$visitorId && !$contactId) {
+        if (! $visitorId && ! $contactId) {
             return null;
         }
 

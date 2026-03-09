@@ -37,11 +37,11 @@ class UserRepository
         return $user;
     }
 
-    public function queryWithFilters(array $filters): Builder
+    public function queryWithFilters(array $filters, ?Builder $query = null, bool $applyTypeFilter = true): Builder
     {
-        $query = $this->query();
+        $query = $query ?? $this->query();
 
-        if (! empty($filters['type'])) {
+        if ($applyTypeFilter && ! empty($filters['type'])) {
             $query->where('type', $filters['type']);
         }
 
@@ -69,6 +69,33 @@ class UserRepository
         }
 
         return $query;
+    }
+
+    public function queryForActor(User $actor): Builder
+    {
+        $query = $this->query();
+
+        if ($actor->isAdmin()) {
+            return $query;
+        }
+
+        if ($actor->isEmployee()) {
+            $locationIds = $actor->locations()->pluck('locations.id')->all();
+
+            if (count($locationIds) === 0) {
+                return $query->where('id', $actor->id);
+            }
+
+            return $query->where(function (Builder $builder) use ($locationIds, $actor) {
+                $builder->whereIn('client_location_id', $locationIds)
+                    ->orWhereHas('locations', function (Builder $locationQuery) use ($locationIds) {
+                        $locationQuery->whereIn('locations.id', $locationIds);
+                    })
+                    ->orWhere('id', $actor->id);
+            });
+        }
+
+        return $query->where('id', $actor->id);
     }
 
     public function queryClientsForUser(User $actor): Builder

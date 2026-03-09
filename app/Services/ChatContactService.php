@@ -4,9 +4,15 @@ namespace App\Services;
 
 use App\Models\Contact;
 use App\Models\User;
+use App\Support\CopilotLanguage;
 
 class ChatContactService
 {
+    public function __construct(
+        private CopilotLanguage $language
+    ) {
+    }
+
     public function resolveContact(?array $payload, ?User $user): ?Contact
     {
         $payload = $payload ?: [];
@@ -36,7 +42,7 @@ class ChatContactService
             'email' => $email,
             'phone' => $phone,
             'whatsapp_user_id' => $whatsappId,
-            'language_preferred' => $payload['language_preferred'] ?? null,
+            'language_preferred' => $this->language->normalize($payload['language_preferred'] ?? null),
             'do_not_contact' => (bool) ($payload['do_not_contact'] ?? false),
             'consent_marketing' => (bool) ($payload['consent_marketing'] ?? false),
             'consent_service_messages' => (bool) ($payload['consent_service_messages'] ?? true),
