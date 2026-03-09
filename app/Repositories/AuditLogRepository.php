@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\AuditLog;
+use App\Support\AuditResourceType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 
@@ -50,7 +51,7 @@ class AuditLogRepository
         }
 
         if (! empty($filters['entity_type'])) {
-            $types = $this->normalizeList($filters['entity_type']);
+            $types = AuditResourceType::resolveMany($filters['entity_type']);
             if (count($types) > 0) {
                 $query->where(function (Builder $builder) use ($types) {
                     $builder->whereIn('entity_type', $types)

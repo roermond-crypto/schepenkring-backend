@@ -7,6 +7,7 @@ use App\Models\CopilotActionPhrase;
 use App\Models\Boat;
 use App\Models\Location;
 use App\Models\User;
+use App\Support\CopilotLanguage;
 
 class CopilotResolverService
 {
@@ -60,7 +61,7 @@ class CopilotResolverService
             }
 
             if (empty($actions)) {
-                $actions = $this->buildActionsFromCandidates($actionCandidates, $input, $user, $clarifying);
+                $actions = $this->buildActionsFromCandidates($actionCandidates, $input, $user, $clarifying, $language);
                 if (!empty($actions)) {
                     $confidence = (float) ($actions[0]['score'] ?? 0.4);
                 }
@@ -73,7 +74,7 @@ class CopilotResolverService
         $answers = $this->buildAnswers($input);
 
         if (empty($actions) && empty($results) && empty($answers)) {
-            $clarifying = $clarifying ?: 'Can you specify what you want to open or search for?';
+            $clarifying = $clarifying ?: $this->language->translate('clarify_open_or_search', (string) $language);
         }
 
         $needsConfirmation = $needsConfirmation || $this->anyNeedsConfirmation($actions);
@@ -227,7 +228,7 @@ class CopilotResolverService
         return $this->actionFromCatalog($actionId, $params, $user);
     }
 
-    private function buildActionsFromCandidates(array $candidates, string $input, User $user, ?string &$clarifying): array
+    private function buildActionsFromCandidates(array $candidates, string $input, User $user, ?string &$clarifying, ?string $language = null): array
     {
         $actions = [];
         foreach ($candidates as $candidate) {
@@ -241,7 +242,7 @@ class CopilotResolverService
         }
 
         if (count($actions) > 1 && !$clarifying) {
-            $clarifying = 'Which action did you mean?';
+            $clarifying = $this->language->translate('clarify_action', (string) $language);
         }
 
         return $actions;
@@ -441,8 +442,7 @@ class CopilotResolverService
 
     private function looksLikeQuestion(string $input): bool
     {
-        $trimmed = strtolower(trim($input));
-        return str_ends_with($trimmed, '?') || str_starts_with($trimmed, 'how') || str_starts_with($trimmed, 'hoe') || str_starts_with($trimmed, 'wie');
+        return $this->language->looksLikeQuestion($input);
     }
 
     private function anyNeedsConfirmation(array $actions): bool

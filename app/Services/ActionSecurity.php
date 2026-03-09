@@ -16,7 +16,10 @@ use Illuminate\Support\Str;
 
 class ActionSecurity
 {
-    public function __construct(private ImpersonationContext $impersonationContext)
+    public function __construct(
+        private ImpersonationContext $impersonationContext,
+        private CopilotLearningService $learning
+    )
     {
     }
 
@@ -96,7 +99,7 @@ class ActionSecurity
             'impersonation_session_id' => $this->impersonationContext->sessionId(),
         ], $meta);
 
-        return AuditLog::create([
+        $log = AuditLog::create([
             'action' => $action,
             'risk_level' => $risk->value,
             'result' => $result,
@@ -117,6 +120,10 @@ class ActionSecurity
             'request_id' => $requestId,
             'idempotency_key' => $idempotencyKey,
         ]);
+
+        $this->learning->ingestAuditLog($log);
+
+        return $log;
     }
 
     private function resolveLocationId(?User $actor, ?object $target): ?int

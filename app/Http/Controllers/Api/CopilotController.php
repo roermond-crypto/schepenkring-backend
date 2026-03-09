@@ -4,13 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\CopilotAuditEvent;
 use App\Http\Controllers\Controller;
+use App\Services\CopilotLearningService;
 use App\Services\CopilotResolverService;
+use App\Support\CopilotLanguage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 
 class CopilotController extends Controller
 {
-    public function __construct(private CopilotResolverService $resolver)
+    public function __construct(
+        private CopilotResolverService $resolver,
+        private CopilotLanguage $language,
+        private CopilotLearningService $learning
+    )
     {
     }
 
@@ -37,13 +43,27 @@ class CopilotController extends Controller
 
         $context = $validated['context'] ?? [];
         $context['source'] = $validated['source'] ?? 'header';
-        $context['language'] = $context['language'] ?? $request->header('Accept-Language');
+        $resolvedLanguage = $this->language->resolve(
+            $validated['text'],
+            $context['language'] ?? null,
+            $request->header('Accept-Language'),
+            $user->locale
+        );
+        $context['language'] = $resolvedLanguage['language'];
 
         $response = $this->resolver->resolve($validated['text'], $user, $context);
+        $localeUpdated = $this->updateUserLocale($user, $resolvedLanguage['language']);
+        $response['language'] = $resolvedLanguage['language'];
+        $response['header_language'] = $resolvedLanguage['header_language'];
+        $response['language_detected_from_input'] = $resolvedLanguage['detected_from_input'];
+        $response['locale_updated'] = $localeUpdated;
 
         $this->logResolveEvent($request, $user->id, $validated['text'], $response);
 
-        return response()->json($response);
+        return response()
+            ->json($response)
+            ->header('Content-Language', $resolvedLanguage['language'])
+            ->header('X-Header-Language', $resolvedLanguage['header_language']);
     }
 
     public function track(Request $request)
@@ -66,7 +86,7 @@ class CopilotController extends Controller
             'request_id' => 'nullable|string|max:80',
         ]);
 
-        CopilotAuditEvent::create([
+        $event = CopilotAuditEvent::create([
             'user_id' => $user->id,
             'source' => $validated['source'] ?? 'header',
             'input_text' => $validated['input_text'] ?? null,
@@ -81,6 +101,8 @@ class CopilotController extends Controller
             'user_agent' => $request->userAgent(),
             'created_at' => now(),
         ]);
+
+        $this->learning->ingestCopilotAuditEvent($event);
 
         return response()->json(['message' => 'tracked']);
     }
@@ -97,7 +119,7 @@ class CopilotController extends Controller
             ];
         }, $actions);
 
-        CopilotAuditEvent::create([
+        $event = CopilotAuditEvent::create([
             'user_id' => $userId,
             'source' => $response['source'] ?? 'header',
             'input_text' => $input,
@@ -111,5 +133,20 @@ class CopilotController extends Controller
             'user_agent' => $request->userAgent(),
             'created_at' => now(),
         ]);
+
+        $this->learning->ingestCopilotAuditEvent($event);
+    }
+
+    private function updateUserLocale($user, string $language): bool
+    {
+        if (($user->locale ?? null) === $language) {
+            return false;
+        }
+
+        $user->forceFill([
+            'locale' => $language,
+        ])->saveQuietly();
+
+        return true;
     }
 }

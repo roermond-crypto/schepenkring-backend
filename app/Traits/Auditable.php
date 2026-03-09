@@ -2,7 +2,10 @@
 
 namespace App\Traits;
 
+use App\Enums\AuditResult;
+use App\Enums\RiskLevel;
 use App\Models\AuditLog;
+use App\Services\CopilotLearningService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Request;
 
@@ -47,27 +50,42 @@ trait Auditable
         ?array $oldValues = null,
         ?array $newValues = null,
         ?array $metadata = null,
-        ?string $riskLevel = 'INFO',
+        RiskLevel|string|null $riskLevel = null,
+        ?string $reason = null,
     ): AuditLog {
-        $actorId = null;
-        try {
-            $actorId = Auth::id();
-        } catch (\Exception $e) {
-            // Ignore errors if Auth is not available
-        }
+        $ipAddress = Request::ip();
+        $resolvedRiskLevel = $riskLevel instanceof RiskLevel
+            ? $riskLevel->value
+            : (is_string($riskLevel) && $riskLevel !== ''
+                ? strtoupper($riskLevel)
+                : RiskLevel::LOW->value);
 
-        return AuditLog::create([
-            'actor_id'        => $actorId,
-            'action'          => $action,
-            'risk_level'      => $riskLevel,
-            'target_type'     => static::class,
-            'target_id'       => $this->getKey(),
+        $log = AuditLog::create([
+            'action' => $action,
+            'risk_level' => $resolvedRiskLevel,
+            'result' => AuditResult::SUCCESS->value,
+            'actor_id' => Auth::id(),
+            'location_id' => $this->location_id ?? $this->client_location_id ?? Auth::user()?->client_location_id,
+            'target_type' => static::class,
+            'target_id' => $this->getKey(),
+            'entity_type' => static::class,
+            'entity_id' => $this->getKey(),
+            'meta' => array_filter([
+                'reason' => $reason,
+                'metadata' => $metadata,
+                'path' => Request::path(),
+                'method' => Request::method(),
+            ], static fn ($value) => $value !== null),
             'snapshot_before' => $oldValues,
-            'snapshot_after'  => $newValues,
-            'ip_address'      => Request::ip(),
-            'user_agent'      => Request::userAgent(),
-            'meta'            => $metadata,
+            'snapshot_after' => $newValues,
+            'ip_address' => $ipAddress,
+            'ip_hash' => $ipAddress ? hash('sha256', $ipAddress) : null,
+            'user_agent' => Request::userAgent(),
         ]);
+
+        app(CopilotLearningService::class)->ingestAuditLog($log);
+
+        return $log;
     }
 
     /**
@@ -75,6 +93,6 @@ trait Auditable
      */
     public function auditLogs()
     {
-        return $this->morphMany(AuditLog::class, 'auditable');
+        return $this->morphMany(AuditLog::class, 'entity');
     }
 }

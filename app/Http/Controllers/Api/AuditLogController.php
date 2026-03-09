@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Support\AuditResourceType;
 use Illuminate\Http\Request;
 
 class AuditLogController extends Controller
@@ -16,12 +17,22 @@ class AuditLogController extends Controller
         $query = AuditLog::with('user:id,name,email,avatar')
             ->orderByDesc('created_at');
 
-        // Filter by auditable
-        if ($request->filled('auditable_type')) {
-            $query->where('auditable_type', $request->auditable_type);
+        $auditableTypes = AuditResourceType::resolveMany(
+            $request->input('auditable_type', $request->input('entity_type'))
+        );
+        if (count($auditableTypes) > 0) {
+            $query->where(function ($builder) use ($auditableTypes) {
+                $builder->whereIn('entity_type', $auditableTypes)
+                    ->orWhereIn('target_type', $auditableTypes);
+            });
         }
-        if ($request->filled('auditable_id')) {
-            $query->where('auditable_id', $request->auditable_id);
+
+        $auditableId = $request->input('auditable_id', $request->input('entity_id'));
+        if ($auditableId) {
+            $query->where(function ($builder) use ($auditableId) {
+                $builder->where('entity_id', $auditableId)
+                    ->orWhere('target_id', $auditableId);
+            });
         }
 
         // Filter by action
@@ -31,7 +42,7 @@ class AuditLogController extends Controller
 
         // Filter by user
         if ($request->filled('user_id')) {
-            $query->where('user_id', $request->user_id);
+            $query->where('actor_id', $request->user_id);
         }
 
         // Date range
@@ -50,8 +61,10 @@ class AuditLogController extends Controller
      */
     public function forResource(Request $request, string $type, int $id)
     {
+        $resolvedType = AuditResourceType::resolve($type) ?? $type;
+
         return AuditLog::with('user:id,name,email,avatar')
-            ->forModel($type, $id)
+            ->forModel($resolvedType, $id)
             ->orderByDesc('created_at')
             ->paginate($request->input('per_page', 25));
     }

@@ -9,6 +9,7 @@ use App\Services\CopilotActionMatcherService;
 use App\Services\CopilotActionTokenService;
 use App\Services\CopilotActionValidationService;
 use App\Services\CopilotAiRouterService;
+use App\Services\CopilotLearningService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -20,7 +21,8 @@ class CopilotActionWorkflowController extends Controller
         private CopilotAiRouterService $aiRouter,
         private CopilotActionValidationService $validator,
         private CopilotActionTokenService $tokenService,
-        private CopilotActionExecutionService $executor
+        private CopilotActionExecutionService $executor,
+        private CopilotLearningService $learning
     ) {
     }
 
@@ -76,7 +78,7 @@ class CopilotActionWorkflowController extends Controller
         $draftId = (string) Str::uuid();
         $durationMs = (int) round((microtime(true) - $start) * 1000);
 
-        CopilotAuditEvent::create([
+        $event = CopilotAuditEvent::create([
             'user_id' => $user->id,
             'source' => 'admin_copilot',
             'stage' => 'draft',
@@ -96,6 +98,8 @@ class CopilotActionWorkflowController extends Controller
             'user_agent' => $request->userAgent(),
             'created_at' => now(),
         ]);
+
+        $this->learning->ingestCopilotAuditEvent($event);
 
         return response()->json([
             'draft_id' => $draftId,
@@ -130,7 +134,7 @@ class CopilotActionWorkflowController extends Controller
 
         $requiresConfirmation = (bool) $action->confirmation_required || $action->risk_level === 'high';
 
-        CopilotAuditEvent::create([
+        $event = CopilotAuditEvent::create([
             'user_id' => $user->id,
             'source' => 'admin_copilot',
             'stage' => 'validate',
@@ -148,6 +152,8 @@ class CopilotActionWorkflowController extends Controller
             'user_agent' => $request->userAgent(),
             'created_at' => now(),
         ]);
+
+        $this->learning->ingestCopilotAuditEvent($event);
 
         if (!$result['ok']) {
             return response()->json([
@@ -202,7 +208,7 @@ class CopilotActionWorkflowController extends Controller
         $execution = $this->executor->execute($action, $data['payload'] ?? []);
         $durationMs = (int) round((microtime(true) - $start) * 1000);
 
-        CopilotAuditEvent::create([
+        $event = CopilotAuditEvent::create([
             'user_id' => $user->id,
             'source' => 'admin_copilot',
             'stage' => 'execute',
@@ -219,6 +225,8 @@ class CopilotActionWorkflowController extends Controller
             'user_agent' => $request->userAgent(),
             'created_at' => now(),
         ]);
+
+        $this->learning->ingestCopilotAuditEvent($event);
 
         return response()->json([
             'status' => 'executed',

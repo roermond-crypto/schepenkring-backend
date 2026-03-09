@@ -6,12 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Services\ChatAccessService;
 use App\Services\ChatConversationService;
+use App\Support\CopilotLanguage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 
 class ChatMessageController extends Controller
 {
-    public function store(Request $request, string $conversationId, ChatAccessService $access, ChatConversationService $service)
+    public function store(
+        Request $request,
+        string $conversationId,
+        ChatAccessService $access,
+        ChatConversationService $service,
+        CopilotLanguage $language
+    )
     {
         $conversation = Conversation::findOrFail($conversationId);
 
@@ -71,9 +78,31 @@ class ChatMessageController extends Controller
             }
         }
 
-        $message = $service->addMessage($conversation, $payload, $request, $user);
+        $explicitLanguage = array_key_exists('language', $payload) && !empty($payload['language']);
+        $resolvedLanguage = $language->resolve(
+            (string) ($payload['text'] ?? ''),
+            $payload['language'] ?? $payload['contact']['language_preferred'] ?? $conversation->language_preferred,
+            $request->header('Accept-Language'),
+            $user?->locale ?? $conversation->language_preferred ?? $conversation->contact?->language_preferred
+        );
+        $payload['language'] = $resolvedLanguage['language'];
 
-        return response()->json($message, 201);
+        $message = $service->addMessage($conversation, $payload, $request, $user);
+        $service->syncLanguageContext(
+            $conversation,
+            $resolvedLanguage,
+            $user,
+            $message->sender_type,
+            !empty($payload['text']) || $explicitLanguage
+        );
+
+        return response()
+            ->json(array_merge($message->toArray(), [
+                'header_language' => $resolvedLanguage['header_language'],
+                'language_detected_from_input' => $resolvedLanguage['detected_from_input'],
+            ]), 201)
+            ->header('Content-Language', $resolvedLanguage['language'])
+            ->header('X-Header-Language', $resolvedLanguage['header_language']);
     }
 
     public function thumbsUp(Request $request, string $messageId)
