@@ -6,11 +6,15 @@ use App\Enums\RiskLevel;
 use App\Models\CopilotAction;
 use App\Http\Controllers\Controller;
 use App\Services\ActionSecurity;
+use App\Services\CopilotLearningService;
 use Illuminate\Http\Request;
 
 class CopilotActionController extends Controller
 {
-    public function __construct(private ActionSecurity $security)
+    public function __construct(
+        private ActionSecurity $security,
+        private CopilotLearningService $learning
+    )
     {
     }
 
@@ -68,6 +72,7 @@ class CopilotActionController extends Controller
             'created_by' => $request->user()?->id,
             'updated_by' => $request->user()?->id,
         ]));
+        $this->learning->syncAction($action);
 
         $this->logChange($request, 'created', $action, null, $action->toArray());
 
@@ -105,6 +110,7 @@ class CopilotActionController extends Controller
         $action->fill($validated);
         $action->updated_by = $request->user()?->id;
         $action->save();
+        $this->learning->syncAction($action);
 
         $this->logChange($request, 'updated', $action, $before, $action->toArray());
 

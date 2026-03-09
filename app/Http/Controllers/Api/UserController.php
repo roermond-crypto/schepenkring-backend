@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
-use App\Models\User;
+use App\Repositories\UserRepository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -17,25 +17,20 @@ class UserController extends Controller
      */
     public function index(Request $request)
     {
-        $query = User::query()
-            ->with(['locations', 'clientLocation'])
+        $filters = [
+            'type' => $request->input('type', $request->input('role')),
+            'status' => $request->has('is_active')
+                ? ($request->boolean('is_active') ? 'ACTIVE' : 'DISABLED')
+                : $request->input('status'),
+            'location_id' => $request->input('location_id'),
+            'search' => $request->input('search'),
+        ];
+
+        $hasSearch = is_string($filters['search'] ?? null) && trim((string) $filters['search']) !== '';
+
+        $query = app(UserRepository::class)->queryForActor($request->user());
+        $query = app(UserRepository::class)->queryWithFilters($filters, $query, ! $hasSearch)
             ->orderByDesc('created_at');
-
-        if ($request->filled('role')) {
-            $query->byRole((string) $request->string('role'));
-        }
-
-        if ($request->filled('search')) {
-            $search = (string) $request->string('search');
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        if ($request->filled('is_active')) {
-            $query->where('status', $request->boolean('is_active') ? 'ACTIVE' : 'DISABLED');
-        }
 
         return UserResource::collection($query->paginate($request->input('per_page', 25)));
     }

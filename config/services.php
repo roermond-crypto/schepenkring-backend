@@ -74,12 +74,27 @@ return [
         'key' => env('GEMINI_API_KEY'),
     ],
 
+    'pinecone' => [
+        'key' => env('PINECONE_API_KEY'),
+        'host' => env('PINECONE_HOST'),
+        'namespace' => env('PINECONE_NAMESPACE', 'copilot'),
+    ],
+
     'signhost' => [
         'base_url' => env('SIGNHOST_BASE_URL', 'https://api.signhost.com/api/'),
         'app_key' => env('SIGNHOST_APP_KEY'),
         'user_token' => env('SIGNHOST_USER_TOKEN'),
         'shared_secret' => env('SIGNHOST_SHARED_SECRET'),
         'webhook_auth' => env('SIGNHOST_WEBHOOK_AUTH'),
+    ],
+
+    'telnyx' => [
+        'base_url' => env('TELNYX_BASE_URL', 'https://api.telnyx.com/v2'),
+        'api_key' => env('TELNYX_API_KEY'),
+        'webhook_public_key' => env('TELNYX_WEBHOOK_PUBLIC_KEY'),
+        'webhook_secret' => env('TELNYX_WEBHOOK_SECRET'),
+        'connection_id' => env('TELNYX_CONNECTION_ID'),
+        'application_id' => env('TELNYX_APPLICATION_ID'),
     ],
 
     'yext' => [

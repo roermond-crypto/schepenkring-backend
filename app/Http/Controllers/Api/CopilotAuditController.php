@@ -16,7 +16,8 @@ class CopilotAuditController extends Controller
         }
 
         $validated = $request->validate([
-            'source' => 'nullable|string|in:header,chatpage,voice',
+            'source' => 'nullable|string|max:40',
+            'stage' => 'nullable|string|max:30',
             'status' => 'nullable|string|max:30',
             'failed_only' => 'nullable|boolean',
             'from' => 'nullable|date',
@@ -32,6 +33,9 @@ class CopilotAuditController extends Controller
 
         if (!empty($validated['source'])) {
             $query->where('source', $validated['source']);
+        }
+        if (!empty($validated['stage'])) {
+            $query->where('stage', $validated['stage']);
         }
         if (!empty($validated['status'])) {
             $query->where('status', $validated['status']);

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
 use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
+use App\Http\Controllers\Api\Admin\CopilotSuggestionController;
 use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
 use App\Http\Controllers\Api\Admin\HarborController as AdminHarborController;
 use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
@@ -47,6 +48,7 @@ use App\Http\Controllers\Api\PublicConversationMessageController;
 use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
+use App\Http\Controllers\Api\TelnyxVoiceWebhookController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
 use App\Http\Controllers\Api\Tasks\ColumnController as TaskColumnController;
 use App\Http\Controllers\Api\Tasks\TaskAutomationController;
@@ -54,7 +56,9 @@ use App\Http\Controllers\Api\Tasks\TaskAutomationTemplateController;
 use App\Http\Controllers\Api\Tasks\TaskController;
 use App\Http\Controllers\Api\Tasks\TaskUserController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\YachtController;
 
 // ──────────────────────────────────────────────────────────
@@ -134,7 +138,13 @@ Route::get('analytics/summary', [AnalyticsController::class, 'summary']);
 
 // Webhooks
 Route::post('webhooks/signhost', [WebhookController::class, 'signhost']);
+Route::post('webhooks/whatsapp/360dialog', [WhatsApp360DialogWebhookController::class, 'handle']);
+Route::post('webhooks/telnyx/voice', [TelnyxVoiceWebhookController::class, 'handle']);
 Route::post('sentry/webhook', [SentryWebhookController::class, 'handle']);
+
+// Internal voice gateway callbacks
+Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'store'])
+    ->middleware('internal.secret');
 
 // ──────────────────────────────────────────────────────────
 // Authenticated routes
@@ -295,6 +305,11 @@ Route::middleware('auth:sanctum')->group(function () {
 // ──────────────────────────────────────────────────────────
 // Admin routes
 // ──────────────────────────────────────────────────────────
+Route::prefix('admin')->middleware(['auth:sanctum', 'admin.errors'])->group(function () {
+    Route::get('users', [AdminUserController::class, 'index']);
+    Route::get('users/{id}', [AdminUserController::class, 'show']);
+});
+
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     // Harbors
     Route::get('harbors', [AdminHarborController::class, 'index']);
@@ -302,9 +317,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
 
     // Users
-    Route::get('users', [AdminUserController::class, 'index']);
     Route::post('users', [AdminUserController::class, 'store']);
-    Route::get('users/{id}', [AdminUserController::class, 'show']);
     Route::patch('users/{id}', [AdminUserController::class, 'update']);
     Route::delete('users/{id}', [AdminUserController::class, 'destroy']);
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
@@ -330,6 +343,12 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('copilot/actions/{action}', [CopilotActionController::class, 'show']);
     Route::put('copilot/actions/{action}', [CopilotActionController::class, 'update']);
     Route::delete('copilot/actions/{action}', [CopilotActionController::class, 'destroy']);
+    Route::get('copilot/suggestions', [CopilotSuggestionController::class, 'index']);
+    Route::post('copilot/suggestions/mine', [CopilotSuggestionController::class, 'mine']);
+    Route::get('copilot/suggestions/{suggestion}', [CopilotSuggestionController::class, 'show']);
+    Route::put('copilot/suggestions/{suggestion}', [CopilotSuggestionController::class, 'update']);
+    Route::post('copilot/suggestions/{suggestion}/approve', [CopilotSuggestionController::class, 'approve']);
+    Route::post('copilot/suggestions/{suggestion}/disable', [CopilotSuggestionController::class, 'disable']);
     Route::get('copilot/phrases', [CopilotActionPhraseController::class, 'index']);
     Route::post('copilot/phrases', [CopilotActionPhraseController::class, 'store']);
     Route::put('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'update']);

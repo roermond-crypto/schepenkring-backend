@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\ChatConversationService;
+use App\Support\CopilotLanguage;
 use Illuminate\Http\Request;
 
 class ConversationMessageController extends Controller
@@ -21,7 +23,12 @@ class ConversationMessageController extends Controller
         return response()->json($messages);
     }
 
-    public function store($conversationId, Request $request)
+    public function store(
+        $conversationId,
+        Request $request,
+        CopilotLanguage $language,
+        ChatConversationService $service
+    )
     {
         $conversation = Conversation::findOrFail($conversationId);
 
@@ -36,18 +43,47 @@ class ConversationMessageController extends Controller
             ->first();
 
         if ($existingMessage) {
-            return response()->json(['message' => $existingMessage], 200);
+            $existingLanguage = $language->normalize($existingMessage->language) ?? $conversation->language_preferred ?? 'en';
+
+            return response()
+                ->json([
+                    'message' => $existingMessage,
+                    'language' => $existingLanguage,
+                    'header_language' => strtoupper($existingLanguage),
+                    'language_detected_from_input' => false,
+                ], 200)
+                ->header('Content-Language', $existingLanguage)
+                ->header('X-Header-Language', strtoupper($existingLanguage));
         }
+
+        $resolvedLanguage = $language->resolve(
+            $validated['body'],
+            $conversation->language_preferred ?? $request->user()?->locale,
+            $request->header('Accept-Language'),
+            $request->user()?->locale ?? $conversation->contact?->language_preferred
+        );
 
         $message = Message::create([
             'conversation_id' => $conversationId,
             'sender_type' => 'employee',
             'employee_id' => $request->user()->id,
+            'text' => $validated['body'],
             'body' => $validated['body'],
+            'language' => $resolvedLanguage['language'],
             'client_message_id' => $validated['client_message_id'],
             'delivery_state' => 'sent',
         ]);
 
-        return response()->json(['message' => $message], 201);
+        $service->syncLanguageContext($conversation, $resolvedLanguage, $request->user(), 'employee', true);
+
+        return response()
+            ->json([
+                'message' => $message,
+                'language' => $resolvedLanguage['language'],
+                'header_language' => $resolvedLanguage['header_language'],
+                'language_detected_from_input' => $resolvedLanguage['detected_from_input'],
+            ], 201)
+            ->header('Content-Language', $resolvedLanguage['language'])
+            ->header('X-Header-Language', $resolvedLanguage['header_language']);
     }
 }

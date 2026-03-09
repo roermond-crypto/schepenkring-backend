@@ -32,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
             'admin.errors' => \App\Http\Middleware\EnsureAdminOrStaff::class,
             'bid.session' => \App\Http\Middleware\EnsureBidSession::class,
+            'internal.secret' => \App\Http\Middleware\VerifyInternalSecret::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

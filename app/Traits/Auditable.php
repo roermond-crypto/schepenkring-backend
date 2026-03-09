@@ -5,6 +5,7 @@ namespace App\Traits;
 use App\Enums\AuditResult;
 use App\Enums\RiskLevel;
 use App\Models\AuditLog;
+use App\Services\CopilotLearningService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Request;
 
@@ -59,7 +60,7 @@ trait Auditable
                 ? strtoupper($riskLevel)
                 : RiskLevel::LOW->value);
 
-        return AuditLog::create([
+        $log = AuditLog::create([
             'action' => $action,
             'risk_level' => $resolvedRiskLevel,
             'result' => AuditResult::SUCCESS->value,
@@ -81,6 +82,10 @@ trait Auditable
             'ip_hash' => $ipAddress ? hash('sha256', $ipAddress) : null,
             'user_agent' => Request::userAgent(),
         ]);
+
+        app(CopilotLearningService::class)->ingestAuditLog($log);
+
+        return $log;
     }
 
     /**

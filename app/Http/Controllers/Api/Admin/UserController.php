@@ -17,7 +17,7 @@ class UserController extends Controller
 {
     public function index(AdminUserIndexRequest $request, ListUsersAction $action)
     {
-        $users = $action->execute($request->validated());
+        $users = $action->execute($request->user(), $request->validated());
 
         return UserResource::collection($users);
     }
@@ -37,7 +37,7 @@ class UserController extends Controller
 
     public function show(int $id, UserRepository $users)
     {
-        $user = $users->findOrFail($id);
+        $user = $users->queryForActor(request()->user())->findOrFail($id);
 
         return response()->json([
             'data' => new UserResource($user->load(['locations', 'clientLocation'])),

@@ -55,10 +55,11 @@ class CopilotAiRouterService
 
         $contextText = json_encode($context, JSON_UNESCAPED_SLASHES);
         $actionsText = json_encode($actionList, JSON_UNESCAPED_SLASHES);
+        $language = $context['language'] ?? 'en';
 
         return <<<PROMPT
 You are a routing engine. Choose the best action_id from the list. Never invent new actions or URLs.
-If unsure, set clarifying_question.
+If unsure, set clarifying_question in the user's language ({$language}).
 Return ONLY valid JSON.
 
 Input: {$input}
