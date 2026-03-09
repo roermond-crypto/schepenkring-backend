@@ -48,13 +48,13 @@ class YachtImage extends Model {
 
     public function getFullUrlAttribute()
     {
-        return asset('storage/' . $this->url);
+        return $this->resolvePublicUrl($this->url);
     }
 
     public function getOptimizedUrlAttribute()
     {
         if ($this->optimized_master_url) {
-            return asset('storage/' . $this->optimized_master_url);
+            return $this->resolvePublicUrl($this->optimized_master_url);
         }
         return $this->full_url;
     }
@@ -62,7 +62,7 @@ class YachtImage extends Model {
     public function getThumbFullUrlAttribute()
     {
         if ($this->thumb_url) {
-            return asset('storage/' . $this->thumb_url);
+            return $this->resolvePublicUrl($this->thumb_url);
         }
         return $this->optimized_url;
     }
@@ -84,5 +84,18 @@ class YachtImage extends Model {
         if ($this->quality_score >= 50) return '✅ Acceptable';
 
         return '⚠️ Low quality';
+    }
+
+    private function resolvePublicUrl(?string $value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        if (preg_match('/^https?:\/\//i', $value) === 1) {
+            return $value;
+        }
+
+        return asset('storage/' . ltrim($value, '/'));
     }
 }

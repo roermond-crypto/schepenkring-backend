@@ -39,6 +39,7 @@ class AiPipelineController extends Controller
             'images.*'  => 'image|max:10240',
             'yacht_id'  => 'required_without:images|integer|exists:yachts,id',
             'hint_text' => 'nullable|string|max:2000',
+            'speed_mode' => 'nullable|string|in:fast,balanced,deep',
         ]);
 
         $apiKey = config('services.gemini.key');
@@ -46,12 +47,14 @@ class AiPipelineController extends Controller
             return response()->json(['error' => 'GEMINI_API_KEY not configured'], 500);
         }
 
+        $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
         $stagesRun = [];
         $formValues = [];
         $fieldConfidence = [];
         $fieldSources = [];
         $warnings = [];
         $needsConfirmation = [];
+        $visionImagesUsed = 0;
 
         // ─── STAGE 0: Local Text Parsing (always runs, no API) ────────
         $hintText = $request->input('hint_text');
@@ -71,16 +74,12 @@ class AiPipelineController extends Controller
         }
 
         // ─── STAGE 1: Gemini Vision Extract ───────────────────────────
-        $geminiRateLimited = false;
         $stage1Result = $this->runGeminiVisionExtract($request, $apiKey);
+        $visionImagesUsed = (int) ($stage1Result['image_count'] ?? 0);
 
         if (isset($stage1Result['error'])) {
             Log::warning('[AI Pipeline] Stage 1 (Gemini) failed, proceeding to fallbacks. Error: ' . $stage1Result['error']);
             $warnings[] = 'Primary vision extraction failed: ' . $stage1Result['error'];
-            // Detect rate limiting so we skip Stage 2 (also Gemini)
-            if (str_contains($stage1Result['error'], '429')) {
-                $geminiRateLimited = true;
-            }
             
             // Initialize null form values for all schema keys so enrichment can try to fill them
             $schemaKeys = [
@@ -205,18 +204,22 @@ class AiPipelineController extends Controller
         // ─── FAST PATH: If Pinecone provided enough data, skip slow stages ─
         $pineconeFieldCount = count($feedResult['consensus_values'] ?? []);
         $pineconeMatchCount = count($feedResult['top_matches'] ?? []);
-        $useFastPath = $pineconeFieldCount >= 10 && $pineconeMatchCount >= 1;
+        $hasAllRequired = empty($missingRequired);
+        $highConfidence = $overallConfidence >= self::CONFIDENCE_THRESHOLD;
+        $useFastPath = $speedMode === 'fast'
+            || ($pineconeFieldCount >= 10 && $pineconeMatchCount >= 1)
+            || ($speedMode !== 'deep' && $hasAllRequired && $highConfidence);
 
         if ($useFastPath) {
             Log::info('[AI Pipeline] FAST PATH: Pinecone provided ' . $pineconeFieldCount . ' fields, skipping slow validation stages');
             $stagesRun[] = 'fast_path_pinecone';
 
-            // Quick OpenAI enrichment for any remaining null fields
-            $nullCount = count(array_filter($formValues, fn($v) => $v === null));
-            if ($nullCount > 0) {
+            // In fast mode, only backfill required fields if they are missing.
+            $shouldRunOpenAiFastFill = !empty($missingRequired);
+            if ($shouldRunOpenAiFastFill) {
                 $openAiKeyEnv = config('services.openai.key');
                 if (!empty($openAiKeyEnv)) {
-                    $openaiEnriched = $this->runOpenAiEnrichment($formValues, $fieldConfidence, $openAiKeyEnv, []);
+                    $openaiEnriched = $this->runOpenAiEnrichment($formValues, $fieldConfidence, $openAiKeyEnv, $missingRequired);
                     if (!empty($openaiEnriched)) {
                         $stagesRun[] = 'openai_fast_fill';
                         foreach ($openaiEnriched as $key => $val) {
@@ -242,7 +245,9 @@ class AiPipelineController extends Controller
                 'field_confidence'   => $fieldConfidence,
                 'removed_fields'     => [],
                 'needs_confirmation' => [],
-                'validation_notes'   => 'Fast path: Pinecone provided ' . $pineconeFieldCount . ' fields. OpenAI filled remaining nulls.',
+                'validation_notes'   => $shouldRunOpenAiFastFill
+                    ? 'Fast path: returned core extraction quickly and backfilled missing required fields.'
+                    : 'Fast path: returned core extraction quickly with Pinecone consensus.',
             ];
 
             $stagesRun[] = 'confidence_merge';
@@ -370,6 +375,8 @@ class AiPipelineController extends Controller
                 'warnings'                => $warnings,
                 'similar_boats_count'     => count($pineconeResult['similar_boats']),
                 'feed_matches_count'      => count($feedResult['top_matches'] ?? []),
+                'speed_mode'              => $speedMode,
+                'vision_images_used'      => $visionImagesUsed,
             ],
         ]);
     }
@@ -381,6 +388,13 @@ class AiPipelineController extends Controller
     {
         $model    = "gemini-2.5-flash";
         $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
+        $maxVisionImages = match ($speedMode) {
+            'fast' => (int) config('services.ai_pipeline.max_vision_images_fast', 6),
+            'deep' => (int) config('services.ai_pipeline.max_vision_images_deep', 16),
+            default => (int) config('services.ai_pipeline.max_vision_images_balanced', 10),
+        };
+        $maxVisionImages = max(1, $maxVisionImages);
 
         $parts = [];
 
@@ -395,7 +409,11 @@ class AiPipelineController extends Controller
         
         if ($request->has('yacht_id')) {
             $yachtId = $request->input('yacht_id');
-            $images = \App\Models\YachtImage::where('yacht_id', $yachtId)->approved()->get();
+            $images = \App\Models\YachtImage::where('yacht_id', $yachtId)
+                ->approved()
+                ->orderBy('sort_order')
+                ->limit($maxVisionImages)
+                ->get();
             foreach ($images as $yachtImage) {
                 try {
                     // Extract relative path from URL
@@ -418,7 +436,7 @@ class AiPipelineController extends Controller
                 }
             }
         } elseif ($request->hasFile('images')) {
-            foreach ($request->file('images') as $image) {
+            foreach (array_slice($request->file('images'), 0, $maxVisionImages) as $image) {
                 try {
                     $imageData = base64_encode(file_get_contents($image->getRealPath()));
                     $parts[] = [
@@ -499,7 +517,10 @@ HINT];
                 }
             }
 
-            return ['extracted' => $extracted];
+            return [
+                'extracted' => $extracted,
+                'image_count' => $imageCount,
+            ];
 
         } catch (\Exception $e) {
             Log::error("[AI Pipeline] Gemini Stage 1 exception: " . $e->getMessage());
@@ -685,7 +706,15 @@ PROMPT;
             );
 
             $nullFields = array_keys(array_filter($currentValues, fn($v) => $v === null));
-            $nullFieldsList = implode(', ', $nullFields);
+            $targetFields = !empty($missingImportant)
+                ? array_values(array_intersect($nullFields, $missingImportant))
+                : $nullFields;
+
+            if (empty($targetFields)) {
+                return null;
+            }
+
+            $nullFieldsList = implode(', ', $targetFields);
 
             $systemPrompt = <<<PROMPT
 You are a marine data enrichment expert with DEEP, comprehensive knowledge of yacht and boat specifications, makes, models, and standard equipment.
@@ -707,7 +736,7 @@ RULES:
 PARTIAL DATA ALREADY KNOWN:
 {$partialData}
 
-FIELDS TO TRY TO FILL (fill as many as possible):
+FIELDS TO TRY TO FILL (focus on these first):
 {$nullFieldsList}
 PROMPT;
 
@@ -1905,5 +1934,28 @@ PROMPT;
             Log::error('[AI Description] Exception: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * POST /api/ai/suggestions
+     *
+     * Get boat specification suggestions based on similar sold boats via Pinecone.
+     */
+    public function getSuggestions(Request $request, \App\Services\PineconeMatcherService $pineconeMatcher): JsonResponse
+    {
+        $request->validate([
+            'query' => 'required|string|min:3',
+        ]);
+
+        $query = $request->input('query');
+        
+        $partialValues = [
+            'manufacturer' => $query,
+            'model' => $query,
+        ];
+
+        $result = $pineconeMatcher->matchAndBuildConsensus($partialValues, $query);
+
+        return response()->json($result);
     }
 }
