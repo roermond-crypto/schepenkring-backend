@@ -102,7 +102,7 @@ class AiPipelineController extends Controller
                 'dinghy', 'covers', 'spinnaker', 'fenders', 'television', 'cd_player', 'dvd_player',
                 'satellite_reception', 'oven', 'microwave', 'fridge', 'freezer', 'cooker',
                 'owners_comment', 'reg_details', 'known_defects', 'last_serviced', 
-                'short_description_en', 'short_description_nl', 'short_description_de'
+                'short_description_en', 'short_description_nl', 'short_description_de', 'short_description_fr'
             ];
             
             foreach ($schemaKeys as $key) {
@@ -701,7 +701,7 @@ RULES:
 - For dimension fields (loa, beam, draft): if you know the model, provide the factory specifications.
 - For engine fields: provide typical engine specs for this model if known.
 - For comfort fields (cabins, berths, toilet, shower): provide typical layout for this model.
-- Generate short_description_nl (Dutch translation of the English description) and short_description_de (German translation) if missing.
+- Generate short_description_nl (Dutch translation of the English description), short_description_de (German translation), and short_description_fr (French translation) if missing.
 - Return ONLY valid JSON containing the fields you can fill, plus "confidence" object and "warnings" array.
 
 PARTIAL DATA ALREADY KNOWN:
@@ -1310,6 +1310,7 @@ Return this exact JSON structure:
   "short_description_en": "string (2-3 sentence summary based ONLY on confirmed data)",
   "short_description_nl": "string (Dutch translation of the English summary)",
   "short_description_de": "string (German translation of the English summary)",
+  "short_description_fr": "string (French translation of the English summary)",
   "warnings": ["array of strings — flag uncertain detections, contradictions between images, unreadable text"],
   "confidence": {
     "field_name": "0.0 to 1.0 — EVERY non-null field MUST have a confidence entry ≥ 0.75"
@@ -1859,9 +1860,9 @@ You are an expert yacht copywriter. Given the data of a yacht, generate an engag
 Follow these requirements STRICTLY:
 - Tone: {$tone}
 - Length: Ensure the word count is between {$minWords} and {$maxWords} words per language. Do not output less than {$minWords} words!
-- Language: Provide the description in English, Dutch, and German.
+- Language: Provide the description in English, Dutch, German, and French.
 - Focus on the key features, amenities, and unique selling points of the boat.
-- Return ONLY a JSON object with keys "en", "nl", and "de".
+- Return ONLY a JSON object with keys "en", "nl", "de", and "fr".
 PROMPT;
 
         $endpoint = 'https://api.openai.com/v1/chat/completions';
@@ -1898,6 +1899,7 @@ PROMPT;
                     'en' => $extracted['en'] ?? null,
                     'nl' => $extracted['nl'] ?? null,
                     'de' => $extracted['de'] ?? null,
+                    'fr' => $extracted['fr'] ?? null,
                 ]
             ]);
 

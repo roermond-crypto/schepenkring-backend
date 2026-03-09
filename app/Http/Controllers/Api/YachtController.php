@@ -6,217 +6,212 @@ use App\Http\Controllers\Controller;
 use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use App\Services\LocationAccessService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
-use App\Models\YachtAvailabilityRule;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+
+class YachtController extends Controller
+{
+    public function __construct(private readonly LocationAccessService $locationAccess)
+    {
+    }
+
+    public function index(Request $request): JsonResponse
+    {
+        return response()->json(
+            $this->visibleYachtsQuery($request->user())
+                ->orderBy('boat_name', 'asc')
+                ->get()
+        );
+    }
+
+    public function partnerIndex(): JsonResponse
+    {
+        $user = Auth::user();
+
+        return response()->json(
+            $this->visibleYachtsQuery($user)
+                ->where('user_id', $user->id)
+                ->orderBy('boat_name', 'asc')
+                ->get()
+        );
+    }
 
 
-class YachtController extends Controller {
-
-public function index(): JsonResponse {
-    // Use boat_name instead of name for ordering
-    return response()->json(Yacht::with(['images', 'availabilityRules'])
-        ->orderBy('boat_name', 'asc')
-        ->get());
-}
-
-public function partnerIndex(): JsonResponse {
-    $user = Auth::user();
-    
-    return response()->json(
-        Yacht::with(['images', 'availabilityRules'])
-            ->where('user_id', $user->id)
-            ->orderBy('boat_name', 'asc')
-            ->get()
-    );
-}
-
-
-    public function store(Request $request): JsonResponse {
+    public function store(Request $request): JsonResponse
+    {
         return $this->saveYacht($request);
     }
 
-    public function update(Request $request, $id): JsonResponse {
+    public function update(Request $request, $id): JsonResponse
+    {
         return $this->saveYacht($request, $id);
     }
 
-// In YachtController.php - update the saveYacht method:
+    protected function saveYacht(Request $request, $id = null): JsonResponse
+    {
+        $offlineUuid = $request->header('X-Offline-ID');
+        if (! $id && $offlineUuid) {
+            $existing = Yacht::where('offline_uuid', $offlineUuid)->first();
+            if ($existing) {
+                $this->authorizeYachtAccess($request->user(), $existing);
+                $existing->load(['images', 'availabilityRules']);
 
-protected function saveYacht(Request $request, $id = null): JsonResponse
-{
-    // ── Idempotency: check for offline UUID to prevent duplicate creation ──
-    $offlineUuid = $request->header('X-Offline-ID');
-    if (!$id && $offlineUuid) {
-        $existing = Yacht::where('offline_uuid', $offlineUuid)->first();
-        if ($existing) {
-            $existing->load(['images', 'availabilityRules']);
-            return response()->json($existing, 200);
-        }
-    }
-
-    try {
-        DB::beginTransaction();
-
-        $isUpdate = $id !== null;
-        $yacht = $isUpdate ? Yacht::findOrFail($id) : new Yacht();
-        if ($isUpdate) {
-            $this->authorizeYachtAccess($request->user(), $yacht);
-        }
-        $previousStatus = $isUpdate ? $yacht->status : null;
-        $previousFinancial = $isUpdate ? [
-            'sale_price' => $yacht->sale_price,
-            'commission_percentage' => $yacht->commission_percentage,
-            'harbor_split_percentage' => $yacht->harbor_split_percentage,
-            'commission_amount' => $yacht->commission_amount,
-            'sale_stage' => $yacht->sale_stage,
-        ] : null;
-
-        // Auto-generate boat name if not provided
-        if (!$request->has('boat_name') || empty($request->input('boat_name'))) {
-            $manufacturer = $request->input('manufacturer', '');
-            $model = $request->input('model', '');
-            $autoName = trim("$manufacturer $model");
-            if (empty($autoName)) {
-                $autoName = 'Yacht ' . date('Y-m-d H:i');
+                return response()->json($existing, 200);
             }
-            $request->merge(['boat_name' => $autoName]);
         }
 
-        // ─── Core fields (stay on the yachts table) ────────────
-        $coreFields = [
-            'boat_name', 'price', 'status', 'year', 'main_image', 'min_bid_amount',
-            'external_url', 'print_url', 'owners_comment', 'reg_details',
-            'known_defects', 'last_serviced',
-            'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
-            'vessel_lying', 'location_city', 'location_lat', 'location_lng',
-            'short_description_nl', 'short_description_en', 'short_description_de', 'advertise_as',
-            'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
-            'open_cockpit', 'aft_cockpit', 'ballast_tank',
-            'steering_system', 'steering_system_location',
-            'remote_control', 'rudder', 'drift_restriction',
-            'drift_restriction_controls', 'trimflaps', 'stabilizer',
-        ];
+        try {
+            DB::beginTransaction();
 
-        // Boolean fields (only these remain as true booleans on core table)
-        $booleanFields = ['allow_bidding'];
+            $actor = $request->user();
+            $isUpdate = $id !== null;
+            $yacht = $isUpdate ? Yacht::findOrFail($id) : new Yacht();
+            if ($isUpdate) {
+                $this->authorizeYachtAccess($actor, $yacht);
+            }
+            if (! $request->has('boat_name') || empty($request->input('boat_name'))) {
+                $manufacturer = $request->input('manufacturer', '');
+                $model = $request->input('model', '');
+                $autoName = trim("$manufacturer $model");
 
-        // Handle core fields
-        foreach ($coreFields as $field) {
-            if ($request->has($field)) {
+                if (empty($autoName)) {
+                    $autoName = 'Yacht '.date('Y-m-d H:i');
+                }
+
+                $request->merge(['boat_name' => $autoName]);
+            }
+
+            $coreFields = [
+                'boat_name', 'price', 'status', 'year', 'main_image', 'min_bid_amount',
+                'external_url', 'print_url', 'owners_comment', 'reg_details',
+                'known_defects', 'last_serviced',
+                'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
+                'vessel_lying', 'location_city', 'location_lat', 'location_lng',
+                'short_description_nl', 'short_description_en', 'short_description_de', 'short_description_fr', 'advertise_as',
+                'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
+                'open_cockpit', 'aft_cockpit', 'ballast_tank',
+                'steering_system', 'steering_system_location',
+                'remote_control', 'rudder', 'drift_restriction',
+                'drift_restriction_controls', 'trimflaps', 'stabilizer',
+            ];
+            $booleanFields = ['allow_bidding'];
+
+            foreach ($coreFields as $field) {
+                if (! $request->has($field)) {
+                    continue;
+                }
+
                 $value = $request->input($field);
-                if ($value === '' || $value === 'undefined' || $value === null) {
-                    $yacht->{$field} = null;
-                } else {
-                    $yacht->{$field} = $value;
+                $yacht->{$field} = ($value === '' || $value === 'undefined' || $value === null)
+                    ? null
+                    : $value;
+            }
+
+            foreach ($booleanFields as $field) {
+                if ($request->has($field)) {
+                    $yacht->{$field} = filter_var($request->input($field), FILTER_VALIDATE_BOOLEAN);
+                } elseif (! $isUpdate) {
+                    $yacht->{$field} = false;
                 }
             }
-        }
 
-        // Handle boolean fields
-        foreach ($booleanFields as $field) {
-            if ($request->has($field)) {
-                $value = $request->input($field);
-                $yacht->{$field} = filter_var($value, FILTER_VALIDATE_BOOLEAN);
-            } elseif (!$isUpdate) {
-                $yacht->{$field} = false;
+            if ($request->hasFile('main_image')) {
+                if ($isUpdate && $yacht->main_image) {
+                    Storage::disk('public')->delete($yacht->main_image);
+                }
+
+                $yacht->main_image = $request->file('main_image')->store('yachts/main', 'public');
             }
-        }
 
-        // Handle main image
-        if ($request->hasFile('main_image')) {
-            if ($isUpdate && $yacht->main_image) {
-                Storage::disk('public')->delete($yacht->main_image);
+            if ($request->has('ref_harbor_id')) {
+                $requestedHarborId = $request->integer('ref_harbor_id') ?: null;
+
+                if ($actor?->isClient()) {
+                    $yacht->ref_harbor_id = $actor->client_location_id;
+                } elseif ($actor?->isEmployee()) {
+                    if ($requestedHarborId !== null && ! $this->locationAccess->sharesLocation($actor, $requestedHarborId)) {
+                        abort(403, 'Forbidden');
+                    }
+
+                    $yacht->ref_harbor_id = $requestedHarborId;
+                } else {
+                    $yacht->ref_harbor_id = $requestedHarborId;
+                }
+            } elseif (! $isUpdate && $actor?->client_location_id) {
+                $yacht->ref_harbor_id = $actor->client_location_id;
             }
-            $yacht->main_image = $request->file('main_image')->store('yachts/main', 'public');
-        }
 
-        // Set user_id for new yachts
-        if (!$isUpdate) {
-            $yacht->user_id = auth()->id() ?? 1;
-            // Generate vessel ID if not set
-            if (!$yacht->vessel_id) {
-                $yacht->vessel_id = 'SK-' . date('Y') . '-' . strtoupper(bin2hex(random_bytes(3)));
+            if (! $isUpdate) {
+                $yacht->user_id = $actor?->id;
+
+                if (! $yacht->vessel_id) {
+                    $yacht->vessel_id = 'SK-'.date('Y').'-'.strtoupper(bin2hex(random_bytes(3)));
+                }
+
+                if ($offlineUuid) {
+                    $yacht->offline_uuid = $offlineUuid;
+                }
             }
-            // Store offline UUID for idempotency
-            if ($offlineUuid) {
-                $yacht->offline_uuid = $offlineUuid;
+
+            if (empty($yacht->min_bid_amount) && ! empty($yacht->price)) {
+                $yacht->min_bid_amount = $yacht->price * 0.9;
             }
-        }
 
-        if (!$isUpdate) {
-            // Attribution logic removed
-        }
+            $yacht->save();
+            $yacht->saveSubTables($request->all());
 
-        // Auto-calculate min_bid_amount if not set and price exists
-        if (empty($yacht->min_bid_amount) && !empty($yacht->price)) {
-            $yacht->min_bid_amount = $yacht->price * 0.9;
-        }
+            if ($request->filled('availability_rules')) {
+                try {
+                    $rules = json_decode($request->input('availability_rules'), true);
 
-        // Save the yacht (core table)
-        $yacht->save();
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($rules)) {
+                        $yacht->availabilityRules()->delete();
 
-        // ─── Save sub-table fields ─────────────────────────────
-        // saveSubTables reads all sub-table fields from the request
-        // and creates/updates the appropriate sub-table rows.
-        $yacht->saveSubTables($request->all());
-
-        // Handle availability rules
-        if ($request->filled('availability_rules')) {
-            try {
-                $rules = json_decode($request->input('availability_rules'), true);
-                
-                if (json_last_error() === JSON_ERROR_NONE && is_array($rules)) {
-                    // Delete old rules
-                    $yacht->availabilityRules()->delete();
-                    
-                    foreach ($rules as $rule) {
-                        if (!empty($rule['day_of_week']) && !empty($rule['start_time']) && !empty($rule['end_time'])) {
-                            $yacht->availabilityRules()->create([
-                                'day_of_week' => (int) $rule['day_of_week'],
-                                'start_time' => $rule['start_time'],
-                                'end_time' => $rule['end_time'],
-                            ]);
+                        foreach ($rules as $rule) {
+                            if (! empty($rule['day_of_week']) && ! empty($rule['start_time']) && ! empty($rule['end_time'])) {
+                                $yacht->availabilityRules()->create([
+                                    'day_of_week' => (int) $rule['day_of_week'],
+                                    'start_time' => $rule['start_time'],
+                                    'end_time' => $rule['end_time'],
+                                ]);
+                            }
                         }
                     }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to save availability rules: '.$e->getMessage());
                 }
-            } catch (\Exception $e) {
-                Log::warning('Failed to save availability rules: ' . $e->getMessage());
             }
+
+            DB::commit();
+
+            $yacht->load(['images', 'availabilityRules']);
+
+            return response()->json($yacht, $isUpdate ? 200 : 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Yacht Save Error: '.$e->getMessage(), [
+                'line' => $e->getLine(),
+                'file' => $e->getFile(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all(),
+                'yacht_id' => $id ?? 'new',
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to save yacht',
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+            ], 500);
         }
-
-        DB::commit();
-
-// Removed strict logic
-
-        // Reload with relationships (sub-tables auto-loaded via $with)
-        $yacht->load(['images', 'availabilityRules']);
-
-        return response()->json($yacht, $isUpdate ? 200 : 201);
-
-    } catch (\Throwable $e) {
-        DB::rollBack();
-
-        Log::error("Yacht Save Error: " . $e->getMessage(), [
-            'line' => $e->getLine(),
-            'file' => $e->getFile(),
-            'trace' => $e->getTraceAsString(),
-            'request_data' => $request->all(),
-            'yacht_id' => $id ?? 'new'
-        ]);
-
-        return response()->json([
-            'message' => 'Failed to save yacht',
-            'error' => $e->getMessage(),
-            'line' => $e->getLine()
-        ], 500);
     }
-}
 
 
     public function uploadGallery(Request $request, $id): JsonResponse {
@@ -384,52 +379,108 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
         return response()->json(['message' => 'Image removed']);
     }
 
-    public function show($id): JsonResponse {
-        $yacht = Yacht::with(['images', 'availabilityRules'])->find($id);
-        if (!$yacht) {
+    public function show(Request $request, $id): JsonResponse
+    {
+        $yacht = $this->visibleYachtsQuery($request->user())->find($id);
+        if (! $yacht) {
             return response()->json(['message' => 'Vessel not found'], 404);
         }
 
         return response()->json($yacht);
     }
 
-    public function destroy($id): JsonResponse {
+    public function destroy($id): JsonResponse
+    {
         $yacht = Yacht::findOrFail($id);
         $this->authorizeYachtAccess(Auth::user(), $yacht);
+
         if ($yacht->main_image) {
             Storage::disk('public')->delete($yacht->main_image);
         }
-        
-        // Delete gallery images from storage too
-        foreach($yacht->images as $img) {
+
+        foreach ($yacht->images as $img) {
             Storage::disk('public')->delete($img->url);
         }
-        
+
         $yacht->delete();
+
         return response()->json(['message' => 'Vessel removed from fleet.']);
     }
 
     private function authorizeYachtAccess(?User $user, Yacht $yacht): void
     {
-        // During development: skip auth when no user is authenticated
-        // (routes are public, auth will be enforced after merge)
-        if (!$user) {
+        if (! $user) {
+            abort(401, 'Unauthenticated.');
+        }
+
+        if ($user->isAdmin()) {
             return;
         }
 
-        $role = strtolower((string) $user->role);
-        if ($role === 'admin') {
+        if ($user->isClient() && (int) $yacht->user_id === (int) $user->id) {
             return;
         }
 
-        $allowed = $yacht->user_id === $user->id || $yacht->ref_harbor_id === $user->id;
-        if (!$allowed && method_exists($user, 'hasRole')) {
-            $allowed = $user->hasRole('Admin');
+        if ($user->isEmployee()) {
+            $locationId = $this->resolveYachtLocationId($yacht);
+            if ($locationId !== null && $this->locationAccess->sharesLocation($user, $locationId)) {
+                return;
+            }
         }
 
-        if (!$allowed) {
-            abort(403, 'Forbidden');
+        abort(403, 'Forbidden');
+    }
+
+    private function visibleYachtsQuery(?User $user): Builder
+    {
+        $query = Yacht::query()->with(['images', 'availabilityRules']);
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
         }
+
+        if ($user->isAdmin()) {
+            return $query;
+        }
+
+        if ($user->isClient()) {
+            return $query->where('user_id', $user->id);
+        }
+
+        if ($user->isEmployee()) {
+            $locationIds = $this->locationAccess->accessibleLocationIds($user);
+            if ($locationIds === []) {
+                return $query->whereRaw('1 = 0');
+            }
+
+            return $query->where(function (Builder $builder) use ($locationIds) {
+                $builder->whereIn('ref_harbor_id', $locationIds)
+                    ->orWhereHas('owner', function (Builder $ownerQuery) use ($locationIds) {
+                        $ownerQuery->whereIn('client_location_id', $locationIds);
+                    });
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    private function resolveYachtLocationId(Yacht $yacht): ?int
+    {
+        if ($yacht->ref_harbor_id) {
+            return (int) $yacht->ref_harbor_id;
+        }
+
+        if ($yacht->relationLoaded('owner') && $yacht->owner?->client_location_id) {
+            return (int) $yacht->owner->client_location_id;
+        }
+
+        if (! $yacht->user_id) {
+            return null;
+        }
+
+        return User::query()
+            ->whereKey($yacht->user_id)
+            ->value('client_location_id');
     }
 
     public function classifyImages(Request $request): JsonResponse
@@ -598,6 +649,8 @@ Return this exact JSON structure:
   "last_serviced": "string|null",
   "short_description_en": "string|null (generate a 2-3 sentence summary in English)",
   "short_description_nl": "string|null (generate a 2-3 sentence summary in Dutch)",
+  "short_description_de": "string|null (generate a 2-3 sentence summary in German)",
+  "short_description_fr": "string|null (generate a 2-3 sentence summary in French)",
   "warnings": ["array of strings - missing docs, conflicting data, unreadable text, etc."],
   "confidence": {
     "field_name": 0.0 to 1.0 (confidence score for each extracted field)

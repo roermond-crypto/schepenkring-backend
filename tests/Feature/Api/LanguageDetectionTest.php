@@ -40,6 +40,35 @@ test('copilot resolves dutch input and updates the user locale', function () {
     expect($user->fresh()->locale)->toBe('nl');
 });
 
+test('copilot resolves french input and updates the user locale', function () {
+    $user = User::factory()->create([
+        'type' => UserType::ADMIN,
+        'status' => UserStatus::ACTIVE,
+        'locale' => 'en',
+    ]);
+
+    Sanctum::actingAs($user);
+
+    $response = $this
+        ->withHeaders([
+            'Accept-Language' => 'en-US,en;q=0.9',
+        ])
+        ->postJson('/api/copilot/resolve', [
+            'text' => 'Bonjour, comment ouvrir un utilisateur ?',
+        ]);
+
+    $response->assertOk()
+        ->assertHeader('Content-Language', 'fr')
+        ->assertHeader('X-Header-Language', 'FR')
+        ->assertJsonPath('language', 'fr')
+        ->assertJsonPath('header_language', 'FR')
+        ->assertJsonPath('language_detected_from_input', true)
+        ->assertJsonPath('locale_updated', true)
+        ->assertJsonPath('clarifying_question', 'Pouvez-vous préciser ce que vous voulez ouvrir ou rechercher ?');
+
+    expect($user->fresh()->locale)->toBe('fr');
+});
+
 test('chat messages sync dutch language to the conversation and authenticated user', function () {
     $user = User::factory()->create([
         'type' => UserType::ADMIN,

@@ -29,6 +29,7 @@ class PlatformError extends Model
         'ai_user_message_nl',
         'ai_user_message_en',
         'ai_user_message_de',
+        'ai_user_message_fr',
         'ai_dev_summary',
         'ai_category',
         'ai_severity',

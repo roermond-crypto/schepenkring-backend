@@ -76,9 +76,6 @@ Route::prefix('auth')->group(function () {
 // PUBLIC routes (no auth needed for dev/testing)
 // ──────────────────────────────────────────────────────────
 
-// Yachts
-Route::apiResource('yachts', YachtController::class);
-
 // ── CRM Public Chat Widget ──────────
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
@@ -86,29 +83,12 @@ Route::prefix('public/conversations/{conversationId}')->group(function () {
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
 });
 
-// ── Image Pipeline ──────────
-Route::prefix('yachts/{yachtId}/images')->group(function () {
-    Route::post('/upload', [ImagePipelineController::class, 'upload']);
-    Route::get('/', [ImagePipelineController::class, 'index']);
-    Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
-    Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
-    Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
-    Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
-});
-Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
-Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
-
 // AI pipeline
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
 
-// Checklists & documents
+// Checklists
 Route::get('checklists/templates', [ChecklistTemplateController::class, 'index']);
-Route::prefix('yachts/{yachtId}/documents')->group(function () {
-    Route::get('/', [BoatDocumentController::class, 'index']);
-    Route::post('/', [BoatDocumentController::class, 'store']);
-    Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
-});
 
 // Auth
 Route::prefix('auth')->group(function () {
@@ -150,6 +130,28 @@ Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'sto
 // Authenticated routes
 // ──────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
+    // Yachts
+    Route::apiResource('yachts', YachtController::class);
+
+    // Yacht image pipeline
+    Route::prefix('yachts/{yachtId}/images')->group(function () {
+        Route::post('/upload', [ImagePipelineController::class, 'upload']);
+        Route::get('/', [ImagePipelineController::class, 'index']);
+        Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
+        Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
+        Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
+        Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
+    });
+    Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
+    Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']);
+
+    // Yacht documents
+    Route::prefix('yachts/{yachtId}/documents')->group(function () {
+        Route::get('/', [BoatDocumentController::class, 'index']);
+        Route::post('/', [BoatDocumentController::class, 'store']);
+        Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
+    });
+
     // Current user & lockscreen
     Route::get('user', function (Request $request) {
         return $request->user();
@@ -313,8 +315,11 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin.errors'])->group(func
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     // Harbors
     Route::get('harbors', [AdminHarborController::class, 'index']);
+    Route::post('harbors', [AdminHarborController::class, 'store']);
     Route::get('harbors/performance', [AdminHarborController::class, 'performance']);
     Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
+    Route::patch('harbors/{harbor}', [AdminHarborController::class, 'update']);
+    Route::delete('harbors/{harbor}', [AdminHarborController::class, 'destroy']);
 
     // Users
     Route::post('users', [AdminUserController::class, 'store']);

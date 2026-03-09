@@ -67,7 +67,8 @@ class ErrorAiService
             'user_message' => [
                 'nl' => 'string',
                 'en' => 'string',
-                'de' => 'string'
+                'de' => 'string',
+                'fr' => 'string',
             ],
             'user_steps' => ['string'],
             'dev_summary' => 'string',
@@ -117,7 +118,8 @@ class ErrorAiService
             'user_message' => [
                 'nl' => 'string',
                 'en' => 'string',
-                'de' => 'string'
+                'de' => 'string',
+                'fr' => 'string',
             ],
             'user_steps' => ['string'],
             'dev_summary' => 'string',
