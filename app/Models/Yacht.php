@@ -196,6 +196,14 @@ class Yacht extends Model
         return $this->hasMany(SocialPost::class);
     }
 
+    public function fieldChanges(): HasMany {
+        return $this->hasMany(BoatFieldChange::class);
+    }
+
+    public function aiExtractions(): HasMany {
+        return $this->hasMany(YachtAiExtraction::class);
+    }
+
     // ─── Existing relationships ────────────────────────────────
 
     public function images(): HasMany {

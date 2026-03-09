@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Models\User;
+use App\Services\AiCorrectionLoggingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\JsonResponse;
@@ -15,9 +16,21 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 
 class YachtController extends Controller {
+
+private const ALLOWED_CHANGED_BY_TYPES = ['ai', 'user', 'admin', 'import', 'scraper'];
+private const ALLOWED_SOURCE_TYPES = ['image', 'text', 'manual', 'api', 'inferred'];
+private const ALLOWED_CORRECTION_LABELS = [
+    'wrong_image_detection',
+    'wrong_text_interpretation',
+    'guessed_too_much',
+    'duplicate_data_issue',
+    'import_mismatch',
+    'other',
+];
 
 public function index(): JsonResponse {
     // Use boat_name instead of name for ordering
@@ -64,7 +77,23 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
         DB::beginTransaction();
 
         $isUpdate = $id !== null;
-        $yacht = $isUpdate ? Yacht::findOrFail($id) : new Yacht();
+        $allowCreateIfMissing = (string) $request->header('X-Allow-Create-If-Missing') === '1'
+            || filter_var($request->input('create_if_missing'), FILTER_VALIDATE_BOOLEAN);
+
+        if ($isUpdate) {
+            $yacht = Yacht::find($id);
+            if (!$yacht) {
+                if ($allowCreateIfMissing) {
+                    $isUpdate = false;
+                    $yacht = new Yacht();
+                } else {
+                    throw (new ModelNotFoundException())->setModel(Yacht::class, [$id]);
+                }
+            }
+        } else {
+            $yacht = new Yacht();
+        }
+
         if ($isUpdate) {
             $this->authorizeYachtAccess($request->user(), $yacht);
         }
@@ -105,6 +134,15 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
 
         // Boolean fields (only these remain as true booleans on core table)
         $booleanFields = ['allow_bidding'];
+        $trackableFields = array_values(array_unique(array_merge(
+            $coreFields,
+            $booleanFields,
+            ...array_values(Yacht::SUB_TABLE_MAP)
+        )));
+        $submittedTrackableFields = $this->extractSubmittedTrackableFields($request, $trackableFields);
+        $beforeSnapshot = $isUpdate
+            ? $this->buildSnapshotForFields($yacht->toArray(), $submittedTrackableFields)
+            : [];
 
         // Handle core fields
         foreach ($coreFields as $field) {
@@ -190,15 +228,56 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
             }
         }
 
+        $yacht->refresh();
+        $yacht->load(['images', 'availabilityRules']);
+        $afterSnapshot = $this->buildSnapshotForFields($yacht->toArray(), $submittedTrackableFields);
+
+        if (!empty($submittedTrackableFields)) {
+            try {
+                /** @var AiCorrectionLoggingService $changeLogger */
+                $changeLogger = app(AiCorrectionLoggingService::class);
+                $changeLogger->logFieldDiffs(
+                    $yacht->id,
+                    $beforeSnapshot,
+                    $afterSnapshot,
+                    [
+                        'changed_by_type' => $this->resolveChangedByType($request),
+                        'changed_by_id' => $request->user()?->id,
+                        'source_type' => $this->normalizeSourceType($request->input('source_type')),
+                        'field_confidence' => $this->extractFieldConfidenceMap($request),
+                        'ai_session_id' => $request->input('ai_session_id'),
+                        'model_name' => $request->input('model_name') ?? $request->input('ai_model_name'),
+                        'reason' => $request->input('change_reason'),
+                        'correction_label' => $this->normalizeCorrectionLabel($request->input('correction_label')),
+                        'scope' => $isUpdate ? 'yacht_update' : 'yacht_create',
+                    ]
+                );
+            } catch (\Throwable $logError) {
+                Log::warning('Failed to persist boat field change log', [
+                    'yacht_id' => $yacht->id,
+                    'error' => $logError->getMessage(),
+                ]);
+            }
+        }
+
         DB::commit();
 
 // Removed strict logic
 
-        // Reload with relationships (sub-tables auto-loaded via $with)
-        $yacht->load(['images', 'availabilityRules']);
-
         return response()->json($yacht, $isUpdate ? 200 : 201);
 
+    } catch (ModelNotFoundException $e) {
+        DB::rollBack();
+
+        Log::warning('Yacht Save Error: target yacht not found', [
+            'requested_yacht_id' => $id,
+            'request_data' => $request->all(),
+        ]);
+
+        return response()->json([
+            'message' => 'Failed to save yacht',
+            'error' => 'Yacht not found',
+        ], 404);
     } catch (\Throwable $e) {
         DB::rollBack();
 
@@ -684,5 +763,94 @@ SCHEMA;
                 'error'   => 'Extraction failed: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function extractSubmittedTrackableFields(Request $request, array $trackableFields): array
+    {
+        $ignored = ['_method', '_token', 'availability_rules'];
+        $submitted = array_values(array_intersect(
+            array_keys($request->except($ignored)),
+            $trackableFields
+        ));
+
+        if ($request->hasFile('main_image') && in_array('main_image', $trackableFields, true) && !in_array('main_image', $submitted, true)) {
+            $submitted[] = 'main_image';
+        }
+
+        return array_values(array_unique($submitted));
+    }
+
+    private function buildSnapshotForFields(array $source, array $fields): array
+    {
+        $snapshot = [];
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $source)) {
+                $snapshot[$field] = $source[$field];
+            }
+        }
+
+        return $snapshot;
+    }
+
+    private function resolveChangedByType(Request $request): string
+    {
+        $requested = strtolower((string) $request->input('changed_by_type', ''));
+        if (in_array($requested, self::ALLOWED_CHANGED_BY_TYPES, true)) {
+            return $requested;
+        }
+
+        if ($request->filled('ai_session_id')) {
+            return 'ai';
+        }
+
+        $user = $request->user();
+        if ($user && ((method_exists($user, 'isStaff') && $user->isStaff()) || strtolower((string) $user->role) === 'admin')) {
+            return 'admin';
+        }
+
+        return 'user';
+    }
+
+    private function normalizeSourceType(mixed $sourceType): ?string
+    {
+        $value = strtolower((string) $sourceType);
+        if ($value === '' || !in_array($value, self::ALLOWED_SOURCE_TYPES, true)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function normalizeCorrectionLabel(mixed $label): ?string
+    {
+        $value = strtolower((string) $label);
+        if ($value === '' || !in_array($value, self::ALLOWED_CORRECTION_LABELS, true)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function extractFieldConfidenceMap(Request $request): array
+    {
+        $candidates = [
+            $request->input('field_confidence'),
+            $request->input('ai_field_confidence'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_array($candidate)) {
+                return $candidate;
+            }
+
+            if (is_string($candidate) && $candidate !== '') {
+                $decoded = json_decode($candidate, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+        }
+
+        return [];
     }
 }

@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
+use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
 use App\Http\Controllers\Api\ChatMessageController;
 use App\Http\Controllers\Api\ChatWidgetController;
@@ -80,6 +81,13 @@ Route::prefix('auth')->group(function () {
 // Yachts
 Route::apiResource('yachts', YachtController::class);
 
+// Catalog autocomplete (public)
+Route::prefix('autocomplete')->group(function () {
+    Route::get('brands', [CatalogAutocompleteController::class, 'brands']);
+    Route::get('models', [CatalogAutocompleteController::class, 'models']);
+    Route::get('types', [CatalogAutocompleteController::class, 'types']);
+});
+
 // ── CRM Public Chat Widget ──────────
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
@@ -102,6 +110,7 @@ Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); /
 // AI pipeline
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
+Route::post('ai/suggestions', [AiPipelineController::class, 'getSuggestions']);
 
 // Checklists & documents
 Route::get('checklists/templates', [ChecklistTemplateController::class, 'index']);
