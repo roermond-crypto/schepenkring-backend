@@ -188,6 +188,14 @@ class Yacht extends Model
         return $this->hasOne(YachtRigging::class);
     }
 
+    public function videoSetting(): HasOne {
+        return $this->hasOne(BoatVideoSetting::class);
+    }
+
+    public function socialPosts(): HasMany {
+        return $this->hasMany(SocialPost::class);
+    }
+
     // ─── Existing relationships ────────────────────────────────
 
     public function images(): HasMany {

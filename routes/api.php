@@ -111,6 +111,8 @@ Route::prefix('yachts/{yachtId}/boat-videos')->group(function () {
     Route::delete('/{id}', [\App\Http\Controllers\Api\BoatVideoController::class, 'destroy']);
 });
 Route::post('boat-videos/{id}/publish', [\App\Http\Controllers\Api\BoatVideoController::class, 'publish']);
+Route::get('yachts/{id}/video-settings', [\App\Http\Controllers\Api\BoatVideoSettingController::class, 'show']);
+Route::put('yachts/{id}/video-settings', [\App\Http\Controllers\Api\BoatVideoSettingController::class, 'update']);
 
 // Auth
 Route::prefix('auth')->group(function () {
@@ -126,7 +128,8 @@ Route::prefix('public')->group(function () {
     Route::post('bids/register', [BidWidgetController::class, 'register']);
     Route::post('bids/verify', [BidWidgetController::class, 'verify']);
     Route::get('bids/{yachtId}/state', [BidWidgetController::class, 'state']);
-    Route::post('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::get('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
 });
 
 // Chat widget (public)
@@ -315,6 +318,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}', [AdminUserController::class, 'update']);
     Route::delete('users/{id}', [AdminUserController::class, 'destroy']);
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
+    Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
+    Route::put('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
     
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
