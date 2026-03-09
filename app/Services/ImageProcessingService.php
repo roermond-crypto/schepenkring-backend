@@ -180,7 +180,15 @@ class ImageProcessingService
             mkdir($dir, 0755, true);
         }
 
-        imagewebp($srcImage, $masterAbsPath, 82);
+        // ── 4. Export master as WebP (skip if already webp and no resizing/rotation happened) ──
+        $didResize = ($width === $maxWidth && $height !== imagesy($srcImage));
+        if ($mimeType === 'image/webp' && $exifOrientation <= 1 && !$didResize) {
+            // It's already an optimized webp from the frontend, just copy it to save CPU
+            copy($inputPath, $masterAbsPath);
+            Log::info("[ImageProcessing][GD] Copied original WebP instead of re-encoding");
+        } else {
+            imagewebp($srcImage, $masterAbsPath, 82);
+        }
 
         // ── 5. Generate thumbnail (320px wide) ──
         $thumbWidth = 320;
