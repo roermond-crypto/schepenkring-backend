@@ -77,8 +77,8 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
             'sale_stage' => $yacht->sale_stage,
         ] : null;
 
-        // Auto-generate boat name if not provided
-        if (!$request->has('boat_name') || empty($request->input('boat_name'))) {
+        // Auto-generate boat name if not provided (only for NEW yachts)
+        if (!$isUpdate && (!$request->has('boat_name') || empty($request->input('boat_name')))) {
             $manufacturer = $request->input('manufacturer', '');
             $model = $request->input('model', '');
             $autoName = trim("$manufacturer $model");
