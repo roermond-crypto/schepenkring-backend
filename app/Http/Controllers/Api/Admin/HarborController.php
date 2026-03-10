@@ -16,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class HarborController extends Controller
 {
@@ -43,6 +44,63 @@ class HarborController extends Controller
 
         return response()->json([
             'data' => $this->serializeHarbor($harbor, $counts),
+        ]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('locations', 'code')],
+            'status' => ['nullable', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
+        ]);
+
+        $harbor = Location::create([
+            'name' => trim((string) $validated['name']),
+            'code' => strtoupper(trim((string) $validated['code'])),
+            'status' => $validated['status'] ?? 'ACTIVE',
+        ]);
+
+        return response()->json([
+            'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
+        ], 201);
+    }
+
+    public function update(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'code' => ['sometimes', 'required', 'string', 'max:255', 'alpha_dash', Rule::unique('locations', 'code')->ignore($harbor->id)],
+            'status' => ['sometimes', 'required', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
+        ]);
+
+        if (array_key_exists('name', $validated)) {
+            $validated['name'] = trim((string) $validated['name']);
+        }
+
+        if (array_key_exists('code', $validated)) {
+            $validated['code'] = strtoupper(trim((string) $validated['code']));
+        }
+
+        $harbor->update($validated);
+
+        return response()->json([
+            'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
+        ]);
+    }
+
+    public function destroy(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $harbor->delete();
+
+        return response()->json([
+            'message' => 'Location deleted.',
         ]);
     }
 
@@ -134,6 +192,10 @@ class HarborController extends Controller
 
         if ($request->filled('code')) {
             $query->where('code', (string) $request->query('code'));
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', strtoupper((string) $request->query('status')));
         }
 
         return $query->orderBy('name');

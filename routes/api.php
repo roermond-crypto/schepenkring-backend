@@ -341,8 +341,16 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin.errors'])->group(func
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
     // Harbors
     Route::get('harbors', [AdminHarborController::class, 'index']);
+    Route::post('harbors', [AdminHarborController::class, 'store']);
     Route::get('harbors/performance', [AdminHarborController::class, 'performance']);
+    Route::patch('harbors/{harbor}', [AdminHarborController::class, 'update']);
+    Route::delete('harbors/{harbor}', [AdminHarborController::class, 'destroy']);
     Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
+    Route::get('locations', [AdminHarborController::class, 'index']);
+    Route::post('locations', [AdminHarborController::class, 'store']);
+    Route::patch('locations/{harbor}', [AdminHarborController::class, 'update']);
+    Route::delete('locations/{harbor}', [AdminHarborController::class, 'destroy']);
+    Route::get('locations/{harbor}', [AdminHarborController::class, 'show']);
 
     // Users
     Route::post('users', [AdminUserController::class, 'store']);
