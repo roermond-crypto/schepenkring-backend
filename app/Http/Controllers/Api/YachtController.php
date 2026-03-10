@@ -7,6 +7,7 @@ use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Models\User;
 use App\Services\AiCorrectionLoggingService;
+use App\Services\SyncYachtTasksService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\JsonResponse;
@@ -259,6 +260,8 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
                 ]);
             }
         }
+
+        app(SyncYachtTasksService::class)->syncForYacht($yacht, $request->user());
 
         DB::commit();
 
