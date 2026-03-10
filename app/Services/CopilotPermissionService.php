@@ -10,8 +10,12 @@ class CopilotPermissionService
     {
     }
 
-    public function canUseAction(User $user, ?string $permissionKey): bool
+    public function canUseAction(User $user, ?string $permissionKey, ?string $requiredRole = null): bool
     {
+        if ($requiredRole && ! $user->hasRole($requiredRole)) {
+            return false;
+        }
+
         if (! $permissionKey) {
             return true;
         }
