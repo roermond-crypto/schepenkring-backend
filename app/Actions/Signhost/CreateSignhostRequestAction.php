@@ -28,7 +28,9 @@ class CreateSignhostRequestAction
 
     public function execute(User $actor, array $data, ?string $idempotencyKey): SignRequest
     {
-        $this->security->assertFreshAuth($actor, $data['password'], $data['otp_code'] ?? null);
+        if (!empty($data['password'])) {
+            $this->security->assertFreshAuth($actor, $data['password'], $data['otp_code'] ?? null);
+        }
         $this->security->requireIdempotency($idempotencyKey, 'signhost.request', $actor);
 
         $signRequest = $this->resolveRequest($actor, $data);

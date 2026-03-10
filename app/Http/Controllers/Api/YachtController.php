@@ -129,7 +129,7 @@ protected function saveYacht(Request $request, $id = null): JsonResponse
             'open_cockpit', 'aft_cockpit', 'ballast_tank',
             'steering_system', 'steering_system_location',
             'remote_control', 'rudder', 'drift_restriction',
-            'drift_restriction_controls', 'trimflaps', 'stabilizer',
+            'drift_restriction_controls', 'trimflaps', 'stabilizer', 'ref_harbor_id',
         ];
 
         // Boolean fields (only these remain as true booleans on core table)
