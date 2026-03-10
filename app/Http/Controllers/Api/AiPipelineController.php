@@ -2288,15 +2288,19 @@ CONTEXT,
                 $prefixes = [
                     rtrim(url('storage'), '/') . '/',
                     rtrim((string) config('app.url'), '/') . '/storage/',
+                    '/storage/', // Relative fallback
                 ];
 
                 foreach ($prefixes as $prefix) {
-                    if (str_starts_with($value, $prefix)) {
-                        $relative = ltrim(substr($value, strlen($prefix)), '/');
-                        return \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
+                    if (str_contains($value, $prefix)) {
+                        $parts = explode($prefix, $value);
+                        $relative = ltrim(end($parts), '/');
+                        $path = \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
+                        if (file_exists($path)) {
+                            return $path;
+                        }
                     }
                 }
-
                 continue;
             }
 
@@ -3233,7 +3237,7 @@ PROMPT;
                     $path = $this->resolveStoredImagePath($img);
                     if ($path && file_exists($path)) {
                         $visionImages[] = [
-                            'mime_type' => 'image/jpeg',
+                            'mime_type' => mime_content_type($path) ?: 'image/jpeg',
                             'data' => base64_encode(file_get_contents($path))
                         ];
                     }
