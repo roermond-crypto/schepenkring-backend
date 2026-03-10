@@ -17,9 +17,10 @@ class YachtshiftImportService
      * Imports boats directly from a Yachtshift XML feed into the Yachts table as current stock.
      * 
      * @param string $url The XML feed URL
+     * @param int|null $locationId The location ID to associate with the imported boats
      * @return array Result summary with imported, updated, and error counts
      */
-    public function importFromUrl(string $url): array
+    public function importFromUrl(string $url, ?int $locationId = null): array
     {
         // Increase memory and time limit for large XML files and image downloads
         ini_set('memory_limit', '512M');
@@ -80,10 +81,9 @@ class YachtshiftImportService
 
                     // Status
                     $xmlStatus = (string) ($node->attributes()['status'] ?? '');
-                    if (strtolower($xmlStatus) !== 'available') {
-                        continue;
-                    }
-                    $dbStatus = 'For Sale';
+                    
+                    // Removed 'available' filter to import all boats (sold, etc.)
+                    $dbStatus = (strtolower($xmlStatus) === 'available') ? 'For Sale' : 'sold';
 
                     $getFeature = function($section, $name) use ($bf) {
                         if (!$bf) return null;
@@ -196,6 +196,7 @@ class YachtshiftImportService
                             $yacht = new Yacht();
                             $yacht->vessel_id = $vesselId;
                             $yacht->user_id = $adminId;
+                            $yacht->location_id = $locationId;
                         }
 
                         // Core fields

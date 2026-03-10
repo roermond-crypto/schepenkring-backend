@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
@@ -95,7 +96,7 @@ class Yacht extends Model
     // ─── Only core columns remain on the yachts table ──────────
     protected $fillable = [
         // Core identity
-        'user_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
+        'user_id', 'location_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
         'allow_bidding', 'main_image', 'year', 'min_bid_amount',
         'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
 
@@ -212,6 +213,10 @@ class Yacht extends Model
 
     public function availabilityRules(): HasMany {
         return $this->hasMany(\App\Models\YachtAvailabilityRule::class);
+    }
+
+    public function location(): BelongsTo {
+        return $this->belongsTo(Location::class);
     }
 
     // ─── Flatten sub-tables into top-level JSON ────────────────

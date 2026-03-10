@@ -35,4 +35,9 @@ class Location extends Model
     {
         return $this->hasMany(User::class, 'client_location_id');
     }
+
+    public function yachts(): HasMany
+    {
+        return $this->hasMany(Yacht::class);
+    }
 }
