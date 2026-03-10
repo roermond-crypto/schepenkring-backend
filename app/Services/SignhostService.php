@@ -143,8 +143,9 @@ class SignhostService
             ->send(strtoupper($method), $this->baseUrl.ltrim($path, '/'), $options);
 
         if ($response->failed()) {
-            Log::error('Signhost API error', ['path' => $path, 'body' => $response->body()]);
-            throw new \RuntimeException('Signhost API error');
+            $body = $response->body();
+            Log::error('Signhost API error', ['path' => $path, 'body' => $body]);
+            throw new \RuntimeException("Signhost API error ({$path}): " . ($body ?: 'Empty response'));
         }
 
         return $response->json();

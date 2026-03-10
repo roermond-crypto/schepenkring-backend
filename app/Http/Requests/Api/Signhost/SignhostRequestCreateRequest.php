@@ -19,7 +19,7 @@ class SignhostRequestCreateRequest extends ApiRequest
             'recipients.*.user_id' => ['nullable', 'integer', 'exists:users,id'],
             'recipients.*.role' => ['nullable', 'string', 'max:50'],
             'reference' => ['nullable', 'string', 'max:255'],
-            'password' => ['required', 'string'],
+            'password' => ['nullable', 'string'],
             'otp_code' => ['nullable', 'string', 'max:10'],
             'idempotency_key' => ['nullable', 'string', 'max:255'],
         ];

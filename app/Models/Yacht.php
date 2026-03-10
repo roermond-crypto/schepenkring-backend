@@ -97,7 +97,7 @@ class Yacht extends Model
         // Core identity
         'user_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
         'allow_bidding', 'main_image', 'year', 'min_bid_amount',
-        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid',
+        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
 
         // Identity (from Yachtshift)
         'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
