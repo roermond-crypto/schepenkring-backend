@@ -158,6 +158,79 @@ class PineconeMatcherService
     }
 
     /**
+     * Stage 2 of matching: Query Pinecone using a pre-generated vector.
+     * This is used when embedding is done in a parallel pool.
+     */
+    public function queryWithVector(array $vector): array
+    {
+        $result = [
+            'consensus_values' => [],
+            'field_confidence' => [],
+            'field_sources'    => [],
+            'top_matches'      => [],
+            'warnings'         => [],
+        ];
+
+        try {
+            // Step 2: Query Pinecone
+            $pineconeResponse = Http::withHeaders([
+                'Api-Key'      => $this->pineconeKey,
+                'Content-Type' => 'application/json',
+            ])->timeout(10)->post("{$this->pineconeHost}/query", [
+                'vector'          => $vector,
+                'topK'            => 5,
+                'includeMetadata' => true,
+            ]);
+
+            if (!$pineconeResponse->successful()) {
+                Log::warning('[PineconeMatcher] Pinecone query failed: ' . $pineconeResponse->status());
+                return $result;
+            }
+
+            $matches = $pineconeResponse->json('matches') ?? [];
+
+            if (empty($matches)) {
+                Log::info('[PineconeMatcher] No matches found');
+                return $result;
+            }
+
+            // Step 3: Build consensus from top matches
+            $result['top_matches'] = array_map(fn($m) => [
+                'score' => round(($m['score'] ?? 0) * 100),
+                'boat'  => $m['metadata'] ?? [],
+            ], $matches);
+
+            $fieldCounts = [];
+            foreach ($matches as $match) {
+                $meta = $match['metadata'] ?? [];
+                foreach ($meta as $field => $value) {
+                    if ($value === null || $value === '') continue;
+                    $fieldCounts[$field][$value] = ($fieldCounts[$field][$value] ?? 0) + 1;
+                }
+            }
+
+            foreach ($fieldCounts as $field => $valueCounts) {
+                arsort($valueCounts);
+                $topValue = array_key_first($valueCounts);
+                $topCount = $valueCounts[$topValue];
+                $total = array_sum($valueCounts);
+
+                if ($topCount >= ceil($total / 2)) {
+                    $confidence = min(0.98, 0.80 + ($topCount / $total) * 0.18);
+                    $result['consensus_values'][$field] = $topValue;
+                    $result['field_confidence'][$field]  = round($confidence, 2);
+                    $result['field_sources'][$field]      = 'pinecone_parallel_consensus';
+                }
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            Log::error('[PineconeMatcher] Parallel query exception: ' . $e->getMessage());
+            return $result;
+        }
+    }
+
+    /**
      * Upsert a yacht into Pinecone.
      *
      * @param  Yacht  $yacht

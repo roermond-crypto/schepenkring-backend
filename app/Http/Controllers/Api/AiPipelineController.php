@@ -135,6 +135,9 @@ class AiPipelineController extends Controller
         AiCorrectionLoggingService $correctionLogging
     ): JsonResponse
     {
+        set_time_limit(480); // 8 minutes
+        ini_set('memory_limit', '1024M'); // 1GB for processing base64 images
+
         $request->validate([
             'images'    => 'required_without:yacht_id|array|max:30',
             'images.*'  => 'image|max:10240',
@@ -174,37 +177,116 @@ class AiPipelineController extends Controller
             }
         }
 
-        // ─── STAGE 1: Gemini Vision Extract ───────────────────────────
-        $stage1Result = $this->runGeminiVisionExtract($request, $apiKey);
-        $visionImagesUsed = (int) ($stage1Result['image_count'] ?? 0);
+        // ─── PARALLEL EXECUTION TRACKS ────────────────────────────────
+        // We run independent stages in parallel to hit the 60s target.
+        // Track 1: Gemini Vision (Images + Hint)
+        // Track 2: Pinecone Pre-emptive Match (Hint only)
+        // Track 3: OpenAI Pre-emptive Enrich (Hint only)
 
-        if (isset($stage1Result['error'])) {
-            Log::warning('[AI Pipeline] Stage 1 (Gemini) failed, proceeding to fallbacks. Error: ' . $stage1Result['error']);
-            $warnings[] = 'Primary vision extraction failed: ' . $stage1Result['error'];
-
-            if (!isset($formValues['short_description_en']) || $formValues['short_description_en'] === null) {
-                $formValues['short_description_en'] = $hintText;
+        $responses = Http::pool(function ($pool) use ($apiKey, $request, $hintText) {
+            // Gemini Vision call
+            $payload = $this->prepareGeminiVisionPayload($request, $apiKey);
+            if ($payload) {
+                $pool->as('gemini_vision')->withHeaders($payload['headers'])
+                    ->timeout($payload['timeout'])
+                    ->post($payload['url'], $payload['body']);
             }
 
-        } else {
-            $stagesRun[] = 'gemini_vision';
-            $extracted = $stage1Result['extracted'];
-            $geminiConfidence = $extracted['confidence'] ?? [];
-            if (!empty($extracted['warnings'])) {
-                $warnings = array_merge($warnings, $extracted['warnings']);
-            }
-            $geminiValues = $this->buildFormValues($extracted);
-            
-            foreach ($geminiValues as $key => $value) {
-                if ($value !== null) {
-                    $formValues[$key] = $value;
-                    $fieldConfidence[$key] = $geminiConfidence[$key] ?? 0.80;
-                    $fieldSources[$key] = 'gemini_vision';
+            // OpenAI Enrichment (based on hint text)
+            if (!empty($hintText)) {
+                $openAiKey = config('services.openai.key');
+                if ($openAiKey) {
+                    $pool->as('openai_enrich')->withHeaders(['Authorization' => 'Bearer ' . $openAiKey])
+                        ->timeout(45)
+                        ->post('https://api.openai.com/v1/chat/completions', [
+                            'model' => 'gpt-4o-mini',
+                            'messages' => [
+                                ['role' => 'system', 'content' => $this->getOpenAiEnrichmentPrompt($hintText)],
+                                ['role' => 'user', 'content' => 'Extract boat specs from hint.']
+                            ],
+                            'response_format' => ['type' => 'json_object'],
+                        ]);
                 }
             }
-            foreach ($geminiValues as $key => $value) {
-                if (!isset($formValues[$key])) {
-                    $formValues[$key] = $value;
+
+            // Pinecone Embedding (Stage 1 of Pinecone)
+            if (!empty($hintText)) {
+                $openAiKey = config('services.openai.key');
+                if ($openAiKey) {
+                    $pool->as('pinecone_embed')->withToken($openAiKey)
+                        ->timeout(15)
+                        ->post('https://api.openai.com/v1/embeddings', [
+                            'model' => 'text-embedding-3-small',
+                            'input' => $hintText,
+                            'dimensions' => 1408,
+                        ]);
+                }
+            }
+        });
+
+        // ─── PROCESS RESULTS ──────────────────────────────────────────
+        $feedResult = [
+            'consensus_values' => [],
+            'field_confidence' => [],
+            'field_sources' => [],
+            'top_matches' => [],
+            'warnings' => [],
+        ];
+        
+        // 1. Process Gemini Vision
+        $visionResult = $responses['gemini_vision'] ?? null;
+        if ($visionResult && $visionResult->successful()) {
+            $stagesRun[] = 'gemini_vision';
+            $visionImagesUsed = count($visionResult->json()['candidates'][0]['content']['parts'] ?? []) - 1; // Correcting count
+             // Note: parts[0] is text prompt, the rest are images
+            $extracted = $visionResult->json()['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            if ($extracted) {
+                $extracted = $this->cleanGeminiJson($extracted);
+                $geminiData = json_decode($extracted, true);
+                if ($geminiData) {
+                    $geminiValues = $this->buildFormValues($geminiData);
+                    $geminiConfidence = $geminiData['confidence'] ?? [];
+                    foreach ($geminiValues as $key => $value) {
+                        if ($value !== null) {
+                            $formValues[$key] = $value;
+                            $fieldConfidence[$key] = $geminiConfidence[$key] ?? 0.80;
+                            $fieldSources[$key] = 'gemini_vision';
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Process OpenAI Enrichment
+        $openaiResult = $responses['openai_enrich'] ?? null;
+        if ($openaiResult && $openaiResult->successful()) {
+            $stagesRun[] = 'openai_enrich_parallel';
+            $enriched = $openaiResult->json()['choices'][0]['message']['content'] ?? null;
+            if ($enriched) {
+                $enrichedData = json_decode($enriched, true);
+                if ($enrichedData) {
+                    foreach ($enrichedData as $key => $val) {
+                        if ($val !== null && (!isset($formValues[$key]) || $formValues[$key] === null)) {
+                            $formValues[$key] = $val;
+                            $fieldConfidence[$key] = 0.60;
+                            $fieldSources[$key] = 'openai_enrich_parallel';
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Process Pinecone (Stage 2: Query)
+        $pineconeEmbed = $responses['pinecone_embed'] ?? null;
+        if ($pineconeEmbed && $pineconeEmbed->successful()) {
+            $vector = $pineconeEmbed->json('data.0.embedding');
+            if ($vector) {
+                $feedResult = $pineconeMatcher->queryWithVector($vector);
+                if (!empty($feedResult['consensus_values'])) {
+                    $stagesRun[] = 'pinecone_match_parallel';
+                    foreach ($feedResult['consensus_values'] as $field => $value) {
+                        $this->mergeConsensusValue($field, $value, $feedResult['field_confidence'][$field] ?? 0.90, 'pinecone_match_parallel', $formValues, $fieldConfidence, $fieldSources, $needsConfirmation);
+                    }
                 }
             }
         }
@@ -213,86 +295,14 @@ class AiPipelineController extends Controller
         $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
         $missingRequired = $this->findMissingRequired($formValues);
 
-        // ─── STAGE 2: Local Pinecone DB High-Confidence Consensus ────
-        $feedResult = [
-            'consensus_values' => [],
-            'field_confidence' => [],
-            'field_sources' => [],
-            'top_matches' => [],
-            'warnings' => [],
-        ];
-
-        try {
-            $feedResult = $pineconeMatcher->matchAndBuildConsensus($formValues, $hintText);
-        } catch (\Throwable $e) {
-            Log::warning('[AI Pipeline] Pinecone consensus stage failed', ['error' => $e->getMessage()]);
-            $feedResult['warnings'][] = 'Pinecone consensus failed: ' . $e->getMessage();
-        }
-
-        if (!empty($feedResult['warnings'])) {
-            $warnings = array_merge($warnings, $feedResult['warnings']);
-        }
-
-        if (!empty($feedResult['consensus_values'])) {
-            foreach ($feedResult['consensus_values'] as $field => $value) {
-                if ($value === null || $value === '') continue;
-
-                $feedConfidence = (float) ($feedResult['field_confidence'][$field] ?? 0.95);
-                $existingValue = $formValues[$field] ?? null;
-                $existingConf = (float) ($fieldConfidence[$field] ?? 0.0);
-
-                if ($existingValue === null || $existingValue === '') {
-                    $formValues[$field] = $value;
-                    $fieldConfidence[$field] = $feedConfidence;
-                    $fieldSources[$field] = $feedResult['field_sources'][$field] ?? 'pinecone_database';
-                    continue;
-                }
-
-                if ((string) $existingValue !== (string) $value) {
-                    if ($feedConfidence >= 0.85 && $existingConf < 0.80) {
-                        $formValues[$field] = $value;
-                        $fieldConfidence[$field] = $feedConfidence;
-                        $fieldSources[$field] = $feedResult['field_sources'][$field] ?? 'pinecone_override';
-                        $needsConfirmation[] = $field;
-                    } else {
-                        $needsConfirmation[] = $field;
-                    }
-                }
-            }
-            $stagesRun[] = 'pinecone_database_consensus';
-        }
-
+        // ─── STAGE 2: Local Database Lookup (FAST) ───────────────────
+        // We still run this locally because it's nearly instant (<50ms).
         $databaseResult = $this->runDatabaseCatalogConsensus($formValues, $hintText);
-        if (!empty($databaseResult['warnings'])) {
-            $warnings = array_merge($warnings, $databaseResult['warnings']);
-        }
-
         if (!empty($databaseResult['consensus_values'])) {
-            foreach ($databaseResult['consensus_values'] as $field => $value) {
-                if ($value === null || $value === '') {
-                    continue;
-                }
-
-                $databaseConfidence = (float) ($databaseResult['field_confidence'][$field] ?? 0.82);
-                $existingValue = $formValues[$field] ?? null;
-                $existingConf = (float) ($fieldConfidence[$field] ?? 0.0);
-
-                if ($existingValue === null || $existingValue === '') {
-                    $formValues[$field] = $value;
-                    $fieldConfidence[$field] = $databaseConfidence;
-                    $fieldSources[$field] = $databaseResult['field_sources'][$field] ?? 'database_catalog_consensus';
-                    continue;
-                }
-
-                if ((string) $existingValue !== (string) $value && $databaseConfidence > $existingConf + 0.08) {
-                    $formValues[$field] = $value;
-                    $fieldConfidence[$field] = $databaseConfidence;
-                    $fieldSources[$field] = $databaseResult['field_sources'][$field] ?? 'database_catalog_override';
-                    $needsConfirmation[] = $field;
-                }
-            }
-
             $stagesRun[] = 'database_catalog_consensus';
+            foreach ($databaseResult['consensus_values'] as $field => $value) {
+                $this->mergeConsensusValue($field, $value, $databaseResult['field_confidence'][$field] ?? 0.82, 'database_catalog', $formValues, $fieldConfidence, $fieldSources, $needsConfirmation);
+            }
         }
 
         $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
@@ -2261,10 +2271,10 @@ CONTEXT,
     private function resolveStoredImagePath(\App\Models\YachtImage $yachtImage): ?string
     {
         $candidates = array_filter([
+            $yachtImage->thumb_url,
             $yachtImage->optimized_master_url,
             $yachtImage->url,
             $yachtImage->original_kept_url,
-            $yachtImage->thumb_url,
             $yachtImage->original_temp_url,
         ]);
 
@@ -3207,5 +3217,99 @@ PROMPT;
         }
 
         return true;
+    }
+
+    private function prepareGeminiVisionPayload(Request $request, string $apiKey): ?array
+    {
+        $visionImages = [];
+        $maxVisionImages = 5; // Reduced for speed in parallel track
+        
+        // 1. Get images from DB if yacht_id provided
+        if ($request->has('yacht_id')) {
+            $yacht = \App\Models\Yacht::find($request->yacht_id);
+            if ($yacht) {
+                $images = $yacht->images()->orderBy('sort_order')->limit($maxVisionImages)->get();
+                foreach ($images as $img) {
+                    $path = $this->resolveStoredImagePath($img);
+                    if ($path && file_exists($path)) {
+                        $visionImages[] = [
+                            'mime_type' => 'image/jpeg',
+                            'data' => base64_encode(file_get_contents($path))
+                        ];
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback to uploaded images if needed
+        if (count($visionImages) < $maxVisionImages && $request->hasFile('images')) {
+            foreach (array_slice($request->file('images'), 0, $maxVisionImages - count($visionImages)) as $image) {
+                $visionImages[] = [
+                    'mime_type' => $image->getMimeType(),
+                    'data' => base64_encode(file_get_contents($image->getRealPath()))
+                ];
+            }
+        }
+
+        if (empty($visionImages)) return null;
+
+        $model = 'gemini-1.5-flash';
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        
+        $parts = [];
+        $parts[] = ['text' => $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text')];
+        foreach ($visionImages as $img) {
+            $parts[] = [
+                'inline_data' => [
+                    'mime_type' => $img['mime_type'],
+                    'data' => $img['data']
+                ]
+            ];
+        }
+
+        return [
+            'url' => $url,
+            'headers' => ['Content-Type' => 'application/json'],
+            'body' => ['contents' => [['parts' => $parts]]],
+            'timeout' => 50,
+            'image_count' => count($visionImages)
+        ];
+    }
+
+    private function getOpenAiEnrichmentPrompt(string $hintText): string
+    {
+        return "You are a marine data expert. Extract boat specifications from the following text into JSON format. " .
+               "FIELDS TO EXTRACT: manufacturer, model, boat_type, year, price, loa, beam, draft, cabins, berths, fuel, engine_manufacturer, hull_construction.\n\nTEXT: " . $hintText;
+    }
+
+    private function mergeConsensusValue(string $field, $value, float $confidence, string $source, array &$formValues, array &$fieldConfidence, array &$fieldSources, array &$needsConfirmation): void
+    {
+        if ($value === null || $value === '') return;
+
+        $existingValue = $formValues[$field] ?? null;
+        $existingConf = (float) ($fieldConfidence[$field] ?? 0.0);
+
+        if ($existingValue === null || $existingValue === '') {
+            $formValues[$field] = $value;
+            $fieldConfidence[$field] = $confidence;
+            $fieldSources[$field] = $source;
+            return;
+        }
+
+        if ((string) $existingValue !== (string) $value) {
+            if ($confidence > $existingConf + 0.10) {
+                $formValues[$field] = $value;
+                $fieldConfidence[$field] = $confidence;
+                $fieldSources[$field] = $source . '_override';
+                $needsConfirmation[] = $field;
+            }
+        }
+    }
+
+    private function cleanGeminiJson(string $text): string
+    {
+        $text = preg_replace('/```json\s*|\s*```/', '', $text);
+        $text = trim($text);
+        return $text;
     }
 }
