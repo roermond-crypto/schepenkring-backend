@@ -110,6 +110,8 @@ class CopilotController extends Controller
     private function logResolveEvent(Request $request, int $userId, string $input, array $response): void
     {
         $actions = $response['actions'] ?? [];
+        $results = $response['results'] ?? [];
+        $answers = $response['answers'] ?? [];
         $candidatePayload = array_map(function ($action) {
             return [
                 'action_id' => $action['action_id'] ?? null,
@@ -124,6 +126,11 @@ class CopilotController extends Controller
             'source' => $response['source'] ?? 'header',
             'input_text' => $input,
             'resolved_action_candidates' => $candidatePayload,
+            'matching_detail' => [
+                'search_results' => $results,
+                'answers' => $answers,
+                'clarifying_question' => $response['clarifying_question'] ?? null,
+            ],
             'deeplink_returned' => $actions[0]['deeplink'] ?? null,
             'confidence' => $response['confidence'] ?? null,
             'status' => empty($actions) ? 'no_match' : 'resolved',

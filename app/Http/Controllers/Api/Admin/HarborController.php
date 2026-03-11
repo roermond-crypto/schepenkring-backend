@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use App\Enums\RiskLevel;
 use App\Http\Controllers\Controller;
 use App\Models\Boat;
 use App\Models\Conversation;
@@ -10,16 +11,22 @@ use App\Models\Location;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Yacht;
+use App\Services\ActionSecurity;
 use App\Services\Ga4DataApiService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class HarborController extends Controller
 {
-    public function __construct(private Ga4DataApiService $ga4)
+    public function __construct(
+        private Ga4DataApiService $ga4,
+        private ActionSecurity $security
+    )
     {
     }
 
@@ -43,6 +50,105 @@ class HarborController extends Controller
 
         return response()->json([
             'data' => $this->serializeHarbor($harbor, $counts),
+        ]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'code' => 'required|string|max:50|unique:locations,code',
+            'status' => 'nullable|string|in:ACTIVE,INACTIVE',
+        ]);
+
+        $payload = $this->normalizePayload($validated);
+        $harbor = Location::create($payload);
+
+        $this->security->log('harbor.created', RiskLevel::LOW, $request->user(), $harbor, [
+            'code' => $harbor->code,
+        ], [
+            'entity_type' => Location::class,
+            'entity_id' => $harbor->id,
+            'location_id' => $harbor->id,
+            'snapshot_after' => $harbor->toArray(),
+        ]);
+
+        $counts = $this->buildSnapshotCounts(collect([$harbor->id]));
+
+        return response()->json([
+            'data' => $this->serializeHarbor($harbor, $counts),
+        ], 201);
+    }
+
+    public function update(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'code' => 'sometimes|string|max:50|unique:locations,code,' . $harbor->id,
+            'status' => 'sometimes|string|in:ACTIVE,INACTIVE',
+        ]);
+
+        $before = $harbor->toArray();
+        $harbor->fill($this->normalizePayload($validated));
+        $harbor->save();
+
+        $this->security->log('harbor.updated', RiskLevel::LOW, $request->user(), $harbor, [
+            'code' => $harbor->code,
+        ], [
+            'entity_type' => Location::class,
+            'entity_id' => $harbor->id,
+            'location_id' => $harbor->id,
+            'snapshot_before' => $before,
+            'snapshot_after' => $harbor->toArray(),
+        ]);
+
+        $counts = $this->buildSnapshotCounts(collect([$harbor->id]));
+
+        return response()->json([
+            'data' => $this->serializeHarbor($harbor, $counts),
+        ]);
+    }
+
+    public function destroy(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $usage = $this->buildBlockingUsageCounts($harbor->id);
+        $activeUsage = array_filter($usage, static fn (int $count) => $count > 0);
+
+        if ($activeUsage !== []) {
+            return response()->json([
+                'message' => 'Harbor is still in use and cannot be deleted.',
+                'usage' => $activeUsage,
+            ], 409);
+        }
+
+        $before = $harbor->toArray();
+
+        try {
+            $harbor->delete();
+        } catch (QueryException) {
+            return response()->json([
+                'message' => 'Harbor is still referenced and cannot be deleted.',
+            ], 409);
+        }
+
+        $this->security->log('harbor.deleted', RiskLevel::LOW, $request->user(), $harbor, [
+            'code' => $before['code'] ?? null,
+            'deleted_harbor_id' => $before['id'] ?? null,
+        ], [
+            'entity_type' => Location::class,
+            'entity_id' => $before['id'] ?? null,
+            'location_id' => null,
+            'snapshot_before' => $before,
+        ]);
+
+        return response()->json([
+            'message' => 'deleted',
         ]);
     }
 
@@ -137,6 +243,27 @@ class HarborController extends Controller
         }
 
         return $query->orderBy('name');
+    }
+
+    private function normalizePayload(array $payload): array
+    {
+        $normalized = $payload;
+
+        if (array_key_exists('name', $normalized)) {
+            $normalized['name'] = trim((string) $normalized['name']);
+        }
+
+        if (array_key_exists('code', $normalized)) {
+            $normalized['code'] = Str::upper(trim((string) $normalized['code']));
+        }
+
+        if (array_key_exists('status', $normalized)) {
+            $normalized['status'] = Str::upper(trim((string) $normalized['status']));
+        } elseif (! array_key_exists('status', $payload)) {
+            $normalized['status'] = 'ACTIVE';
+        }
+
+        return $normalized;
     }
 
     private function resolvePeriod(Request $request): array
@@ -289,6 +416,29 @@ class HarborController extends Controller
             'open_tasks' => $counts['open_tasks'][$id] ?? 0,
             'created_at' => $harbor->created_at,
             'updated_at' => $harbor->updated_at,
+        ];
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function buildBlockingUsageCounts(int $harborId): array
+    {
+        return [
+            'clients' => User::query()->where('client_location_id', $harborId)->count(),
+            'staff_assignments' => DB::table('location_user')->where('location_id', $harborId)->count(),
+            'boats' => Boat::query()->where('location_id', $harborId)->count(),
+            'yachts' => Yacht::query()->where('ref_harbor_id', $harborId)->count(),
+            'leads' => Lead::query()->where('location_id', $harborId)->count(),
+            'conversations' => Conversation::query()->where('location_id', $harborId)->count(),
+            'tasks' => Task::query()->where('location_id', $harborId)->count(),
+            'boards' => DB::table('boards')->where('location_id', $harborId)->count(),
+            'columns' => DB::table('columns')->where('location_id', $harborId)->count(),
+            'task_automations' => DB::table('task_automations')->where('location_id', $harborId)->count(),
+            'task_automation_templates' => DB::table('task_automation_templates')->where('location_id', $harborId)->count(),
+            'sign_requests' => DB::table('sign_requests')->where('location_id', $harborId)->count(),
+            'harbor_channels' => DB::table('harbor_channels')->where('harbor_id', $harborId)->count(),
+            'call_sessions' => DB::table('call_sessions')->where('harbor_id', $harborId)->count(),
         ];
     }
 }

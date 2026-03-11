@@ -131,6 +131,24 @@ class AiPipelineController extends Controller
             $schemaKeys = [
                 // Core
                 'boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category', 'new_or_used',
+                'year', 'price', 'loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement',
+                'ballast', 'hull_colour', 'hull_construction', 'hull_type', 'hull_number',
+                'designer', 'builder', 'where', 'deck_colour', 'deck_construction',
+                'super_structure_colour', 'super_structure_construction', 'cockpit_type',
+                'control_type', 'flybridge', 'engine_manufacturer', 'engine_model', 'engine_type',
+                'horse_power', 'hours', 'fuel', 'engine_quantity', 'engine_year', 'cruising_speed',
+                'max_speed', 'drive_type', 'propulsion', 'cabins', 'berths', 'toilet', 'shower',
+                'bath', 'heating', 'air_conditioning', 'ce_category', 'passenger_capacity',
+                'compass', 'gps', 'radar', 'autopilot', 'vhf', 'plotter', 'depth_instrument',
+                'wind_instrument', 'speed_instrument', 'navigation_lights', 'life_raft', 'epirb',
+                'fire_extinguisher', 'bilge_pump', 'mob_system', 'life_jackets', 'radar_reflector',
+                'flares', 'battery', 'battery_charger', 'generator', 'inverter', 'shorepower',
+                'solar_panel', 'wind_generator', 'voltage', 'anchor', 'anchor_winch', 'bimini',
+                'spray_hood', 'swimming_platform', 'swimming_ladder', 'teak_deck', 'cockpit_table',
+                'dinghy', 'covers', 'spinnaker', 'fenders', 'television', 'cd_player', 'dvd_player',
+                'satellite_reception', 'oven', 'microwave', 'fridge', 'freezer', 'cooker',
+                'owners_comment', 'reg_details', 'known_defects', 'last_serviced', 
+                'short_description_en', 'short_description_nl', 'short_description_de', 'short_description_fr'
                 'year', 'price', 'min_bid_amount', 'vessel_lying', 'location_city', 'status',
                 
                 // Dimensions
@@ -829,11 +847,14 @@ Given partial data about a boat, fill only fields that are strongly supported.
 
 RULES:
 - NEVER contradict or overwrite existing values.
-- Fill ONLY the requested target fields.
-- Do NOT infer optional equipment from general boat knowledge.
-- For optional equipment ({$optionalFields}), use only "yes", "no", or "unknown"; default to "unknown" when uncertain.
-- If uncertain about any target field, leave it null.
-- Return ONLY valid JSON containing the fields you can fill, plus "confidence" and "warnings".
+- If you can identify the exact make/model, provide ALL standard specifications for that model (dimensions, engine, equipment, etc.).
+- For equipment fields (GPS, radar, compass, fridge, oven, etc.): if that equipment is STANDARD on this type/size of boat, set to "Yes".
+- For boolean fields (heating, air_conditioning, flybridge): infer from the boat type, size, and class.
+- For dimension fields (loa, beam, draft): if you know the model, provide the factory specifications.
+- For engine fields: provide typical engine specs for this model if known.
+- For comfort fields (cabins, berths, toilet, shower): provide typical layout for this model.
+- Generate short_description_nl (Dutch translation of the English description), short_description_de (German translation), and short_description_fr (French translation) if missing.
+- Return ONLY valid JSON containing the fields you can fill, plus "confidence" object and "warnings" array.
 
 PARTIAL DATA ALREADY KNOWN:
 {$partialData}
@@ -1580,16 +1601,11 @@ Return EXACTLY this JSON structure:
   "reg_details": "string|null",
   "known_defects": "string|null",
   "last_serviced": "string|null",
-  "owners_comment": "string|null",
-
-  "short_description_en": "string (Marketing description)",
-  "short_description_nl": "string",
-  "short_description_de": "string",
-  "ce_category": "string|null (A/B/C/D)",
-  "heating": "string|null (yes/no/unknown)",
-  "air_conditioning": "boolean|null",
-
-  "warnings": ["array of strings"],
+  "short_description_en": "string (2-3 sentence summary based ONLY on confirmed data)",
+  "short_description_nl": "string (Dutch translation of the English summary)",
+  "short_description_de": "string (German translation of the English summary)",
+  "short_description_fr": "string (French translation of the English summary)",
+  "warnings": ["array of strings — flag uncertain detections, contradictions between images, unreadable text"],
   "confidence": {
     "field_name": "number"
   }
@@ -2253,9 +2269,9 @@ You are an expert yacht copywriter. Given the data of a yacht, generate an engag
 Follow these requirements STRICTLY:
 - Tone: {$tone}
 - Length: Ensure the word count is between {$minWords} and {$maxWords} words per language. Do not output less than {$minWords} words!
-- Language: Provide the description in English, Dutch, and German.
+- Language: Provide the description in English, Dutch, German, and French.
 - Focus on the key features, amenities, and unique selling points of the boat.
-- Return ONLY a JSON object with keys "en", "nl", and "de".
+- Return ONLY a JSON object with keys "en", "nl", "de", and "fr".
 PROMPT;
 
         $endpoint = 'https://api.openai.com/v1/chat/completions';
@@ -2292,6 +2308,7 @@ PROMPT;
                     'en' => $extracted['en'] ?? null,
                     'nl' => $extracted['nl'] ?? null,
                     'de' => $extracted['de'] ?? null,
+                    'fr' => $extracted['fr'] ?? null,
                 ]
             ]);
 

@@ -83,6 +83,7 @@ class CopilotLearningService
 
         $candidates = collect()
             ->merge($this->buildPhraseSuggestions($copilotEvents))
+            ->merge($this->buildSearchSuggestions($copilotEvents))
             ->merge($this->buildRouteSuggestions($auditLogs))
             ->unique('suggestion_key')
             ->values();
@@ -97,7 +98,7 @@ class CopilotLearningService
 
             $shouldAutoCreate = $autoCreate || (
                 (bool) config('copilot.learning.auto_create_enabled', false)
-                && (float) $suggestion->confidence >= (float) config('copilot.learning.auto_create_threshold', 0.9)
+                && (float) $suggestion->confidence >= (float) config('copilot.learning.auto_create_threshold', 0.78)
                 && $suggestion->status === 'pending'
             );
 
@@ -295,6 +296,97 @@ class CopilotLearningService
     /**
      * @return array<int, array<string, mixed>>
      */
+    private function buildSearchSuggestions(Collection $events): array
+    {
+        $minOccurrences = (int) config('copilot.learning.min_occurrences', 3);
+        $failures = $events->filter(function (CopilotAuditEvent $event) {
+            return ($event->status === 'no_match' || $event->failure_reason === 'no_action')
+                && ! empty(trim((string) $event->input_text));
+        });
+
+        $suggestions = [];
+
+        foreach ($failures->groupBy(fn (CopilotAuditEvent $event) => $this->matcher->normalize((string) $event->input_text)) as $normalized => $group) {
+            if ($normalized === '' || $group->count() < $minOccurrences) {
+                continue;
+            }
+
+            $signal = $this->deriveSearchSignal($group);
+            if (! $signal) {
+                continue;
+            }
+
+            $existingAction = CopilotAction::query()
+                ->where('action_id', $signal['action_id'])
+                ->where('enabled', true)
+                ->first();
+
+            $phrases = $group->pluck('input_text')
+                ->filter()
+                ->unique()
+                ->map(function (?string $phrase) use ($group) {
+                    $language = $this->language->resolve((string) $phrase)['language'];
+
+                    return [
+                        'phrase' => trim((string) $phrase),
+                        'language' => $language,
+                        'priority' => min(100, 25 + ($group->count() * 10)),
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $sampleSearches = [];
+            foreach ($group as $event) {
+                foreach ((array) data_get($event->matching_detail, 'search_results', []) as $result) {
+                    if (($result['type'] ?? null) === $signal['type']) {
+                        $sampleSearches[] = $result;
+                    }
+                }
+            }
+
+            $candidate = [
+                'suggestion_key' => sha1(($existingAction ? 'phrase' : 'action') . '|search|' . $signal['action_id'] . '|' . $normalized),
+                'suggestion_type' => $existingAction ? 'phrase' : 'action',
+                'target_copilot_action_id' => $existingAction?->id,
+                'action_id' => $signal['action_id'],
+                'title' => $existingAction ? 'Add triggers for ' . $existingAction->title : $signal['title'],
+                'short_description' => $existingAction
+                    ? 'Repeated user searches are clearly asking for an existing copilot action.'
+                    : 'Repeated user searches indicate this result type should become a first-class copilot action.',
+                'module' => $existingAction?->module ?: $signal['module'],
+                'description' => 'Generated from repeated no-match copilot searches with strong search-result evidence.',
+                'route_template' => $existingAction?->route_template ?: $signal['route_template'],
+                'query_template' => $existingAction?->query_template,
+                'required_params' => $existingAction?->required_params ?? $signal['required_params'],
+                'input_schema' => $existingAction?->input_schema,
+                'phrases' => $phrases,
+                'example_prompts' => collect($phrases)->pluck('phrase')->take(3)->values()->all(),
+                'permission_key' => $existingAction?->permission_key,
+                'required_role' => $existingAction?->required_role ?: $signal['required_role'],
+                'risk_level' => $existingAction?->risk_level ?: 'low',
+                'confirmation_required' => (bool) ($existingAction?->confirmation_required ?? false),
+                'confidence' => min(0.97, 0.58 + ($group->count() * 0.08)),
+                'evidence_count' => $group->count(),
+                'evidence' => [
+                    'copilot_event_ids' => $group->pluck('id')->values()->all(),
+                    'sample_inputs' => collect($phrases)->pluck('phrase')->all(),
+                    'dominant_search_type' => $signal['type'],
+                    'sample_search_results' => collect($sampleSearches)->take(5)->values()->all(),
+                ],
+                'pinecone_matches' => $this->memory->searchSimilar((string) $group->first()->input_text, (int) config('copilot.learning.memory_top_k', 5)),
+                'reasoning' => 'Repeated failed copilot searches consistently point to the same result type.',
+            ];
+
+            $suggestions[] = $this->refineCandidate($candidate);
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
     private function buildRouteSuggestions(Collection $auditLogs): array
     {
         $minOccurrences = (int) config('copilot.learning.min_occurrences', 3);
@@ -428,6 +520,47 @@ class CopilotLearningService
     /**
      * @return array<string, mixed>|null
      */
+    private function deriveSearchSignal(Collection $group): ?array
+    {
+        $typeCounts = [];
+
+        foreach ($group as $event) {
+            $topResult = collect((array) data_get($event->matching_detail, 'search_results', []))
+                ->filter(fn ($result) => is_array($result) && ! empty($result['type']))
+                ->sortByDesc(fn ($result) => (float) ($result['score'] ?? 0))
+                ->first();
+
+            if (! $topResult) {
+                continue;
+            }
+
+            $score = (float) ($topResult['score'] ?? 0.0);
+            if ($score < (float) config('copilot.learning.search_result_min_score', 0.72)) {
+                continue;
+            }
+
+            $type = (string) $topResult['type'];
+            $typeCounts[$type] = ($typeCounts[$type] ?? 0) + 1;
+        }
+
+        if ($typeCounts === []) {
+            return null;
+        }
+
+        arsort($typeCounts);
+        $type = (string) array_key_first($typeCounts);
+        $count = (int) ($typeCounts[$type] ?? 0);
+        $requiredMatches = max(2, (int) ceil($group->count() * 0.6));
+        if ($count < $requiredMatches) {
+            return null;
+        }
+
+        return $this->actionBlueprintForSearchType($type);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
     private function deriveRouteInsight(AuditLog $log): ?array
     {
         $path = trim((string) (($log->meta ?? [])['path'] ?? ''), '/');
@@ -527,6 +660,59 @@ class CopilotLearningService
         }
 
         return array_merge($candidate, array_filter($refined, static fn ($value) => $value !== null));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function actionBlueprintForSearchType(string $type): ?array
+    {
+        $routeTemplate = config('copilot.search_routes.' . $type);
+        if (! is_string($routeTemplate) || $routeTemplate === '') {
+            return null;
+        }
+
+        $actionId = (string) (config('copilot.default_action_map.' . $type) ?: ($type . '.view'));
+        $param = $this->requiredParamForSearchType($type);
+        $normalizedRoute = $param ? str_replace('{id}', '{' . $param . '}', $routeTemplate) : $routeTemplate;
+        $module = $this->moduleForRoute($routeTemplate) ?: Str::plural($type);
+
+        return [
+            'type' => $type,
+            'action_id' => $actionId,
+            'title' => 'Open ' . str_replace('_', ' ', $type),
+            'module' => $module,
+            'route_template' => $normalizedRoute,
+            'required_params' => $param ? [$param] : [],
+            'required_role' => str_starts_with($routeTemplate, '/admin/') ? 'admin' : null,
+        ];
+    }
+
+    private function requiredParamForSearchType(string $type): ?string
+    {
+        return match ($type) {
+            'invoice' => 'invoice_id',
+            'boat' => 'boat_id',
+            'harbor' => 'harbor_id',
+            'user' => 'user_id',
+            'deal' => 'deal_id',
+            'payment' => 'payment_id',
+            default => null,
+        };
+    }
+
+    private function moduleForRoute(string $routeTemplate): ?string
+    {
+        $segments = array_values(array_filter(explode('/', trim($routeTemplate, '/'))));
+        if ($segments === []) {
+            return null;
+        }
+
+        if (($segments[0] ?? null) === 'admin') {
+            return $segments[1] ?? null;
+        }
+
+        return $segments[0] ?? null;
     }
 
     /**
@@ -677,6 +863,12 @@ class CopilotLearningService
 
     private function refreshSuggestionsIfDue(): void
     {
+        if ((bool) config('copilot.learning.auto_create_enabled', false)) {
+            $this->mineFromHistory();
+
+            return;
+        }
+
         $interval = max(30, (int) config('copilot.learning.refresh_interval_seconds', 300));
         $cacheKey = 'copilot:learning:refresh-lock';
 

@@ -16,8 +16,9 @@ return [
         'lookback_days' => (int) env('COPILOT_LEARNING_LOOKBACK_DAYS', 30),
         'refresh_interval_seconds' => (int) env('COPILOT_LEARNING_REFRESH_INTERVAL', 300),
         'memory_top_k' => (int) env('COPILOT_MEMORY_TOP_K', 5),
-        'auto_create_enabled' => (bool) env('COPILOT_AUTO_CREATE_ENABLED', false),
-        'auto_create_threshold' => (float) env('COPILOT_AUTO_CREATE_THRESHOLD', 0.9),
+        'auto_create_enabled' => (bool) env('COPILOT_AUTO_CREATE_ENABLED', true),
+        'auto_create_threshold' => (float) env('COPILOT_AUTO_CREATE_THRESHOLD', 0.78),
+        'search_result_min_score' => (float) env('COPILOT_LEARNING_SEARCH_RESULT_MIN_SCORE', 0.72),
     ],
     'default_action_map' => [
         'invoice' => 'invoice.view',

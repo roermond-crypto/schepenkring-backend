@@ -14,7 +14,7 @@ class CopilotActionValidationService
 
     public function validateAction(User $user, CopilotAction $action, array $payload): array
     {
-        if (!$this->permissionService->canUseAction($user, $action->permission_key)) {
+        if (! $this->permissionService->canUseAction($user, $action->permission_key, $action->required_role)) {
             return [
                 'ok' => false,
                 'errors' => ['permission' => ['Forbidden']],

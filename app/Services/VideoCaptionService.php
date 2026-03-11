@@ -30,6 +30,10 @@ class VideoCaptionService
             $lines[] = trim($yacht->short_description_en);
         } elseif (!empty($yacht->short_description_nl)) {
             $lines[] = trim($yacht->short_description_nl);
+        } elseif (!empty($yacht->short_description_de)) {
+            $lines[] = trim($yacht->short_description_de);
+        } elseif (!empty($yacht->short_description_fr)) {
+            $lines[] = trim($yacht->short_description_fr);
         }
 
         $lines[] = '';

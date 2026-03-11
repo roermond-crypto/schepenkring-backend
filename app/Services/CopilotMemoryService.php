@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\CopilotAction;
 use App\Models\CopilotActionSuggestion;
 use App\Models\CopilotAuditEvent;
+use App\Models\Faq;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -123,6 +124,38 @@ class CopilotMemoryService
         );
     }
 
+    public function rememberFaq(Faq $faq): bool
+    {
+        $text = trim(implode(' ', array_filter([
+            $faq->question,
+            $faq->answer,
+            $faq->category,
+            $faq->location_id ? 'location ' . $faq->location_id : null,
+        ])));
+
+        if ($text === '') {
+            return false;
+        }
+
+        return $this->remember(
+            'faq-' . $faq->id,
+            $text,
+            [
+                'kind' => 'faq',
+                'faq_id' => $faq->id,
+                'location_id' => $faq->location_id,
+                'category' => $faq->category,
+                'question' => Str::limit($faq->question, 250, ''),
+                'answer' => Str::limit($faq->answer, 1000, ''),
+            ]
+        );
+    }
+
+    public function forgetFaq(Faq $faq): bool
+    {
+        return $this->forget('faq-' . $faq->id);
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -203,6 +236,33 @@ class CopilotMemoryService
             return true;
         } catch (\Throwable $e) {
             Log::warning('Copilot memory upsert exception', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    private function forget(string $id): bool
+    {
+        if (! $this->isEnabled()) {
+            return false;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Api-Key' => (string) config('services.pinecone.key'),
+                'Content-Type' => 'application/json',
+            ])->timeout(10)->post(rtrim((string) config('services.pinecone.host'), '/') . '/vectors/delete', [
+                'namespace' => config('services.pinecone.namespace', 'copilot'),
+                'ids' => [Str::limit($id, 200, '')],
+            ]);
+
+            if ($response->failed()) {
+                Log::warning('Copilot memory delete failed', ['status' => $response->status()]);
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('Copilot memory delete exception', ['error' => $e->getMessage()]);
             return false;
         }
     }
