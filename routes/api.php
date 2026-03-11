@@ -197,6 +197,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Social Media / Video Automation
     // ================== SOCIAL VIDEO AUTOMATION ==================
+    Route::post('/social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
     Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
@@ -253,6 +254,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
     // Social video automation (NauticSecure parity)
+    Route::post('social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('social/videos', [SocialVideoController::class, 'listVideos']);
     Route::get('social/posts', [SocialVideoController::class, 'listPosts']);

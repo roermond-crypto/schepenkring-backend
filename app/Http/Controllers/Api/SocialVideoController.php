@@ -4,14 +4,74 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RenderMarketingVideo;
+use App\Models\Yacht;
 use App\Models\Video;
 use App\Models\VideoPost;
+use App\Models\User;
+use App\Services\LocationAccessService;
+use App\Services\VideoAutomationService;
 use App\Services\VideoSchedulerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class SocialVideoController extends Controller
 {
+    public function __construct(
+        private LocationAccessService $locationAccess,
+        private VideoAutomationService $automation
+    ) {
+    }
+
+    public function generate(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'yacht_id' => ['required', 'integer', 'exists:yachts,id'],
+            'template_type' => ['nullable', 'string', 'max:100'],
+            'force' => ['nullable', 'boolean'],
+        ]);
+
+        $yacht = Yacht::findOrFail($validated['yacht_id']);
+        $this->authorizeYachtAccess($user, $yacht);
+
+        $force = (bool) ($validated['force'] ?? false);
+        if (! $force) {
+            $existing = $this->automation->findReusableVideo($yacht);
+            if ($existing) {
+                return response()->json([
+                    'message' => 'Existing generated video returned',
+                    'video' => $existing->load('posts'),
+                    'renderable_image_count' => $this->automation->renderableImageCount($yacht),
+                ]);
+            }
+        }
+
+        $renderableImageCount = $this->automation->renderableImageCount($yacht);
+        if ($renderableImageCount === 0) {
+            return response()->json([
+                'message' => 'No usable boat images found for video generation.',
+            ], 422);
+        }
+
+        $result = $this->automation->queueManualVideo(
+            $yacht,
+            $validated['template_type'] ?? null,
+            $force
+        );
+
+        return response()->json([
+            'message' => $result['created']
+                ? 'Video generation queued'
+                : 'Existing generated video returned',
+            'video' => $result['video']->load('posts'),
+            'renderable_image_count' => $renderableImageCount,
+        ], $result['created'] ? 202 : 200);
+    }
+
     public function schedule(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -131,5 +191,34 @@ class SocialVideoController extends Controller
             'message' => 'Video regeneration queued',
             'video' => $video,
         ], 202);
+    }
+
+    private function authorizeYachtAccess(User $user, Yacht $yacht): void
+    {
+        if ($user->isAdmin()) {
+            return;
+        }
+
+        if ($user->isClient() && (int) $yacht->user_id === (int) $user->id) {
+            return;
+        }
+
+        if ($user->isEmployee()) {
+            $locationId = $this->resolveYachtLocationId($yacht);
+            if ($locationId !== null && $this->locationAccess->sharesLocation($user, $locationId)) {
+                return;
+            }
+        }
+
+        abort(403, 'Forbidden');
+    }
+
+    private function resolveYachtLocationId(Yacht $yacht): ?int
+    {
+        if ($yacht->ref_harbor_id) {
+            return (int) $yacht->ref_harbor_id;
+        }
+
+        return $yacht->owner?->client_location_id ? (int) $yacht->owner->client_location_id : null;
     }
 }
