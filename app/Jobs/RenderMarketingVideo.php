@@ -6,6 +6,7 @@ use App\Models\Video;
 use App\Models\Yacht;
 use App\Services\FFmpegService;
 use App\Services\VideoCaptionService;
+use App\Services\VideoAutomationService;
 use App\Services\VideoSchedulerService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,7 +32,7 @@ class RenderMarketingVideo implements ShouldQueue
         $this->onQueue('video-rendering');
     }
 
-    public function handle(): void
+    public function handle(VideoAutomationService $automation): void
     {
         // Stub implementation to keep the API contract intact.
         Log::info('RenderMarketingVideo stub executed', ['video_id' => $this->videoId]);
@@ -56,7 +57,7 @@ class RenderMarketingVideo implements ShouldQueue
         $video->update(['status' => 'processing']);
 
         try {
-            $imagePaths = $this->collectImages($yacht);
+            $imagePaths = $this->collectImages($yacht, $automation);
             if (empty($imagePaths)) {
                 $this->failJob($video, 'No images found for this yacht');
                 return;
@@ -123,28 +124,9 @@ class RenderMarketingVideo implements ShouldQueue
         }
     }
 
-    private function collectImages(Yacht $yacht): array
+    private function collectImages(Yacht $yacht, VideoAutomationService $automation): array
     {
-        $paths = [];
-
-        if ($yacht->main_image) {
-            $mainPath = Storage::disk('public')->path($yacht->main_image);
-            if (file_exists($mainPath)) {
-                $paths[] = $mainPath;
-            }
-        }
-
-        if ($yacht->images) {
-            foreach ($yacht->images as $image) {
-                $imgPath = $image->image_path ?? $image->path ?? null;
-                if ($imgPath) {
-                    $fullPath = Storage::disk('public')->path($imgPath);
-                    if (file_exists($fullPath)) {
-                        $paths[] = $fullPath;
-                    }
-                }
-            }
-        }
+        $paths = $automation->collectRenderableImagePaths($yacht);
 
         $max = (int) config('video_automation.max_images', 15);
         $min = (int) config('video_automation.min_images', 8);

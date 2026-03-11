@@ -6,6 +6,7 @@ use App\Jobs\RenderMarketingVideo;
 use App\Models\Video;
 use App\Models\Yacht;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class VideoAutomationService
 {
@@ -33,22 +34,13 @@ class VideoAutomationService
             return null;
         }
 
-        $existing = Video::where('yacht_id', $yacht->id)
-            ->whereIn('status', ['queued', 'processing', 'ready'])
-            ->latest()
-            ->first();
+        $existing = $this->findReusableVideo($yacht);
 
         if ($existing) {
             return $existing;
         }
 
-        $video = Video::create([
-            'yacht_id' => $yacht->id,
-            'status' => 'queued',
-            'template_type' => config('video_automation.template_type'),
-        ]);
-
-        RenderMarketingVideo::dispatch($video->id)->onQueue('video-rendering');
+        $video = $this->createQueuedVideo($yacht, config('video_automation.template_type'));
 
         Log::info('Marketing video queued', [
             'yacht_id' => $yacht->id,
@@ -57,6 +49,67 @@ class VideoAutomationService
         ]);
 
         return $video;
+    }
+
+    /**
+     * @return array{video: Video, created: bool}
+     */
+    public function queueManualVideo(Yacht $yacht, ?string $templateType = null, bool $force = false): array
+    {
+        if (! $force) {
+            $existing = $this->findReusableVideo($yacht);
+            if ($existing) {
+                return [
+                    'video' => $existing,
+                    'created' => false,
+                ];
+            }
+        }
+
+        return [
+            'video' => $this->createQueuedVideo($yacht, $templateType),
+            'created' => true,
+        ];
+    }
+
+    public function findReusableVideo(Yacht $yacht): ?Video
+    {
+        return Video::where('yacht_id', $yacht->id)
+            ->whereIn('status', ['queued', 'processing', 'ready'])
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function collectRenderableImagePaths(Yacht $yacht): array
+    {
+        $paths = [];
+
+        $this->appendRenderablePath($paths, $yacht->main_image);
+
+        $images = $yacht->images()->orderBy('sort_order')->get();
+        $approvedImages = $images->where('status', 'approved');
+        $sourceImages = $approvedImages->isNotEmpty() ? $approvedImages : $images;
+
+        foreach ($sourceImages as $image) {
+            foreach ([
+                $image->optimized_master_url,
+                $image->url,
+                $image->original_kept_url,
+                $image->thumb_url,
+            ] as $candidate) {
+                $this->appendRenderablePath($paths, $candidate);
+            }
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    public function renderableImageCount(Yacht $yacht): int
+    {
+        return count($this->collectRenderableImagePaths($yacht));
     }
 
     public function buildClickthroughUrl(Yacht $yacht, ?Video $video = null): string
@@ -94,5 +147,49 @@ class VideoAutomationService
         }
 
         return in_array($status, $publishStatuses, true);
+    }
+
+    private function createQueuedVideo(Yacht $yacht, ?string $templateType = null): Video
+    {
+        $video = Video::create([
+            'yacht_id' => $yacht->id,
+            'status' => 'queued',
+            'template_type' => $templateType ?: config('video_automation.template_type'),
+        ]);
+
+        RenderMarketingVideo::dispatch($video->id)->onQueue('video-rendering');
+
+        return $video;
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    private function appendRenderablePath(array &$paths, ?string $candidate): void
+    {
+        $path = $this->resolveRenderablePath($candidate);
+        if ($path) {
+            $paths[] = $path;
+        }
+    }
+
+    private function resolveRenderablePath(?string $candidate): ?string
+    {
+        if (! is_string($candidate)) {
+            return null;
+        }
+
+        $candidate = trim($candidate);
+        if ($candidate === '' || preg_match('/^https?:\/\//i', $candidate) === 1) {
+            return null;
+        }
+
+        if (file_exists($candidate)) {
+            return $candidate;
+        }
+
+        $storagePath = Storage::disk('public')->path(ltrim($candidate, '/'));
+
+        return file_exists($storagePath) ? $storagePath : null;
     }
 }
