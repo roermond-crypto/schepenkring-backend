@@ -71,7 +71,7 @@ class CopilotResolverService
         $results = $this->searchService->search($input, $user, (int) config('copilot.fuzzy_limit', 8));
         $results = $this->attachDeeplinks($results);
 
-        $answers = $this->buildAnswers($input);
+        $answers = $this->buildAnswers($input, $this->faqLocationScope($user, $context));
 
         if (empty($actions) && empty($results) && empty($answers)) {
             $clarifying = $clarifying ?: $this->language->translate('clarify_open_or_search', (string) $language);
@@ -445,14 +445,17 @@ class CopilotResolverService
         };
     }
 
-    private function buildAnswers(string $input): array
+    /**
+     * @param  int|array<int>|null  $locationScope
+     */
+    private function buildAnswers(string $input, int|array|null $locationScope = null): array
     {
         if (!$this->looksLikeQuestion($input)) {
             return [];
         }
 
         $answers = [];
-        $faqItems = $this->faqService->search($input, 2);
+        $faqItems = $this->faqService->search($input, $locationScope, 2);
 
         foreach ($faqItems as $faq) {
             $answers[] = [
@@ -464,6 +467,27 @@ class CopilotResolverService
         }
 
         return $answers;
+    }
+
+    /**
+     * @return int|array<int>|null
+     */
+    private function faqLocationScope(User $user, array $context): int|array|null
+    {
+        $contextLocation = $context['location_id'] ?? $context['harbor_id'] ?? null;
+        if (is_numeric($contextLocation)) {
+            return (int) $contextLocation;
+        }
+
+        if ($user->isAdmin()) {
+            return null;
+        }
+
+        if ($user->isClient()) {
+            return $user->client_location_id ?: null;
+        }
+
+        return $this->locationAccess->accessibleLocationIds($user);
     }
 
     private function relatedActions(string $text): array

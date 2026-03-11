@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
+use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
@@ -223,6 +224,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
     Route::get('chat/conversations/{id}/stream', [ChatConversationController::class, 'stream']);
     Route::post('chat/messages/{id}/thumbs-up', [ChatMessageController::class, 'thumbsUp']);
+
+    // Location FAQ training
+    Route::get('faqs', [FaqController::class, 'index']);
+    Route::post('faqs', [FaqController::class, 'store']);
+    Route::put('faqs/{faq}', [FaqController::class, 'update']);
+    Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
     // Social video automation (NauticSecure parity)
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);

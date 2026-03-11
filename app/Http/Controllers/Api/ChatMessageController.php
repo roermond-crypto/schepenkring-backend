@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Services\ChatAccessService;
 use App\Services\ChatConversationService;
+use App\Services\FaqTrainingService;
 use App\Support\CopilotLanguage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -105,8 +107,28 @@ class ChatMessageController extends Controller
             ->header('X-Header-Language', $resolvedLanguage['header_language']);
     }
 
-    public function thumbsUp(Request $request, string $messageId)
+    public function thumbsUp(Request $request, string $messageId, ChatAccessService $access, FaqTrainingService $training)
     {
-        return response()->json(['message' => 'Not implemented'], 501);
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+        if (! $user->isStaff()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $message = Message::query()->with('conversation')->findOrFail($messageId);
+        if (! $message->conversation || ! $access->canAccessConversation($user, $message->conversation)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $trained = $training->trainFromMessage($message, $user);
+
+        return response()->json([
+            'message' => 'FAQ trained',
+            'faq' => $trained['faq'],
+            'question_message_id' => $trained['question_message']->id,
+            'trained_message_id' => $message->id,
+        ]);
     }
 }
