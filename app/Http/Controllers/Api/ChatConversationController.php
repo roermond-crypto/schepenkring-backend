@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Services\ChatAccessService;
+use App\Services\ChatContactService;
 use App\Services\ChatConversationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -156,6 +157,38 @@ class ChatConversationController extends Controller
         return response()->json($conversation);
     }
 
+    public function updateContact(Request $request, string $id, ChatAccessService $access, ChatContactService $contacts)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+        if (!$user->isStaff()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $conversation = Conversation::with(['contact', 'lead'])->findOrFail($id);
+        if (!$access->canAccessConversation($user, $conversation)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $payload = $request->validate([
+            'name' => 'sometimes|nullable|string|max:255',
+            'email' => 'sometimes|nullable|email',
+            'phone' => 'sometimes|nullable|string|max:50',
+            'whatsapp_user_id' => 'sometimes|nullable|string|max:100',
+            'language_preferred' => 'sometimes|nullable|string|max:5',
+            'do_not_contact' => 'sometimes|boolean',
+            'consent_marketing' => 'sometimes|boolean',
+            'consent_service_messages' => 'sometimes|boolean',
+        ]);
+
+        $contacts->updateConversationContact($conversation, $payload);
+        $this->syncLeadIdentity($conversation, $payload);
+
+        return response()->json($conversation->fresh()->load(['contact', 'lead']));
+    }
+
     public function stream(Request $request, string $id, ChatAccessService $access)
     {
         $user = $request->user();
@@ -183,5 +216,26 @@ class ChatConversationController extends Controller
             'Cache-Control' => 'no-cache',
             'Connection' => 'keep-alive',
         ]);
+    }
+
+    private function syncLeadIdentity(Conversation $conversation, array $payload): void
+    {
+        if (! $conversation->lead) {
+            return;
+        }
+
+        $updates = [];
+        foreach (['name', 'email', 'phone'] as $field) {
+            if (array_key_exists($field, $payload)) {
+                $updates[$field] = $payload[$field];
+            }
+        }
+
+        if ($updates === []) {
+            return;
+        }
+
+        $conversation->lead->fill($updates);
+        $conversation->lead->save();
     }
 }

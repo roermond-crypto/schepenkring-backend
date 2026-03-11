@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
+use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
@@ -78,16 +79,6 @@ Route::prefix('auth')->group(function () {
 // PUBLIC routes (no auth needed for dev/testing)
 // ──────────────────────────────────────────────────────────
 
-// Yachts
-Route::apiResource('yachts', YachtController::class);
-
-// Catalog autocomplete (public)
-Route::prefix('autocomplete')->group(function () {
-    Route::get('brands', [CatalogAutocompleteController::class, 'brands']);
-    Route::get('models', [CatalogAutocompleteController::class, 'models']);
-    Route::get('types', [CatalogAutocompleteController::class, 'types']);
-});
-
 // ── CRM Public Chat Widget ──────────
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
@@ -115,21 +106,8 @@ Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnri
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
 Route::post('ai/suggestions', [AiPipelineController::class, 'getSuggestions']);
 
-// Checklists & documents
+// Checklists
 Route::get('checklists/templates', [ChecklistTemplateController::class, 'index']);
-Route::prefix('yachts/{yachtId}/documents')->group(function () {
-    Route::get('/', [BoatDocumentController::class, 'index']);
-    Route::post('/', [BoatDocumentController::class, 'store']);
-    Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
-});
-Route::prefix('yachts/{yachtId}/boat-videos')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Api\BoatVideoController::class, 'index']);
-    Route::post('/', [\App\Http\Controllers\Api\BoatVideoController::class, 'store']);
-    Route::delete('/{id}', [\App\Http\Controllers\Api\BoatVideoController::class, 'destroy']);
-});
-Route::post('boat-videos/{id}/publish', [\App\Http\Controllers\Api\BoatVideoController::class, 'publish']);
-Route::get('yachts/{id}/video-settings', [\App\Http\Controllers\Api\BoatVideoSettingController::class, 'show']);
-Route::put('yachts/{id}/video-settings', [\App\Http\Controllers\Api\BoatVideoSettingController::class, 'update']);
 
 // Auth
 Route::prefix('auth')->group(function () {
@@ -172,13 +150,27 @@ Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'sto
 // Authenticated routes
 // ──────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
-    // Yacht draft persistence
-    Route::get('yacht-drafts', [YachtDraftController::class, 'index']);
-    Route::post('yacht-drafts', [YachtDraftController::class, 'store']);
-    Route::get('yacht-drafts/{draftId}', [YachtDraftController::class, 'show']);
-    Route::patch('yacht-drafts/{draftId}', [YachtDraftController::class, 'update']);
-    Route::post('yacht-drafts/{draftId}/attach-yacht', [YachtDraftController::class, 'attachYacht']);
-    Route::post('yacht-drafts/{draftId}/commit', [YachtDraftController::class, 'commit']);
+    // Yachts
+    Route::apiResource('yachts', YachtController::class);
+
+    // Yacht image pipeline
+    Route::prefix('yachts/{yachtId}/images')->group(function () {
+        Route::post('/upload', [ImagePipelineController::class, 'upload']);
+        Route::get('/', [ImagePipelineController::class, 'index']);
+        Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
+        Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
+        Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
+        Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
+    });
+    Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
+    Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']);
+
+    // Yacht documents
+    Route::prefix('yachts/{yachtId}/documents')->group(function () {
+        Route::get('/', [BoatDocumentController::class, 'index']);
+        Route::post('/', [BoatDocumentController::class, 'store']);
+        Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
+    });
 
     // Current user & lockscreen
     Route::get('user', function (Request $request) {
@@ -250,8 +242,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('chat/conversations', [ChatConversationController::class, 'index']);
     Route::get('chat/conversations/{id}', [ChatConversationController::class, 'show']);
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
+    Route::patch('chat/conversations/{id}/contact', [ChatConversationController::class, 'updateContact']);
     Route::get('chat/conversations/{id}/stream', [ChatConversationController::class, 'stream']);
     Route::post('chat/messages/{id}/thumbs-up', [ChatMessageController::class, 'thumbsUp']);
+
+    // Location FAQ training
+    Route::get('faqs', [FaqController::class, 'index']);
+    Route::post('faqs', [FaqController::class, 'store']);
+    Route::put('faqs/{faq}', [FaqController::class, 'update']);
+    Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
     // Social video automation (NauticSecure parity)
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);

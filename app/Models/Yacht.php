@@ -103,7 +103,7 @@ class Yacht extends Model
         // Identity (from Yachtshift)
         'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
         'vessel_lying', 'location_city', 'location_lat', 'location_lng',
-        'short_description_nl', 'short_description_en', 'short_description_de', 'advertise_as',
+        'short_description_nl', 'short_description_en', 'short_description_de', 'short_description_fr', 'advertise_as',
         'advertising_channels',
 
         // URLs and references
@@ -209,6 +209,11 @@ class Yacht extends Model
 
     public function images(): HasMany {
         return $this->hasMany(YachtImage::class);
+    }
+
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     public function availabilityRules(): HasMany {

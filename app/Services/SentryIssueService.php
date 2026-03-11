@@ -149,6 +149,7 @@ class SentryIssueService
         $error->ai_user_message_nl = Arr::get($summary, 'user_message.nl') ?? $error->ai_user_message_nl;
         $error->ai_user_message_en = Arr::get($summary, 'user_message.en') ?? $error->ai_user_message_en;
         $error->ai_user_message_de = Arr::get($summary, 'user_message.de') ?? $error->ai_user_message_de;
+        $error->ai_user_message_fr = Arr::get($summary, 'user_message.fr') ?? $error->ai_user_message_fr;
         $error->ai_user_steps = $summary['user_steps'] ?? $error->ai_user_steps;
         $error->ai_suggested_checks = $summary['suggested_checks'] ?? $error->ai_suggested_checks;
         $error->save();

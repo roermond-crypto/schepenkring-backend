@@ -50,7 +50,7 @@ test('copilot mining creates a pending action suggestion from repeated audit his
 
     expect($suggestion)->not->toBeNull();
     expect($suggestion->suggestion_type)->toBe('action');
-    expect($suggestion->status)->toBe('pending');
+    expect($suggestion->status)->toBe('auto_created');
     expect($suggestion->action_id)->toBe('user.view');
     expect($suggestion->evidence_count)->toBe(3);
 });
@@ -102,7 +102,7 @@ test('copilot mining creates a phrase suggestion from repeated misses and past s
         ->first();
 
     expect($suggestion)->not->toBeNull();
-    expect($suggestion->status)->toBe('pending');
+    expect($suggestion->status)->toBe('auto_created');
     expect(collect($suggestion->phrases)->pluck('phrase')->all())->toContain('open client profile');
 });
 
@@ -143,4 +143,114 @@ test('admin can approve a generated copilot suggestion into a live action', func
     expect($action)->not->toBeNull();
     expect(CopilotActionPhrase::query()->where('copilot_action_id', $action->id)->count())->toBe(2);
     expect($suggestion->fresh()->created_action_id)->toBe($action->id);
+});
+
+test('copilot mining auto-creates a live phrase from repeated no-match searches with search evidence', function () {
+    config()->set('copilot.learning.auto_create_enabled', true);
+    config()->set('copilot.learning.auto_create_threshold', 0.75);
+
+    $admin = User::factory()->create([
+        'type' => UserType::ADMIN,
+        'status' => UserStatus::ACTIVE,
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $action = CopilotAction::create([
+        'action_id' => 'user.view',
+        'title' => 'Open user',
+        'module' => 'users',
+        'route_template' => '/admin/users/{user_id}',
+        'required_params' => ['user_id'],
+        'required_role' => 'admin',
+        'enabled' => true,
+    ]);
+
+    foreach (range(1, 3) as $index) {
+        CopilotAuditEvent::create([
+            'user_id' => $admin->id,
+            'source' => 'header',
+            'input_text' => 'open john carter',
+            'matching_detail' => [
+                'search_results' => [
+                    [
+                        'type' => 'user',
+                        'id' => 12,
+                        'title' => 'John Carter',
+                        'subtitle' => 'john@example.com',
+                        'score' => 0.94,
+                    ],
+                ],
+            ],
+            'status' => 'no_match',
+            'failure_reason' => 'no_action',
+            'created_at' => now()->addSeconds($index),
+        ]);
+    }
+
+    $response = $this->postJson('/api/admin/copilot/suggestions/mine');
+
+    $response->assertOk();
+
+    $suggestion = CopilotActionSuggestion::query()
+        ->where('suggestion_type', 'phrase')
+        ->where('target_copilot_action_id', $action->id)
+        ->first();
+
+    expect($suggestion)->not->toBeNull();
+    expect($suggestion->status)->toBe('auto_created');
+    expect(CopilotActionPhrase::query()
+        ->where('copilot_action_id', $action->id)
+        ->where('phrase', 'open john carter')
+        ->exists())->toBeTrue();
+});
+
+test('required role is enforced for copilot actions', function () {
+    $admin = User::factory()->create([
+        'type' => UserType::ADMIN,
+        'status' => UserStatus::ACTIVE,
+    ]);
+
+    $employee = User::factory()->create([
+        'type' => UserType::EMPLOYEE,
+        'status' => UserStatus::ACTIVE,
+    ]);
+
+    $action = CopilotAction::create([
+        'action_id' => 'user.view',
+        'title' => 'Open user',
+        'module' => 'users',
+        'route_template' => '/admin/users/{user_id}',
+        'required_params' => ['user_id'],
+        'required_role' => 'admin',
+        'enabled' => true,
+    ]);
+
+    CopilotActionPhrase::create([
+        'copilot_action_id' => $action->id,
+        'phrase' => 'open user',
+        'language' => 'en',
+        'priority' => 100,
+        'enabled' => true,
+    ]);
+
+    Sanctum::actingAs($employee);
+
+    $employeeResponse = $this->postJson('/api/copilot/resolve', [
+        'text' => 'open user 1',
+        'source' => 'header',
+    ]);
+
+    $employeeResponse->assertOk()
+        ->assertJsonPath('actions', []);
+
+    Sanctum::actingAs($admin);
+
+    $adminResponse = $this->postJson('/api/copilot/resolve', [
+        'text' => 'open user 1',
+        'source' => 'header',
+    ]);
+
+    $adminResponse->assertOk()
+        ->assertJsonPath('actions.0.action_id', 'user.view');
 });

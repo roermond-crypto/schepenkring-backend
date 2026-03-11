@@ -38,7 +38,11 @@ class CopilotActionMatcherService
                 continue;
             }
 
-            if (!$this->permissionService->canUseAction($user, $phrase->action->permission_key)) {
+            if (! $this->permissionService->canUseAction(
+                $user,
+                $phrase->action->permission_key,
+                $phrase->action->required_role
+            )) {
                 continue;
             }
 

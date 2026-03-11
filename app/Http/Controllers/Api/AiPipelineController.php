@@ -865,6 +865,7 @@ RULES:
 - For engine fields: provide typical engine specs for this model if known.
 - For comfort fields (cabins, berths, toilet, shower): provide typical layout for this model.
 - Generate short_description_nl (Dutch translation of the English description) and short_description_de (German translation) if missing.
+- Generate short_description_nl (Dutch translation of the English description), short_description_de (German translation), and short_description_fr (French translation) if missing.
 - Return ONLY valid JSON containing the fields you can fill, plus "confidence" object and "warnings" array.
 
 PARTIAL DATA ALREADY KNOWN:
@@ -1621,16 +1622,11 @@ Return EXACTLY this JSON structure:
   "reg_details": "string|null",
   "known_defects": "string|null",
   "last_serviced": "string|null",
-  "owners_comment": "string|null",
-
-  "short_description_en": "string (Marketing description)",
-  "short_description_nl": "string",
-  "short_description_de": "string",
-  "ce_category": "string|null (A/B/C/D)",
-  "heating": "string|null (yes/no/unknown)",
-  "air_conditioning": "boolean|null",
-
-  "warnings": ["array of strings"],
+  "short_description_en": "string (2-3 sentence summary based ONLY on confirmed data)",
+  "short_description_nl": "string (Dutch translation of the English summary)",
+  "short_description_de": "string (German translation of the English summary)",
+  "short_description_fr": "string (French translation of the English summary)",
+  "warnings": ["array of strings — flag uncertain detections, contradictions between images, unreadable text"],
   "confidence": {
     "field_name": "number"
   }
@@ -2651,9 +2647,9 @@ You are an expert yacht copywriter. Given the data of a yacht, generate an engag
 Follow these requirements STRICTLY:
 - Tone: {$tone}
 - Length: Ensure the word count is between {$minWords} and {$maxWords} words per language. Do not output less than {$minWords} words!
-- Language: Provide the description in English, Dutch, and German.
+- Language: Provide the description in English, Dutch, German, and French.
 - Focus on the key features, amenities, and unique selling points of the boat.
-- Return ONLY a JSON object with keys "en", "nl", and "de".
+- Return ONLY a JSON object with keys "en", "nl", "de", and "fr".
 PROMPT;
 
         $endpoint = 'https://api.openai.com/v1/chat/completions';
@@ -2690,6 +2686,7 @@ PROMPT;
                     'en' => $extracted['en'] ?? null,
                     'nl' => $extracted['nl'] ?? null,
                     'de' => $extracted['de'] ?? null,
+                    'fr' => $extracted['fr'] ?? null,
                 ]
             ]);
 

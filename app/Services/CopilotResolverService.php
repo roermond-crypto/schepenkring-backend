@@ -45,7 +45,7 @@ class CopilotResolverService
             $confidence = 1.0;
             $needsConfirmation = $deterministic['action']['confirmation_required'] ?? false;
         } else {
-            $actionCandidates = $this->resolveByPhrases($input, $language, $context);
+            $actionCandidates = $this->resolveByPhrases($input, $user, $language, $context);
 
             if ($this->shouldCallAi($input, $actionCandidates)) {
                 $aiResult = $this->aiRouter->route($input, $actionCandidates, $context);
@@ -71,7 +71,7 @@ class CopilotResolverService
         $results = $this->searchService->search($input, $user, (int) config('copilot.fuzzy_limit', 8));
         $results = $this->attachDeeplinks($results);
 
-        $answers = $this->buildAnswers($input);
+        $answers = $this->buildAnswers($input, $this->faqLocationScope($user, $context));
 
         if (empty($actions) && empty($results) && empty($answers)) {
             $clarifying = $clarifying ?: $this->language->translate('clarify_open_or_search', (string) $language);
@@ -135,7 +135,7 @@ class CopilotResolverService
         return null;
     }
 
-    private function resolveByPhrases(string $input, ?string $language, array $context): array
+    private function resolveByPhrases(string $input, User $user, ?string $language, array $context): array
     {
         $normalizedInput = $this->matcher->normalize($input);
         $query = CopilotActionPhrase::query()
@@ -153,6 +153,14 @@ class CopilotResolverService
 
         foreach ($phrases as $phrase) {
             if (!$phrase->action || !$phrase->action->enabled) {
+                continue;
+            }
+
+            if (! $this->permissionService->canUseAction(
+                $user,
+                $phrase->action->permission_key,
+                $phrase->action->required_role
+            )) {
                 continue;
             }
 
@@ -232,7 +240,10 @@ class CopilotResolverService
     {
         $actions = [];
         foreach ($candidates as $candidate) {
-            $action = $this->actionFromCatalog($candidate['action_id'], $this->extractParams($input, $candidate['required_params'] ?? []), $user);
+            $params = $this->extractParams($input, $candidate['required_params'] ?? []);
+            $params = $this->fillMissingParamsFromSearch($input, $candidate['required_params'] ?? [], $params, $user);
+
+            $action = $this->actionFromCatalog($candidate['action_id'], $params, $user);
             if (!$action) {
                 continue;
             }
@@ -259,7 +270,7 @@ class CopilotResolverService
             return null;
         }
 
-        if (!$this->permissionService->canUseAction($user, $action->permission_key)) {
+        if (! $this->permissionService->canUseAction($user, $action->permission_key, $action->required_role)) {
             return null;
         }
 
@@ -367,14 +378,84 @@ class CopilotResolverService
         return $results;
     }
 
-    private function buildAnswers(string $input): array
+    private function fillMissingParamsFromSearch(string $input, array $requiredParams, array $params, User $user): array
+    {
+        $missing = array_values(array_filter($requiredParams, fn (string $param) => ! array_key_exists($param, $params)));
+        if ($missing === []) {
+            return $params;
+        }
+
+        $results = $this->searchService->search($input, $user, 5);
+        if ($results === []) {
+            return $params;
+        }
+
+        foreach ($missing as $param) {
+            $match = $this->bestSearchMatchForParam($param, $results);
+            if ($match) {
+                $params[$param] = $match['id'];
+            }
+        }
+
+        return $params;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $results
+     * @return array<string, mixed>|null
+     */
+    private function bestSearchMatchForParam(string $param, array $results): ?array
+    {
+        $expectedType = $this->searchTypeForParam($param);
+        if (! $expectedType) {
+            return null;
+        }
+
+        $matches = array_values(array_filter($results, fn (array $result) => ($result['type'] ?? null) === $expectedType));
+        if ($matches === []) {
+            return null;
+        }
+
+        usort($matches, fn (array $a, array $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+
+        $top = $matches[0];
+        $topScore = (float) ($top['score'] ?? 0.0);
+        if ($topScore < (float) config('copilot.learning.search_result_min_score', 0.72)) {
+            return null;
+        }
+
+        $secondScore = (float) ($matches[1]['score'] ?? 0.0);
+        if (($topScore - $secondScore) < 0.05) {
+            return null;
+        }
+
+        return $top;
+    }
+
+    private function searchTypeForParam(string $param): ?string
+    {
+        return match ($param) {
+            'invoice_id' => 'invoice',
+            'boat_id', 'yacht_id' => 'boat',
+            'harbor_id', 'location_id' => 'harbor',
+            'user_id' => 'user',
+            'deal_id' => 'deal',
+            'payment_id' => 'payment',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  int|array<int>|null  $locationScope
+     */
+    private function buildAnswers(string $input, int|array|null $locationScope = null): array
     {
         if (!$this->looksLikeQuestion($input)) {
             return [];
         }
 
         $answers = [];
-        $faqItems = $this->faqService->search($input, 2);
+        $faqItems = $this->faqService->search($input, $locationScope, 2);
 
         foreach ($faqItems as $faq) {
             $answers[] = [
@@ -416,14 +497,25 @@ class CopilotResolverService
         return $answers;
     }
 
-    private function isHistoricalQuery(string $input): bool
+    /**
+     * @return int|array<int>|null
+     */
+    private function faqLocationScope(User $user, array $context): int|array|null
     {
-        $inputLower = strtolower($input);
-        $keywords = ['sold', 'price', 'value', 'worth', 'typical', 'specs', 'archive', 'history', 'market'];
-        foreach ($keywords as $kw) {
-            if (str_contains($inputLower, $kw)) return true;
+        $contextLocation = $context['location_id'] ?? $context['harbor_id'] ?? null;
+        if (is_numeric($contextLocation)) {
+            return (int) $contextLocation;
         }
-        return false;
+
+        if ($user->isAdmin()) {
+            return null;
+        }
+
+        if ($user->isClient()) {
+            return $user->client_location_id ?: null;
+        }
+
+        return $this->locationAccess->accessibleLocationIds($user);
     }
 
     private function relatedActions(string $text): array
