@@ -106,6 +106,7 @@ Route::prefix('yachts/{yachtId}/images')->group(function () {
     Route::post('/auto-classify', [ImagePipelineController::class, 'autoClassify']);
     Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
 });
+Route::get('yachts/{yachtId}/fields/{fieldName}/history', [\App\Http\Controllers\Api\YachtFieldHistoryController::class, 'show']);
 Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
 Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
 
@@ -372,6 +373,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // Audit
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
+    Route::get('boat-audit', [\App\Http\Controllers\Api\Admin\BoatAuditController::class, 'index']);
 
     // Copilot admin
     Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);

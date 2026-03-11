@@ -40,5 +40,10 @@ class BoatFieldChange extends Model
     {
         return $this->belongsTo(User::class, 'changed_by_id');
     }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'changed_by_id');
+    }
 }
 

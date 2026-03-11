@@ -580,9 +580,15 @@ SELLER-PROVIDED TEXT DATA:
 
 Extract data from this text into JSON fields. Text-sourced data gets confidence 0.90.
 For fields NOT mentioned in text, ONLY fill if clearly visible in images.
+
+🚨 CONSERVATIVE DETECTION RULE for equipment (e.g. life jackets, bimini, etc.):
+- IF clearly visible or explicitly written in text -> "yes"
+- IF clearly absent or text says "no" -> "no"
+- IF unsure or not visible/mentioned -> "unknown"
+DO NOT guess "yes" or "no" for equipment if evidence is missing.
 HINT];
         } else {
-            $parts[] = ['text' => "No seller text provided. Extract ONLY what is visible in the images above."];
+            $parts[] = ['text' => "No seller text provided. Extract ONLY what is visible in the images above. 🚨 CONSERVATIVE DETECTION RULE: For equipment, if unsure, return 'unknown', NOT yes/no."];
         }
 
         try {
@@ -1353,7 +1359,10 @@ You are an EXPERT YACHT DATA EXTRACTION AGENT. You extract data from boat images
 🚨 ANTI-HALLUCINATION RULES:
 1. Colors: Report exactly what you see.
 2. Boat type: Identify as sailboat/motorboat/catamaran based on visible features.
-3. Equipment: Only mark as "yes" if visible or mentioned in text.
+3. Equipment (Life jackets, bimini, anchor, etc.): 
+   - set to "yes" ONLY if clearly visible or mentioned in text.
+   - set to "no" ONLY if clearly absent.
+   - set to "unknown" IF unsure or not visible. NEVER GUESS for equipment.
 
 🚨 CONFIDENCE RULES:
 - Identified from text/labels: 0.95
