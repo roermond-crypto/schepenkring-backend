@@ -599,7 +599,7 @@ For fields NOT mentioned in text, ONLY fill if clearly visible in images.
 DO NOT guess "yes" or "no" for equipment if evidence is missing.
 HINT];
         } else {
-            $parts[] = ['text' => "No seller text provided. Extract ONLY what is visible in the images above. 🚨 CONSERVATIVE DETECTION RULE: For equipment, if unsure, return 'unknown', NOT yes/no."];
+            $parts[] = ['text' => "No seller text provided. Extract ONLY what is visible in the images above. 🚨 CONSERVATIVE DETECTION RULE: For equipment, if unsure, return null, NOT yes/no."];
         }
 
         try {
@@ -1603,8 +1603,8 @@ Return EXACTLY this JSON structure:
   "oars_paddles": "string|null",
 
   "// rigging": "Sail and rigging details",
-  "spinnaker": "string|null (yes/no/unknown)",
-  "gennaker": "string|null (yes/no/unknown)",
+  "spinnaker": "string|null (yes/no/null)",
+  "gennaker": "string|null (yes/no/null)",
   "sailplan_type": "string|null",
   "number_of_masts": "string|null",
   "spars_material": "string|null",
@@ -1725,7 +1725,7 @@ SCHEMA;
         }
 
         if (in_array($normalized, ['unknown', 'unsure', 'uncertain', 'not sure', 'maybe'], true)) {
-            return 'unknown';
+            return null;
         }
 
         if (in_array($normalized, ['yes', 'y', 'true', 'present', 'included', 'installed', 'available'], true)) {
@@ -2252,7 +2252,8 @@ CONTEXT,
             if ($value === null) continue;
 
             if (is_string($value) && strtolower(trim($value)) === 'unknown') {
-                $fieldConfidence[$field] = max((float) ($fieldConfidence[$field] ?? 0.0), 0.90);
+                $formValues[$field] = null;
+                $fieldConfidence[$field] = 0.50;
                 continue;
             }
 

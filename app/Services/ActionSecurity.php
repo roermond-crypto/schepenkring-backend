@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AuditResult;
 use App\Enums\RiskLevel;
+use App\Jobs\IngestAuditLogLearningJob;
 use App\Models\AuditLog;
 use App\Models\IdempotencyKey;
 use App\Models\User;
@@ -17,8 +18,7 @@ use Illuminate\Support\Str;
 class ActionSecurity
 {
     public function __construct(
-        private ImpersonationContext $impersonationContext,
-        private CopilotLearningService $learning
+        private ImpersonationContext $impersonationContext
     )
     {
     }
@@ -121,7 +121,7 @@ class ActionSecurity
             'idempotency_key' => $idempotencyKey,
         ]);
 
-        $this->learning->ingestAuditLog($log);
+        IngestAuditLogLearningJob::dispatchAfterResponse($log->id);
 
         return $log;
     }
