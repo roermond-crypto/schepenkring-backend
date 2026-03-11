@@ -121,7 +121,7 @@ class ActionSecurity
             'idempotency_key' => $idempotencyKey,
         ]);
 
-        IngestAuditLogLearningJob::dispatchAfterResponse($log->id);
+        IngestAuditLogLearningJob::dispatch($log->id);
 
         return $log;
     }

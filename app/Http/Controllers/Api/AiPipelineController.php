@@ -497,6 +497,15 @@ class AiPipelineController extends Controller
                 });
         }
 
+        // ── FINAL SANITIZATION: Strip ALL "unknown" values ──────────────
+        // AI models sometimes ignore prompt instructions and return "unknown".
+        // This hard filter guarantees "unknown" never reaches the frontend.
+        foreach ($formValues as $field => $value) {
+            if (is_string($value) && strtolower(trim($value)) === 'unknown') {
+                $formValues[$field] = null;
+            }
+        }
+
         return response()->json([
             'success' => true,
             'step2_form_values' => $formValues,

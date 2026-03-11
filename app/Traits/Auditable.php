@@ -83,7 +83,7 @@ trait Auditable
             'user_agent' => Request::userAgent(),
         ]);
 
-        IngestAuditLogLearningJob::dispatchAfterResponse($log->id);
+        IngestAuditLogLearningJob::dispatch($log->id);
 
         return $log;
     }
