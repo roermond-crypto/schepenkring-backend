@@ -245,7 +245,7 @@ class YachtController extends Controller
         }
 
         if (empty($files)) {
-            \Log::warning('Upload debug: no files found', [
+            Log::warning('Upload debug: no files found', [
                 'content_type' => $request->header('Content-Type'),
                 'all_keys' => array_keys($request->all()),
                 'has_files' => $request->allFiles() ? 'yes' : 'no',
@@ -681,7 +681,7 @@ SCHEMA;
                     ]
                 ];
             } catch (\Exception $e) {
-                \Log::warning("Failed to read image: " . $e->getMessage());
+                Log::warning("Failed to read image: " . $e->getMessage());
             }
         }
 
@@ -695,7 +695,7 @@ SCHEMA;
             ]);
 
             if (!$response->successful()) {
-                \Log::error("Gemini extraction failed: " . $response->body());
+                Log::error("Gemini extraction failed: " . $response->body());
                 return response()->json([
                     'error'   => 'Gemini API request failed',
                     'details' => $response->status()
@@ -718,7 +718,7 @@ SCHEMA;
                 $extracted = json_decode($cleaned, true);
 
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    \Log::error("Failed to parse Gemini JSON: " . $text);
+                    Log::error("Failed to parse Gemini JSON: " . $text);
                     return response()->json([
                         'error'    => 'Failed to parse Gemini response',
                         'raw_text' => $text
@@ -732,7 +732,7 @@ SCHEMA;
             ]);
 
         } catch (\Exception $e) {
-            \Log::error("Gemini extraction exception: " . $e->getMessage());
+            Log::error("Gemini extraction exception: " . $e->getMessage());
             return response()->json([
                 'error'   => 'Extraction failed: ' . $e->getMessage(),
             ], 500);
