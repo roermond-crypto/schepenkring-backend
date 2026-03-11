@@ -486,6 +486,17 @@ class AiPipelineController extends Controller
             $meta['ai_session_id'] = null;
         }
 
+        // Trigger batch AI enhancement for all yacht images in the background
+        $yachtId = $request->integer('yacht_id');
+        if ($yachtId) {
+            \App\Models\YachtImage::where('yacht_id', $yachtId)
+                ->whereIn('status', ['approved', 'ready_for_review'])
+                ->where('enhancement_method', '!=', 'cloudinary')
+                ->each(function ($image) {
+                    \App\Jobs\EnhanceYachtImageJob::dispatch($image->id)->delay(now()->addSeconds(2));
+                });
+        }
+
         return response()->json([
             'success' => true,
             'step2_form_values' => $formValues,

@@ -39,7 +39,7 @@ class ProcessYachtImageJob implements ShouldQueue
             return;
         }
 
-        if ($image->status !== 'processing') {
+        if (!in_array($image->status, ['processing', 'ready_for_review', 'approved'])) {
             Log::info("ProcessYachtImageJob: Image #{$this->yachtImageId} status is '{$image->status}', skipping.");
             return;
         }
@@ -49,7 +49,10 @@ class ProcessYachtImageJob implements ShouldQueue
 
         if (!file_exists($absolutePath)) {
             Log::error("ProcessYachtImageJob: File not found at {$absolutePath}");
-            $image->update(['status' => 'processing_failed']);
+            // Only fail if we haven't already moved past 'processing'
+            if ($image->status === 'processing') {
+                $image->update(['status' => 'processing_failed']);
+            }
             return;
         }
 
@@ -68,28 +71,30 @@ class ProcessYachtImageJob implements ShouldQueue
 
             $elapsed = round(microtime(true) - $startTime, 2);
 
-            Log::info("ProcessYachtImageJob: ⚡ Image #{$this->yachtImageId} ready in {$elapsed}s", [
+            Log::info("ProcessYachtImageJob: ⚡ Image #{$this->yachtImageId} optimized in {$elapsed}s", [
                 'master'     => $result['master_path'],
                 'dimensions' => "{$result['width']}x{$result['height']}",
                 'quality'    => $quality['label'],
             ]);
 
-            // ── 3. Update DB → image is immediately visible in UI ──
-            $image->update([
-                'status'               => 'ready_for_review',
+            // ── 3. Update DB → update URL and thumb silently ──
+            $updateData = [
                 'optimized_master_url' => $result['master_path'],
                 'thumb_url'            => $result['thumb_path'],
                 'quality_score'        => $quality['score'],
                 'quality_flags'        => $quality['flags'],
-                'url'                  => $result['master_path'],
+                'url'                  => $result['master_path'], // Silent upgrade to WebP
                 'enhancement_method'   => 'pending',
-            ]);
+            ];
 
-            // ── 4. Dispatch background AI enhancement (non-blocking) ──
-            EnhanceYachtImageJob::dispatch($this->yachtImageId)
-                ->delay(now()->addSeconds(2));
+            // If it was somehow still in 'processing', move to 'ready_for_review'
+            if ($image->status === 'processing') {
+                $updateData['status'] = 'ready_for_review';
+            }
 
-            Log::info("ProcessYachtImageJob: Queued AI enhancement for image #{$this->yachtImageId}");
+            $image->update($updateData);
+
+
 
         } catch (\Throwable $e) {
             Log::error("ProcessYachtImageJob: Failed for image #{$this->yachtImageId}: " . $e->getMessage(), [

@@ -27,7 +27,9 @@ class EnhanceYachtImageJob implements ShouldQueue
 
     public function __construct(
         private int $yachtImageId
-    ) {}
+    ) {
+        $this->queue = 'background';
+    }
 
     public function handle(
         CloudinaryEnhanceService $enhancer,
@@ -81,18 +83,6 @@ class EnhanceYachtImageJob implements ShouldQueue
                 $aiAdjustments[] = "Rotated image {$rotationAngle} degrees to correct orientation.";
             }
             $hasFlags = !empty(array_filter($flags));
-            $isGoodQuality = ($image->quality_score ?? 0) >= 70;
-
-            if ($rotationAngle === 0 && $isGoodQuality && !$hasFlags) {
-                Log::info("[EnhanceJob] Image #{$this->yachtImageId} is already good quality. Skipping Cloudinary.");
-                $flags['ai_rotation_angle'] = 0;
-                $flags['ai_adjustments'] = ['No major correction was needed.'];
-                $image->update([
-                    'enhancement_method' => 'none',
-                    'quality_flags' => $flags,
-                ]);
-                return;
-            }
 
             // Send to Cloudinary for AI enhancement
             $enhancedPath = $enhancer->enhance($absolutePath, $flags, $rotationAngle);
