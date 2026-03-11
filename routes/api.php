@@ -222,6 +222,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('chat/conversations', [ChatConversationController::class, 'index']);
     Route::get('chat/conversations/{id}', [ChatConversationController::class, 'show']);
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
+    Route::patch('chat/conversations/{id}/contact', [ChatConversationController::class, 'updateContact']);
     Route::get('chat/conversations/{id}/stream', [ChatConversationController::class, 'stream']);
     Route::post('chat/messages/{id}/thumbs-up', [ChatMessageController::class, 'thumbsUp']);
 
