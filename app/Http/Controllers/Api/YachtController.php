@@ -6,6 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Models\User;
+use App\Services\AiCorrectionLoggingService;
+use App\Services\SyncYachtTasksService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use App\Services\LocationAccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -164,6 +168,9 @@ class YachtController extends Controller
                 $yacht->min_bid_amount = $yacht->price * 0.9;
             }
 
+        app(SyncYachtTasksService::class)->syncForYacht($yacht, $request->user());
+
+        DB::commit();
             $yacht->save();
             $yacht->saveSubTables($request->all());
 

@@ -139,6 +139,11 @@ class SignhostService
         }
 
         $response = Http::withHeaders($this->headers())
+            ->withOptions([
+                'curl' => [
+                    CURLOPT_RESOLVE => ["api.signhost.com:443:83.96.205.231"]
+                ]
+            ])
             ->acceptJson()
             ->send(strtoupper($method), $this->baseUrl.ltrim($path, '/'), $options);
 
@@ -154,6 +159,11 @@ class SignhostService
     private function requestRaw(string $method, string $path, array $options = []): array
     {
         $response = Http::withHeaders($this->headers())
+            ->withOptions([
+                'curl' => [
+                    CURLOPT_RESOLVE => ["api.signhost.com:443:83.96.205.231"]
+                ]
+            ])
             ->send(strtoupper($method), $this->baseUrl.ltrim($path, '/'), $options);
 
         return [

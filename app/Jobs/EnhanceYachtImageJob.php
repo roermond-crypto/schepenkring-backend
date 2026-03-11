@@ -64,12 +64,33 @@ class EnhanceYachtImageJob implements ShouldQueue
             $rotationAngle = $rotationService->detectRotationAngle($absolutePath);
 
             $flags = $image->quality_flags ?? [];
+            $aiAdjustments = [];
+            if (!empty($flags['too_dark'])) {
+                $aiAdjustments[] = 'Brightened shadows and lifted dark areas.';
+            }
+            if (!empty($flags['too_bright'])) {
+                $aiAdjustments[] = 'Reduced harsh highlights and balanced exposure.';
+            }
+            if (!empty($flags['low_res'])) {
+                $aiAdjustments[] = 'Upscaled details for a cleaner gallery result.';
+            }
+            if (!empty($flags['blurry'])) {
+                $aiAdjustments[] = 'Applied clarity enhancement to improve sharpness.';
+            }
+            if ($rotationAngle > 0) {
+                $aiAdjustments[] = "Rotated image {$rotationAngle} degrees to correct orientation.";
+            }
             $hasFlags = !empty(array_filter($flags));
             $isGoodQuality = ($image->quality_score ?? 0) >= 70;
 
             if ($rotationAngle === 0 && $isGoodQuality && !$hasFlags) {
                 Log::info("[EnhanceJob] Image #{$this->yachtImageId} is already good quality. Skipping Cloudinary.");
-                $image->update(['enhancement_method' => 'none']);
+                $flags['ai_rotation_angle'] = 0;
+                $flags['ai_adjustments'] = ['No major correction was needed.'];
+                $image->update([
+                    'enhancement_method' => 'none',
+                    'quality_flags' => $flags,
+                ]);
                 return;
             }
 
@@ -78,7 +99,12 @@ class EnhanceYachtImageJob implements ShouldQueue
 
             if (!$enhancedPath || !file_exists($enhancedPath)) {
                 Log::warning("[EnhanceJob] Cloudinary returned no result for image #{$this->yachtImageId}");
-                $image->update(['enhancement_method' => 'local']);
+                $flags['ai_rotation_angle'] = $rotationAngle;
+                $flags['ai_adjustments'] = $aiAdjustments;
+                $image->update([
+                    'enhancement_method' => 'local',
+                    'quality_flags' => $flags,
+                ]);
                 return;
             }
 
@@ -106,6 +132,10 @@ class EnhanceYachtImageJob implements ShouldQueue
                 'thumb_url'            => $result['thumb_path'],
                 'url'                  => $result['master_path'],
                 'enhancement_method'   => 'cloudinary',
+                'quality_flags'        => array_merge($flags, [
+                    'ai_rotation_angle' => $rotationAngle,
+                    'ai_adjustments' => $aiAdjustments,
+                ]),
             ]);
 
             Log::info("[EnhanceJob] ✅ Image #{$this->yachtImageId} enhanced in {$elapsed}s", [
@@ -114,7 +144,12 @@ class EnhanceYachtImageJob implements ShouldQueue
 
         } catch (\Throwable $e) {
             Log::error("[EnhanceJob] Failed for image #{$this->yachtImageId}: " . $e->getMessage());
-            $image->update(['enhancement_method' => 'local']);
+            $flags = $image->quality_flags ?? [];
+            $flags['ai_adjustments'] = $flags['ai_adjustments'] ?? ['Enhancement fallback applied.'];
+            $image->update([
+                'enhancement_method' => 'local',
+                'quality_flags' => $flags,
+            ]);
         }
     }
 

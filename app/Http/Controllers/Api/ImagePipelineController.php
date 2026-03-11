@@ -8,11 +8,22 @@ use App\Models\Yacht;
 use App\Models\YachtImage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class ImagePipelineController extends Controller
 {
+    private const VALID_CATEGORIES = ['Exterior', 'Interior', 'Engine Room', 'Bridge', 'General'];
+    private const CATEGORY_ORDER = [
+        'Exterior' => 0,
+        'Bridge' => 1,
+        'Interior' => 2,
+        'Engine Room' => 3,
+        'General' => 4,
+    ];
+
     /**
      * Minimum approved images required to unlock Step 2.
      */
@@ -240,6 +251,97 @@ class ImagePipelineController extends Controller
     }
 
     /**
+     * POST /yachts/{yachtId}/images/reorder
+     * Persist manual drag-and-drop image ordering.
+     */
+    public function reorder(Request $request, $yachtId): JsonResponse
+    {
+        $request->validate([
+            'image_ids' => 'required|array|min:1',
+            'image_ids.*' => 'required|integer',
+        ]);
+
+        $yacht = Yacht::findOrFail($yachtId);
+        $images = $yacht->images()->whereNotIn('status', ['deleted'])->get(['id']);
+        $existingIds = $images->pluck('id')->all();
+        $incomingIds = array_values(array_map('intval', $request->input('image_ids', [])));
+
+        sort($existingIds);
+        $sortedIncoming = $incomingIds;
+        sort($sortedIncoming);
+
+        if ($existingIds !== $sortedIncoming) {
+            return response()->json([
+                'error' => 'Image order payload does not match existing yacht images.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($incomingIds) {
+            foreach ($incomingIds as $index => $imageId) {
+                YachtImage::whereKey($imageId)->update(['sort_order' => $index]);
+            }
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Image order updated.',
+        ]);
+    }
+
+    /**
+     * POST /yachts/{yachtId}/images/auto-classify
+     * Reclassify stored images into gallery buckets and regroup sort order.
+     */
+    public function autoClassify($yachtId): JsonResponse
+    {
+        $yacht = Yacht::findOrFail($yachtId);
+        $images = $yacht->images()
+            ->whereNotIn('status', ['deleted'])
+            ->orderBy('sort_order')
+            ->get();
+
+        foreach ($images as $image) {
+            $category = $this->classifyStoredImage($image);
+            $flags = $image->quality_flags ?? [];
+            $flags['ai_category_source'] = 'auto_classify';
+
+            $image->update([
+                'category' => $category,
+                'part_name' => $category,
+                'quality_flags' => $flags,
+            ]);
+        }
+
+        $refreshed = $yacht->images()
+            ->whereNotIn('status', ['deleted'])
+            ->orderBy('sort_order')
+            ->get()
+            ->sortBy(function (YachtImage $image) {
+                return [
+                    self::CATEGORY_ORDER[$image->category ?? 'General'] ?? 999,
+                    $image->sort_order,
+                    $image->id,
+                ];
+            })
+            ->values();
+
+        DB::transaction(function () use ($refreshed) {
+            foreach ($refreshed as $index => $image) {
+                $image->update(['sort_order' => $index]);
+            }
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Images auto-classified.',
+            'images' => $yacht->images()
+                ->whereNotIn('status', ['deleted'])
+                ->orderBy('sort_order')
+                ->get(),
+        ]);
+    }
+
+    /**
      * POST /yachts/{yachtId}/images/approve-all
      * Bulk approve all ready_for_review images.
      */
@@ -309,5 +411,108 @@ class ImagePipelineController extends Controller
             Storage::disk('public')->delete($image->original_temp_url);
             Log::info("Cleaned up temp original: {$image->original_temp_url}");
         }
+    }
+
+    private function classifyStoredImage(YachtImage $image): string
+    {
+        $absolutePath = $this->resolveStoredImagePath($image);
+        if (!$absolutePath) {
+            return $this->inferCategoryFromFilename($image->original_name);
+        }
+
+        $apiKey = config('services.gemini.key') ?: env('GEMINI_API_KEY');
+        if (!$apiKey) {
+            return $this->inferCategoryFromFilename($image->original_name);
+        }
+
+        try {
+            $imageData = base64_encode(file_get_contents($absolutePath));
+            $model = 'gemini-2.5-flash';
+            $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+
+            $response = Http::timeout(20)->post($endpoint, [
+                'contents' => [[
+                    'parts' => [
+                        ['text' => 'Return only one word: Exterior, Interior, Engine Room, Bridge, or General.'],
+                        ['inline_data' => [
+                            'mime_type' => mime_content_type($absolutePath) ?: 'image/jpeg',
+                            'data' => $imageData,
+                        ]],
+                    ],
+                ]],
+            ]);
+
+            if ($response->successful()) {
+                $text = data_get($response->json(), 'candidates.0.content.parts.0.text', 'General');
+                $category = trim((string) preg_replace('/[^A-Za-z\s]/', '', (string) $text));
+                if (in_array($category, self::VALID_CATEGORIES, true)) {
+                    return $category;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[ImagePipeline] Auto-classify fallback triggered', [
+                'image_id' => $image->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->inferCategoryFromFilename($image->original_name);
+    }
+
+    private function resolveStoredImagePath(YachtImage $image): ?string
+    {
+        $candidates = [
+            $image->original_kept_url,
+            $image->original_temp_url,
+            $image->optimized_master_url,
+            $image->thumb_url,
+            $image->url,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (!$candidate) {
+                continue;
+            }
+
+            $absolutePath = storage_path('app/public/' . ltrim($candidate, '/'));
+            if (file_exists($absolutePath)) {
+                return $absolutePath;
+            }
+        }
+
+        return null;
+    }
+
+    private function inferCategoryFromFilename(?string $originalName): string
+    {
+        $normalized = strtolower((string) $originalName);
+        if (str_contains($normalized, 'engine')) {
+            return 'Engine Room';
+        }
+
+        if (str_contains($normalized, 'bridge') || str_contains($normalized, 'helm') || str_contains($normalized, 'cockpit')) {
+            return 'Bridge';
+        }
+
+        if (
+            str_contains($normalized, 'interior') ||
+            str_contains($normalized, 'cabin') ||
+            str_contains($normalized, 'salon') ||
+            str_contains($normalized, 'kitchen') ||
+            str_contains($normalized, 'bed')
+        ) {
+            return 'Interior';
+        }
+
+        if (
+            str_contains($normalized, 'exterior') ||
+            str_contains($normalized, 'outside') ||
+            str_contains($normalized, 'deck') ||
+            str_contains($normalized, 'hull')
+        ) {
+            return 'Exterior';
+        }
+
+        return 'General';
     }
 }
