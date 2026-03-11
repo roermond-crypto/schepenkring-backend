@@ -203,6 +203,8 @@ class YachtshiftImportService
                         $yacht->boat_name = $boatName;
                         $yacht->manufacturer = $manufacturer;
                         $yacht->model = $modelName;
+                        $yacht->source = 'yachtshift';
+                        $yacht->source_identifier = $ref;
                         $yacht->boat_type = $features ? trim((string) $features->boat_type) : null;
                         $yacht->boat_category = $features ? trim((string) ($features->boat_category ?? '')) : null;
                         $yacht->new_or_used = $features ? trim((string) ($features->new_or_used ?? '')) : null;
@@ -212,6 +214,10 @@ class YachtshiftImportService
                         $yacht->vessel_lying = $vesselLying;
                         $yacht->short_description_nl = $descNl;
                         $yacht->min_bid_amount = $priceEur ? $priceEur * 0.9 : 0;
+                        $publicSlug = Str::slug($boatName ?: trim("{$manufacturer} {$modelName}"));
+                        $yacht->external_url = $publicSlug !== ''
+                            ? "https://www.schepenkring.nl/aanbod-boten/{$ref}/{$publicSlug}/"
+                            : "https://www.schepenkring.nl/aanbod-boten/{$ref}/";
                         
                         // Handle Main Image (only for new or if no main image)
                         $mainImageUrl = count($images) > 0 ? $images[0] : null;

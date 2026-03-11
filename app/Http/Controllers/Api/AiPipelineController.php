@@ -2638,7 +2638,14 @@ CONTEXT,
     }
 
     /**
-     * Generate custom descriptions based on tone and word count settings.
+     * RAG-Based Description Generation — Step 3.
+     *
+     * Retrieval-augmented flow:
+     *   1. Gather all Step 2 structured specs
+     *   2. Search Pinecone for top 5 similar boats → collect their descriptions
+     *   3. Query local DB for same brand/model boats with descriptions
+     *   4. Build rich GPT-4o prompt with specs + example descriptions
+     *   5. Generate NL/EN/DE marketplace-ready texts
      */
     public function generateDescription(Request $request): JsonResponse
     {
@@ -2650,7 +2657,7 @@ CONTEXT,
         ]);
 
         $yacht = Yacht::findOrFail($request->input('yacht_id'));
-        
+
         $openAiKey = config('services.openai.key');
         if (!$openAiKey) {
             return response()->json(['error' => 'OPENAI_API_KEY not configured'], 500);
@@ -2660,51 +2667,271 @@ CONTEXT,
         $minWords = $request->input('min_words', 200);
         $maxWords = $request->input('max_words', 500);
 
-        // Build context from the yacht data, excluding internal/visual fields to save tokens
-        $skipFields = ['images', 'created_at', 'updated_at', 'location_lat', 'location_lng'];
-        $filteredData = collect($yacht->toArray())
+        // ── 1. GATHER STRUCTURED STEP 2 DATA ─────────────────────────────
+        $yachtArray = $yacht->toArray();
+        $skipFields = ['id', 'user_id', 'images', 'created_at', 'updated_at', 'deleted_at',
+                       'location_lat', 'location_lng', 'pinecone_indexed_at', 'ai_extraction_id'];
+
+        $allSpecs = collect($yachtArray)
             ->except($skipFields)
-            ->filter(fn($val) => $val !== null && $val !== '')
+            ->filter(fn($val) => $val !== null && $val !== '' && $val !== 0 && $val !== '0')
             ->toArray();
-        $yachtData = json_encode($filteredData);
+
+        // Organize specs by category for better prompt context
+        $specSections = $this->organizeSpecsForDescription($allSpecs);
+        $specsText = '';
+        foreach ($specSections as $section => $fields) {
+            if (empty($fields)) continue;
+            $specsText .= "\n### {$section}\n";
+            foreach ($fields as $key => $val) {
+                $label = str_replace('_', ' ', ucfirst($key));
+                $specsText .= "- {$label}: {$val}\n";
+            }
+        }
+
+        // ── 2. PINECONE SEARCH — Find similar boats with descriptions ────
+        $exampleDescriptions = [];
+        $similarBoatSummaries = [];
+
+        try {
+            $pineconeKey = config('services.pinecone.key');
+            $pineconeHost = config('services.pinecone.host');
+
+            if ($openAiKey && $pineconeKey && $pineconeHost) {
+                $searchText = implode(' ', array_filter([
+                    $yacht->manufacturer,
+                    $yacht->model,
+                    $yacht->boat_type,
+                    $yacht->boat_category,
+                    $yacht->year ? "year {$yacht->year}" : null,
+                    $yacht->loa ? "{$yacht->loa}m" : null,
+                    $yacht->fuel,
+                ]));
+
+                if (strlen(trim($searchText)) >= 3) {
+                    // Embed the search text
+                    $embedResponse = Http::withToken($openAiKey)
+                        ->timeout(10)
+                        ->post('https://api.openai.com/v1/embeddings', [
+                            'model' => 'text-embedding-3-small',
+                            'input' => $searchText,
+                            'dimensions' => 1408,
+                        ]);
+
+                    if ($embedResponse->successful()) {
+                        $vector = $embedResponse->json('data.0.embedding');
+                        if ($vector) {
+                            // Query Pinecone for top 5 similar boats
+                            $pineconeResponse = Http::withHeaders([
+                                'Api-Key' => $pineconeKey,
+                                'Content-Type' => 'application/json',
+                            ])->timeout(10)->post("{$pineconeHost}/query", [
+                                'vector' => $vector,
+                                'topK' => 5,
+                                'includeMetadata' => true,
+                            ]);
+
+                            if ($pineconeResponse->successful()) {
+                                $matches = $pineconeResponse->json('matches') ?? [];
+                                foreach ($matches as $match) {
+                                    $meta = $match['metadata'] ?? [];
+                                    $score = round(($match['score'] ?? 0) * 100);
+                                    $matchId = $meta['id'] ?? $match['id'] ?? null;
+
+                                    // Build a summary of each similar boat
+                                    $summary = implode(' ', array_filter([
+                                        $meta['manufacturer'] ?? null,
+                                        $meta['model'] ?? null,
+                                        isset($meta['year']) ? "({$meta['year']})" : null,
+                                        isset($meta['loa']) ? "– {$meta['loa']}m" : null,
+                                        isset($meta['boat_type']) ? "– {$meta['boat_type']}" : null,
+                                    ]));
+                                    if ($summary) {
+                                        $similarBoatSummaries[] = "{$summary} (match: {$score}%)";
+                                    }
+
+                                    // Try to load the actual description from local DB
+                                    if ($matchId) {
+                                        $matchYacht = Yacht::find($matchId);
+                                        if ($matchYacht) {
+                                            $desc = $matchYacht->short_description_nl ?: $matchYacht->short_description_en;
+                                            if ($desc && strlen($desc) > 80) {
+                                                $brand = $matchYacht->manufacturer ?: '';
+                                                $model = $matchYacht->model ?: '';
+                                                $exampleDescriptions[] = [
+                                                    'boat' => trim("{$brand} {$model} ({$matchYacht->year})"),
+                                                    'text' => mb_substr($desc, 0, 1500), // Cap to save tokens
+                                                    'lang' => $matchYacht->short_description_nl ? 'nl' : 'en',
+                                                ];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[AI Description RAG] Pinecone search failed: ' . $e->getMessage());
+        }
+
+        // ── 3. LOCAL DB SEARCH — Same brand/model boats with descriptions ─
+        try {
+            $dbQuery = Yacht::query()
+                ->where('id', '!=', $yacht->id)
+                ->where(function($q) {
+                    $q->whereNotNull('short_description_nl')
+                      ->where('short_description_nl', '!=', '')
+                      ->where('short_description_nl', '!=', ' ');
+                });
+
+            // First try exact brand+model match
+            if ($yacht->manufacturer && $yacht->model) {
+                $brandModelMatches = (clone $dbQuery)
+                    ->where('manufacturer', 'LIKE', $yacht->manufacturer)
+                    ->where('model', 'LIKE', "%{$yacht->model}%")
+                    ->limit(3)
+                    ->get();
+
+                foreach ($brandModelMatches as $bm) {
+                    $desc = $bm->short_description_nl ?: $bm->short_description_en;
+                    if ($desc && strlen($desc) > 80 && count($exampleDescriptions) < 5) {
+                        $exampleDescriptions[] = [
+                            'boat' => trim("{$bm->manufacturer} {$bm->model} ({$bm->year})"),
+                            'text' => mb_substr($desc, 0, 1500),
+                            'lang' => $bm->short_description_nl ? 'nl' : 'en',
+                        ];
+                    }
+                }
+            }
+
+            // Fallback: same category/type boats
+            if (count($exampleDescriptions) < 3 && $yacht->boat_type) {
+                $categoryMatches = (clone $dbQuery)
+                    ->where('boat_type', $yacht->boat_type)
+                    ->when($yacht->manufacturer, fn($q) => $q->where('manufacturer', $yacht->manufacturer))
+                    ->inRandomOrder()
+                    ->limit(3)
+                    ->get();
+
+                foreach ($categoryMatches as $cm) {
+                    $desc = $cm->short_description_nl ?: $cm->short_description_en;
+                    if ($desc && strlen($desc) > 80 && count($exampleDescriptions) < 5) {
+                        $exampleDescriptions[] = [
+                            'boat' => trim("{$cm->manufacturer} {$cm->model} ({$cm->year})"),
+                            'text' => mb_substr($desc, 0, 1500),
+                            'lang' => $cm->short_description_nl ? 'nl' : 'en',
+                        ];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[AI Description RAG] DB search failed: ' . $e->getMessage());
+        }
+
+        // Deduplicate example descriptions by boat name
+        $seen = [];
+        $exampleDescriptions = array_values(array_filter($exampleDescriptions, function($ex) use (&$seen) {
+            if (in_array($ex['boat'], $seen)) return false;
+            $seen[] = $ex['boat'];
+            return true;
+        }));
+
+        // ── 4. BUILD RICH GPT-4o PROMPT ──────────────────────────────────
+        $boatTitle = implode(' ', array_filter([$yacht->manufacturer, $yacht->model, $yacht->year ? "({$yacht->year})" : '']));
+
+        $examplesBlock = '';
+        if (!empty($exampleDescriptions)) {
+            $examplesBlock = "\n\n## EXAMPLE DESCRIPTIONS FROM SIMILAR BOATS (use as style/quality reference, do NOT copy):\n";
+            foreach (array_slice($exampleDescriptions, 0, 3) as $i => $ex) {
+                $n = $i + 1;
+                $examplesBlock .= "\n### Example {$n}: {$ex['boat']} ({$ex['lang']})\n{$ex['text']}\n";
+            }
+        }
+
+        $similarBlock = '';
+        if (!empty($similarBoatSummaries)) {
+            $similarBlock = "\n\n## SIMILAR BOATS IN OUR DATABASE:\n" . implode("\n", array_map(fn($s) => "- {$s}", $similarBoatSummaries));
+        }
 
         $systemPrompt = <<<PROMPT
-You are an expert yacht copywriter. Given the data of a yacht, generate an engaging, descriptive marketing summary.
-Follow these requirements STRICTLY:
-- Tone: {$tone}
-- Length: Ensure the word count is between {$minWords} and {$maxWords} words per language. Do not output less than {$minWords} words!
-- Language: Provide the description in English, Dutch, German, and French.
-- Focus on the key features, amenities, and unique selling points of the boat.
-- Return ONLY a JSON object with keys "en", "nl", "de", and "fr".
+You are a senior yacht broker copywriter for Schepenkring, one of the largest yacht brokerages in the Netherlands and Europe.
+You write compelling, trustworthy, and detailed boat listing descriptions that sell boats.
+
+Your writing style:
+- Professional yet warm, like an experienced broker personally recommending the boat
+- Structured: start with a captivating opening, then walk through key features logically
+- Highlight unique selling points, luxury features, and practical benefits
+- Mention specific technical details (engine, dimensions, equipment) naturally in the text
+- End with a call to action or invitation to schedule a viewing
+
+CRITICAL RULES:
+1. Tone: {$tone}
+2. Word count: Each language version MUST be between {$minWords} and {$maxWords} words. This is a HARD requirement.
+3. Languages: Generate in Dutch (nl), English (en), and German (de). Each should feel native, NOT a translation.
+4. ONLY mention specifications, equipment, and features that are provided in the data below. NEVER invent or hallucinate specs.
+5. If a spec is missing, simply don't mention it. Do not write "unknown" or "not specified".
+6. Use the example descriptions below as STYLE and QUALITY reference. Match their professional level. Do NOT copy their text.
+7. Return ONLY a valid JSON object with keys "nl", "en", "de". No markdown, no explanation.
+
 PROMPT;
 
-        $endpoint = 'https://api.openai.com/v1/chat/completions';
+        $userPrompt = <<<USER
+# BOAT: {$boatTitle}
 
+## ALL SPECIFICATIONS (Step 2 Data):
+{$specsText}
+{$similarBlock}
+{$examplesBlock}
+
+Generate the listing descriptions now. Remember: {$minWords}–{$maxWords} words per language, based ONLY on the specs above.
+USER;
+
+        Log::info('[AI Description RAG] Generating for ' . $boatTitle, [
+            'specs_count' => count($allSpecs),
+            'pinecone_matches' => count($similarBoatSummaries),
+            'example_descriptions' => count($exampleDescriptions),
+        ]);
+
+        // ── 5. CALL GPT-4o ──────────────────────────────────────────────
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $openAiKey,
-            ])->timeout(45)->post($endpoint, [
+            ])->timeout(90)->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o',
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
-                    ['role' => 'user', 'content' => "Yacht Data:\n" . $yachtData]
+                    ['role' => 'user', 'content' => $userPrompt],
                 ],
                 'response_format' => ['type' => 'json_object'],
+                'temperature' => 0.7,
             ]);
 
             if (!$response->successful()) {
-                Log::error('[AI Description] API error: ' . $response->body());
+                Log::error('[AI Description RAG] API error: ' . $response->body());
                 return response()->json(['error' => 'OpenAI API failed'], 500);
             }
 
             $body = $response->json();
             $text = $body['choices'][0]['message']['content'] ?? null;
-            
+
             if (!$text) {
                 return response()->json(['error' => 'Empty response from OpenAI'], 500);
             }
 
             $extracted = json_decode($text, true);
+
+            if (!$extracted || (!isset($extracted['nl']) && !isset($extracted['en']))) {
+                Log::error('[AI Description RAG] Invalid JSON response', ['raw' => $text]);
+                return response()->json(['error' => 'Invalid AI response format'], 500);
+            }
+
+            Log::info('[AI Description RAG] Generated successfully for ' . $boatTitle, [
+                'nl_words' => str_word_count($extracted['nl'] ?? ''),
+                'en_words' => str_word_count($extracted['en'] ?? ''),
+                'de_words' => str_word_count($extracted['de'] ?? ''),
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -2713,13 +2940,73 @@ PROMPT;
                     'nl' => $extracted['nl'] ?? null,
                     'de' => $extracted['de'] ?? null,
                     'fr' => $extracted['fr'] ?? null,
-                ]
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('[AI Description] Exception: ' . $e->getMessage());
+            Log::error('[AI Description RAG] Exception: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Organize yacht specs into logical sections for the description prompt.
+     */
+    private function organizeSpecsForDescription(array $specs): array
+    {
+        $sections = [
+            'General' => ['boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category',
+                          'year', 'new_or_used', 'status', 'price', 'vessel_lying', 'location_city',
+                          'ce_category', 'flag', 'registration'],
+            'Dimensions' => ['loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast',
+                            'max_draft', 'min_draft', 'variable_depth', 'minimum_height'],
+            'Engine & Propulsion' => ['engine_manufacturer', 'engine_model', 'engine_quantity', 'horse_power',
+                                     'fuel', 'fuel_capacity', 'drive_type', 'propulsion', 'engine_hours',
+                                     'max_speed', 'cruising_speed', 'range', 'bow_thruster', 'stern_thruster'],
+            'Accommodation' => ['cabins', 'berths', 'heads', 'toilet', 'shower', 'passenger_capacity',
+                               'heating', 'air_conditioning', 'hot_water'],
+            'Navigation & Electronics' => ['autopilot', 'gps', 'plotter', 'radar', 'vhf', 'ais',
+                                          'compass', 'depth_sounder', 'log_speedometer', 'wind_instrument'],
+            'Deck & Comfort' => ['bimini', 'sprayhood', 'cockpit_cover', 'swimming_platform', 'teak_deck',
+                                'anchor', 'windlass', 'bathing_ladder', 'dinghy', 'davits', 'gangway'],
+            'Kitchen & Comfort' => ['oven', 'microwave', 'fridge', 'freezer', 'cooker', 'television',
+                                   'radio_cd_player', 'dvd_player', 'water_tank', 'water_maker'],
+            'Safety' => ['life_raft', 'fire_extinguisher', 'epirb', 'life_jackets', 'safety_harness',
+                        'bilge_pump', 'gas_detector', 'fire_blanket'],
+            'Sails & Rigging' => ['mainsail', 'genoa', 'jib', 'spinnaker', 'gennaker', 'furling_mast',
+                                 'furling_genoa', 'lazy_jacks', 'battened_mainsail', 'sail_area'],
+            'Construction' => ['hull_type', 'hull_construction', 'hull_colour', 'hull_number',
+                              'super_structure_colour', 'super_structure_construction',
+                              'designer', 'builder', 'where'],
+            'Electrical' => ['shore_power', 'battery_charger', 'inverter', 'generator',
+                            'solar_panels', 'wind_generator', 'battery_capacity'],
+            'Description & Remarks' => ['short_description_nl', 'short_description_en', 'short_description_de',
+                                       'owners_comment', 'broker_remarks'],
+        ];
+
+        $organized = [];
+        $assigned = [];
+
+        foreach ($sections as $section => $keys) {
+            $sectionData = [];
+            foreach ($keys as $key) {
+                if (isset($specs[$key])) {
+                    $sectionData[$key] = $specs[$key];
+                    $assigned[] = $key;
+                }
+            }
+            if (!empty($sectionData)) {
+                $organized[$section] = $sectionData;
+            }
+        }
+
+        // Add any remaining fields not in a section
+        $remaining = array_diff_key($specs, array_flip($assigned));
+        if (!empty($remaining)) {
+            $organized['Other Details'] = $remaining;
+        }
+
+        return $organized;
     }
 
     /**
