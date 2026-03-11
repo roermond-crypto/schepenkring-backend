@@ -12,7 +12,7 @@ class MeAddressRequest extends ApiRequest
             'city' => ['sometimes', 'nullable', 'string', 'max:255'],
             'state' => ['sometimes', 'nullable', 'string', 'max:255'],
             'postal_code' => ['sometimes', 'nullable', 'string', 'max:20'],
-            'country' => ['sometimes', 'nullable', 'string', 'max:2'],
+            'country' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
 }

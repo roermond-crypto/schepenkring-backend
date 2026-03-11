@@ -18,7 +18,7 @@ class CopilotResolverService
         private CopilotAiRouterService $aiRouter,
         private CopilotFaqService $faqService,
         private LocationAccessService $locationAccess,
-        private CopilotLanguage $language
+        private PineconeMatcherService $pineconeMatcher
     ) {
     }
 
@@ -464,6 +464,34 @@ class CopilotResolverService
                 'category' => $faq['category'],
                 'actions' => $this->relatedActions($faq['question'] . ' ' . $faq['answer']),
             ];
+        }
+
+        // Add historical sales integration
+        if ($this->isHistoricalQuery($input)) {
+            try {
+                $historical = $this->pineconeMatcher->matchAndBuildConsensus([], $input);
+                if (!empty($historical['top_matches'])) {
+                    $consensus = $historical['consensus_values'];
+                    $topMatch = $historical['top_matches'][0]['boat'] ?? [];
+                    
+                    $answerParts = ["Based on the Schepenkring sold boats archive:"];
+                    
+                    if (!empty($consensus['loa'])) $answerParts[] = "• Typical length (LOA): {$consensus['loa']}m";
+                    if (!empty($consensus['engine_manufacturer'])) $answerParts[] = "• Common engine: {$consensus['engine_manufacturer']}";
+                    if (!empty($topMatch['price'])) $answerParts[] = "• Historical price reference: €" . number_format($topMatch['price']);
+                    
+                    if (count($answerParts) > 1) {
+                        $answers[] = [
+                            'question' => "Market Data: " . ($topMatch['manufacturer'] ?? '') . " " . ($topMatch['model'] ?? ''),
+                            'answer' => implode("\n", $answerParts),
+                            'category' => 'Market Intelligence',
+                            'source' => 'schepenkring_archive'
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {
+                \Log::warning("Historical chat lookup failed: " . $e->getMessage());
+            }
         }
 
         return $answers;

@@ -26,8 +26,21 @@ class PublicLeadController extends Controller
         ]);
 
         return DB::transaction(function () use ($validated) {
+            $yachtId = null;
+            if (!empty($validated['source_url'])) {
+                // Strip trailing slash if present for more consistent matching
+                $lookupUrl = rtrim($validated['source_url'], '/');
+                $yacht = \App\Models\Yacht::where('external_url', $lookupUrl)
+                    ->orWhere('external_url', $lookupUrl . '/')
+                    ->first();
+                if ($yacht) {
+                    $yachtId = $yacht->id;
+                }
+            }
+
             $lead = Lead::create([
                 'location_id' => $validated['location_id'],
+                'yacht_id' => $yachtId,
                 'source' => 'web_widget',
                 'source_url' => $validated['source_url'] ?? null,
                 'name' => $validated['name'] ?? null,

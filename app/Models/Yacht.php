@@ -98,7 +98,7 @@ class Yacht extends Model
         // Core identity
         'user_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
         'allow_bidding', 'main_image', 'year', 'min_bid_amount',
-        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid',
+        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
 
         // Identity (from Yachtshift)
         'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
@@ -187,6 +187,22 @@ class Yacht extends Model
 
     public function rigging(): HasOne {
         return $this->hasOne(YachtRigging::class);
+    }
+
+    public function videoSetting(): HasOne {
+        return $this->hasOne(BoatVideoSetting::class);
+    }
+
+    public function socialPosts(): HasMany {
+        return $this->hasMany(SocialPost::class);
+    }
+
+    public function fieldChanges(): HasMany {
+        return $this->hasMany(BoatFieldChange::class);
+    }
+
+    public function aiExtractions(): HasMany {
+        return $this->hasMany(YachtAiExtraction::class);
     }
 
     // ─── Existing relationships ────────────────────────────────

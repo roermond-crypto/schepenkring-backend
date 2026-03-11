@@ -109,7 +109,8 @@ class ImagePipelineController extends Controller
         $enhancingCount = $images->where('enhancement_method', 'pending')->count();
         $readyCount = $images->where('status', 'ready_for_review')->count();
 
-        $isStep2Unlocked = $approvedCount >= $this->minApproved && ($processingCount + $enhancingCount) === 0;
+        // Step 2 should not be blocked by background processing/enhancement.
+        $isStep2Unlocked = $approvedCount >= $this->minApproved;
 
         return response()->json([
             'images'  => $images,
@@ -208,10 +209,17 @@ class ImagePipelineController extends Controller
 
             Storage::disk('public')->copy($image->original_temp_url, $keptPath);
 
-            $image->update([
+            $updateData = [
                 'keep_original'     => true,
                 'original_kept_url' => $keptPath,
-            ]);
+            ];
+
+            // Auto-approve if currently ready for review
+            if ($image->status === 'ready_for_review') {
+                $updateData['status'] = 'approved';
+            }
+
+            $image->update($updateData);
         } else {
             // Remove kept original if toggled off
             if ($image->original_kept_url) {
@@ -255,14 +263,12 @@ class ImagePipelineController extends Controller
         }
 
         $approvedCount = $yacht->images()->where('status', 'approved')->count();
-        $processingCount = $yacht->images()->where('status', 'processing')->count()
-            + $yacht->images()->where('enhancement_method', 'pending')->count();
 
         return response()->json([
             'status'         => 'success',
             'message'        => "{$updated} images approved.",
             'approved_count' => $approvedCount,
-            'step2_unlocked' => $approvedCount >= $this->minApproved && $processingCount === 0,
+            'step2_unlocked' => $approvedCount >= $this->minApproved,
         ]);
     }
 
@@ -279,7 +285,8 @@ class ImagePipelineController extends Controller
             + $yacht->images()->where('enhancement_method', 'pending')->count();
         $totalCount = $yacht->images()->whereNotIn('status', ['deleted'])->count();
 
-        $unlocked = $approvedCount >= $this->minApproved && $processingCount === 0;
+        // Unlock based on approvals only; processing continues in background.
+        $unlocked = $approvedCount >= $this->minApproved;
 
         return response()->json([
             'step2_unlocked'   => $unlocked,
@@ -288,9 +295,7 @@ class ImagePipelineController extends Controller
             'total_count'      => $totalCount,
             'min_required'     => $this->minApproved,
             'reason'           => !$unlocked
-                ? ($processingCount > 0
-                    ? "Still processing {$processingCount} images."
-                    : "Need at least {$this->minApproved} approved images (have {$approvedCount}).")
+                ? "Need at least {$this->minApproved} approved images (have {$approvedCount})."
                 : null,
         ]);
     }

@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
+use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
 use App\Http\Controllers\Api\ChatMessageController;
 use App\Http\Controllers\Api\ChatWidgetController;
@@ -61,6 +62,7 @@ use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\YachtController;
+use App\Http\Controllers\Api\YachtDraftController;
 
 // ──────────────────────────────────────────────────────────
 // Public routes (no auth needed for dev/testing)
@@ -87,6 +89,7 @@ Route::prefix('public/conversations/{conversationId}')->group(function () {
 // AI pipeline
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
+Route::post('ai/suggestions', [AiPipelineController::class, 'getSuggestions']);
 
 // Checklists
 Route::get('checklists/templates', [ChecklistTemplateController::class, 'index']);
@@ -105,7 +108,8 @@ Route::prefix('public')->group(function () {
     Route::post('bids/register', [BidWidgetController::class, 'register']);
     Route::post('bids/verify', [BidWidgetController::class, 'verify']);
     Route::get('bids/{yachtId}/state', [BidWidgetController::class, 'state']);
-    Route::post('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::get('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
 });
 
 // Chat widget (public)
@@ -162,6 +166,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Account settings
     Route::get('me', [MeController::class, 'show']);
     Route::patch('me/profile', [MeProfileController::class, 'update']);
+    Route::post('me/avatar', [\App\Http\Controllers\Api\Me\AvatarController::class, 'update']);
     Route::patch('me/personal', [MePersonalController::class, 'update']);
     Route::patch('me/address', [MeAddressController::class, 'update']);
     Route::patch('me/security', [MeSecurityController::class, 'update']);
@@ -334,6 +339,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}', [AdminUserController::class, 'update']);
     Route::delete('users/{id}', [AdminUserController::class, 'destroy']);
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
+    Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
+    Route::put('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
     
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);

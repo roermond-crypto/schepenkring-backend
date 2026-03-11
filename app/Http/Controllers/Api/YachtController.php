@@ -738,4 +738,93 @@ SCHEMA;
             ], 500);
         }
     }
+
+    private function extractSubmittedTrackableFields(Request $request, array $trackableFields): array
+    {
+        $ignored = ['_method', '_token', 'availability_rules'];
+        $submitted = array_values(array_intersect(
+            array_keys($request->except($ignored)),
+            $trackableFields
+        ));
+
+        if ($request->hasFile('main_image') && in_array('main_image', $trackableFields, true) && !in_array('main_image', $submitted, true)) {
+            $submitted[] = 'main_image';
+        }
+
+        return array_values(array_unique($submitted));
+    }
+
+    private function buildSnapshotForFields(array $source, array $fields): array
+    {
+        $snapshot = [];
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $source)) {
+                $snapshot[$field] = $source[$field];
+            }
+        }
+
+        return $snapshot;
+    }
+
+    private function resolveChangedByType(Request $request): string
+    {
+        $requested = strtolower((string) $request->input('changed_by_type', ''));
+        if (in_array($requested, self::ALLOWED_CHANGED_BY_TYPES, true)) {
+            return $requested;
+        }
+
+        if ($request->filled('ai_session_id')) {
+            return 'ai';
+        }
+
+        $user = $request->user();
+        if ($user && ((method_exists($user, 'isStaff') && $user->isStaff()) || strtolower((string) $user->role) === 'admin')) {
+            return 'admin';
+        }
+
+        return 'user';
+    }
+
+    private function normalizeSourceType(mixed $sourceType): ?string
+    {
+        $value = strtolower((string) $sourceType);
+        if ($value === '' || !in_array($value, self::ALLOWED_SOURCE_TYPES, true)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function normalizeCorrectionLabel(mixed $label): ?string
+    {
+        $value = strtolower((string) $label);
+        if ($value === '' || !in_array($value, self::ALLOWED_CORRECTION_LABELS, true)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function extractFieldConfidenceMap(Request $request): array
+    {
+        $candidates = [
+            $request->input('field_confidence'),
+            $request->input('ai_field_confidence'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_array($candidate)) {
+                return $candidate;
+            }
+
+            if (is_string($candidate) && $candidate !== '') {
+                $decoded = json_decode($candidate, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+        }
+
+        return [];
+    }
 }

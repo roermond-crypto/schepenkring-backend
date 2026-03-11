@@ -14,6 +14,7 @@ class Lead extends Model
         'location_id',
         'client_id',
         'converted_client_id',
+        'yacht_id',
         'conversation_id',
         'assigned_employee_id',
         'status',
@@ -77,5 +78,10 @@ class Lead extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(User::class, 'client_id');
+    }
+
+    public function yacht(): BelongsTo
+    {
+        return $this->belongsTo(Yacht::class);
     }
 }

@@ -15,6 +15,13 @@ class Location extends Model
         'name',
         'code',
         'status',
+        'chat_widget_enabled',
+        'chat_widget_welcome_text',
+        'chat_widget_theme',
+    ];
+
+    protected $casts = [
+        'chat_widget_enabled' => 'boolean',
     ];
 
     public function users(): BelongsToMany

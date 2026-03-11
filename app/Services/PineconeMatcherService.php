@@ -135,7 +135,6 @@ class PineconeMatcherService
                     $result['field_sources'][$field]      = 'pinecone_consensus';
                 }
             }
-
             Log::info('[PineconeMatcher] Found ' . count($matches) . ' matches, ' . count($result['consensus_values']) . ' consensus fields');
 
             return $result;
@@ -145,5 +144,111 @@ class PineconeMatcherService
             $result['warnings'][] = 'Pinecone matching failed: ' . $e->getMessage();
             return $result;
         }
+    }
+
+    /**
+     * Upsert a yacht into Pinecone.
+     *
+     * @param  Yacht  $yacht
+     * @return bool
+     */
+    public function upsertYacht(\App\Models\Yacht $yacht): bool
+    {
+        if (!$this->pineconeKey || !$this->pineconeHost || !$this->openAiKey) {
+            Log::info('[PineconeMatcher] Indexing skipped: missing API keys');
+            return false;
+        }
+
+        try {
+            // Build text representation for embedding
+            $metadata = $this->buildMetadata($yacht);
+            $searchText = $this->buildSearchText($yacht, $metadata);
+
+            // Step 1: Generate embedding
+            $embedResponse = Http::withToken($this->openAiKey)
+                ->timeout(15)
+                ->post('https://api.openai.com/v1/embeddings', [
+                    'model'      => 'text-embedding-3-small',
+                    'input'      => $searchText,
+                    'dimensions' => 1408,
+                ]);
+
+            if (!$embedResponse->successful()) {
+                Log::warning('[PineconeMatcher] Embedding failed: ' . $embedResponse->status());
+                return false;
+            }
+
+            $vector = $embedResponse->json('data.0.embedding');
+            if (!$vector) return false;
+
+            // Step 2: Upsert into Pinecone
+            $pineconeResponse = Http::withHeaders([
+                'Api-Key'      => $this->pineconeKey,
+                'Content-Type' => 'application/json',
+            ])->timeout(10)->post("{$this->pineconeHost}/vectors/upsert", [
+                'vectors' => [
+                    [
+                        'id'       => (string) $yacht->id,
+                        'values'   => $vector,
+                        'metadata' => $metadata,
+                    ]
+                ]
+            ]);
+
+            if (!$pineconeResponse->successful()) {
+                Log::warning('[PineconeMatcher] Pinecone upsert failed: ' . $pineconeResponse->status() . ' ' . $pineconeResponse->body());
+                return false;
+            }
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('[PineconeMatcher] Upsert exception: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function buildMetadata(\App\Models\Yacht $yacht): array
+    {
+        $data = $yacht->toArray();
+        
+        // Pick fields that are useful for metadata filtering/search
+        $meta = [
+            'id'                  => (string) $yacht->id,
+            'boat_name'           => $yacht->boat_name,
+            'manufacturer'        => $yacht->manufacturer,
+            'model'               => $yacht->model,
+            'year'                => (int) $yacht->year,
+            'boat_type'           => $yacht->boat_type,
+            'boat_category'       => $yacht->boat_category,
+            'status'              => $yacht->status,
+            'vessel_lying'        => $yacht->vessel_lying,
+            'price'               => (float) $yacht->price,
+            'loa'                 => (float) ($data['loa'] ?? 0),
+            'beam'                => (float) ($data['beam'] ?? 0),
+            'draft'               => (float) ($data['draft'] ?? 0),
+            'engine_manufacturer' => $data['engine_manufacturer'] ?? null,
+            'fuel'                => $data['fuel'] ?? null,
+            'source'              => $data['source'] ?? null,
+        ];
+
+        return array_filter($meta, fn($v) => !is_null($v));
+    }
+
+    private function buildSearchText(\App\Models\Yacht $yacht, array $metadata): string
+    {
+        $parts = [
+            $yacht->boat_name,
+            $yacht->manufacturer,
+            $yacht->model,
+            $yacht->year,
+            $yacht->boat_type,
+            $yacht->boat_category,
+            $yacht->vessel_lying,
+            $yacht->short_description_nl,
+            $yacht->owners_comment, // AI summary stored here
+        ];
+
+        return implode(' ', array_filter($parts));
     }
 }

@@ -95,29 +95,22 @@ class ImageQualityService
         }
 
         // Downsample for analysis (faster)
-        $sampleWidth = min($width, 200);
+        $sampleWidth = min($width, 50);
         $sampleHeight = intval($height * ($sampleWidth / $width));
         $sample = imagecreatetruecolor($sampleWidth, $sampleHeight);
         imagecopyresampled($sample, $image, 0, 0, 0, 0, $sampleWidth, $sampleHeight, $width, $height);
 
-        // 1. Brightness check (mean luminance via sampling)
-        $totalLuminance = 0;
-        $pixelCount = 0;
+        // 1. Brightness check: resize to 1x1 to get average color instantly
+        $pixelBlock = imagecreatetruecolor(1, 1);
+        imagecopyresampled($pixelBlock, $image, 0, 0, 0, 0, 1, 1, $width, $height);
+        $rgb = imagecolorat($pixelBlock, 0, 0);
+        $r = ($rgb >> 16) & 0xFF;
+        $g = ($rgb >> 8) & 0xFF;
+        $b = $rgb & 0xFF;
+        $meanLuminance = 0.2126 * $r + 0.7152 * $g + 0.0722 * $b;
+        imagedestroy($pixelBlock);
 
-        for ($x = 0; $x < $sampleWidth; $x += 2) {
-            for ($y = 0; $y < $sampleHeight; $y += 2) {
-                $rgb = imagecolorat($sample, $x, $y);
-                $r = ($rgb >> 16) & 0xFF;
-                $g = ($rgb >> 8) & 0xFF;
-                $b = $rgb & 0xFF;
-                $totalLuminance += 0.2126 * $r + 0.7152 * $g + 0.0722 * $b;
-                $pixelCount++;
-            }
-        }
-
-        $meanLuminance = $pixelCount > 0 ? $totalLuminance / $pixelCount : 128;
-
-        // 2. Blur detection (Laplacian variance approximation)
+        // 2. Blur detection (Laplacian variance approximation on a tiny sample)
         $grays = [];
         for ($y = 0; $y < $sampleHeight; $y++) {
             for ($x = 0; $x < $sampleWidth; $x++) {

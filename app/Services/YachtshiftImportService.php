@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Exception;
 
 class YachtshiftImportService
@@ -112,6 +114,57 @@ class YachtshiftImportService
                         return null;
                     };
 
+                    $mapAllFeatures = function() use ($bf, $getFeature, $getDimension) {
+                        $data = [];
+                        if (!$bf) return $data;
+
+                        // Dimensions
+                        $data['loa'] = $getDimension('loa');
+                        $data['beam'] = $getDimension('beam');
+                        $data['draft'] = $getDimension('draft');
+                        $data['air_draft'] = $getDimension('air_draft');
+                        $data['lwl'] = $getDimension('lwl');
+
+                        // Build/Construction
+                        $data['designer'] = $getFeature('build', 'designer');
+                        $data['builder'] = $getFeature('build', 'builder');
+                        $data['where'] = $getFeature('build', 'where');
+                        $data['hull_colour'] = $getFeature('build', 'hull_colour');
+                        $data['hull_construction'] = $getFeature('build', 'hull_construction');
+                        $data['hull_number'] = $getFeature('build', 'hull_number');
+
+                        // Accommodation
+                        $data['cabins'] = $getFeature('accommodation', 'cabins');
+                        $data['berths'] = $getFeature('accommodation', 'berths');
+                        $data['toilet'] = $getFeature('accommodation', 'toilet');
+
+                        // Engine
+                        $data['engine_manufacturer'] = $getFeature('engine', 'engine_manufacturer');
+                        $data['horse_power'] = $getFeature('engine', 'horse_power');
+                        $data['fuel'] = $getFeature('engine', 'fuel');
+                        $data['engine_quantity'] = $getFeature('engine', 'engine_quantity');
+
+                        // Comfort
+                        $data['heating'] = $getFeature('comfort', 'heating');
+                        $data['fridge'] = $getFeature('comfort', 'fridge');
+
+                        // Additional generic mapping for anything else in sub-sections
+                        $sections = ['navigation', 'electrical', 'safety', 'deckEquipment', 'rigging'];
+                        foreach ($sections as $section) {
+                            if (isset($bf->$section)) {
+                                foreach ($bf->$section->item ?? [] as $item) {
+                                    $name = (string) $item->attributes()['name'];
+                                    $val = trim((string) $item);
+                                    if ($val !== '') {
+                                        $data[$name] = $val;
+                                    }
+                                }
+                            }
+                        }
+
+                        return $data;
+                    };
+
                     $manufacturer = $features ? trim((string) $features->manufacturer) : null;
                     $modelName = $features ? trim((string) $features->model) : null;
                     $boatName = $getFeature(null, 'boat_name');
@@ -162,9 +215,9 @@ class YachtshiftImportService
                         // Handle Main Image (only for new or if no main image)
                         $mainImageUrl = count($images) > 0 ? $images[0] : null;
                         if ($mainImageUrl && (!$yacht->main_image || $isNew)) {
-                            $downloadedPath = $this->downloadImage($mainImageUrl, "yachts/main", "main_{$vesselId}");
+                            $downloadedPath = $this->downloadImage($mainImageUrl, "yachts/imported/yachtshift/{$ref}", "main_{$ref}");
                             if ($downloadedPath) {
-                                if ($yacht->main_image) {
+                                if ($yacht->main_image && !$this->isAbsoluteUrl($yacht->main_image)) {
                                     Storage::disk('public')->delete($yacht->main_image);
                                 }
                                 $yacht->main_image = $downloadedPath;
@@ -174,35 +227,26 @@ class YachtshiftImportService
 
                         $yacht->save();
 
-                        // Map sub-table fields and let the model handle it
-                        $subData = [
-                            'loa' => $getDimension('loa'),
-                            'beam' => $getDimension('beam'),
-                            'draft' => $getDimension('draft'),
-                            'hull_colour' => $getFeature('build', 'hull_colour'),
-                            'hull_construction' => $getFeature('build', 'hull_construction'),
-                            'cabins' => $getFeature('accommodation', 'cabins'),
-                            'berths' => $getFeature('accommodation', 'berths'),
-                            'engine_manufacturer' => $getFeature('engine', 'engine_manufacturer'),
-                            'horse_power' => $getFeature('engine', 'horse_power'),
-                            'fuel' => $getFeature('engine', 'fuel'),
-                        ];
+                        // Map sub-table fields
+                        $subData = $mapAllFeatures();
 
                         if (method_exists($yacht, 'saveSubTables')) {
                             $yacht->saveSubTables($subData);
                         }
 
-                        // Handle Gallery Images (re-sync if new or requested, keeping it simple: only if we have < images count or new)
-                        if ($isNew && count($images) > 0) {
+                        // Handle Gallery Images (re-sync if new or requested)
+                        if ($isNew && count($images) > 1) {
                             // First image is main, rest is gallery
                             $galleryUrls = array_slice($images, 1);
                             foreach ($galleryUrls as $idx => $imgUrl) {
-                                $imgPath = $this->downloadImage($imgUrl, "yachts/gallery/{$vesselId}", "gallery_{$idx}");
+                                $imgPath = $this->downloadImage($imgUrl, "yachts/imported/yachtshift/{$ref}", "gallery_{$idx}");
                                 if ($imgPath) {
                                     $yacht->images()->create([
                                         'url' => $imgPath,
                                         'category' => 'General',
-                                        'part_name' => 'General'
+                                        'part_name' => 'General',
+                                        'status' => 'approved',
+                                        'sort_order' => $idx + 1
                                     ]);
                                 }
                             }
@@ -256,30 +300,55 @@ class YachtshiftImportService
     private function downloadImage($url, $directory, $filenamePrefix)
     {
         try {
-            // Small timeout to not hang forever if image is broken
-            $opts = [
-                "http" => [
-                    "method" => "GET",
-                    "timeout" => 10
-                ]
-            ];
-            $context = stream_context_create($opts);
-            $contents = @file_get_contents($url, false, $context);
-            
-            if ($contents) {
-                // Get extension from URL or fallback
-                $ext = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
-                if (!$ext) $ext = 'jpg';
-                
-                $filename = "{$filenamePrefix}_" . time() . ".{$ext}";
-                $path = "{$directory}/{$filename}";
-                
-                Storage::disk('public')->put($path, $contents);
-                return $path;
+            $response = Http::timeout(20)
+                ->retry(2, 300)
+                ->withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (compatible; NauticSecureBot/1.0)',
+                ])
+                ->get($url);
+
+            if (!$response->successful()) {
+                return null;
             }
-            return null;
+
+            $contents = $response->body();
+            if (!$contents) {
+                return null;
+            }
+
+            // Get extension from URL or fallback
+            $contentType = strtolower((string) $response->header('Content-Type'));
+            $ext = $this->resolveImageExtension($url, $contentType);
+            
+            $filename = "{$filenamePrefix}_" . time() . "_" . Str::random(4) . ".{$ext}";
+            $path = "{$directory}/{$filename}";
+            
+            Storage::disk('public')->put($path, $contents);
+            return $path;
         } catch (\Exception $e) {
+            Log::warning("Failed downloading image {$url}: {$e->getMessage()}");
             return null;
         }
+    }
+
+    private function resolveImageExtension(string $url, string $contentType): string
+    {
+        if (str_contains($contentType, 'image/png')) return 'png';
+        if (str_contains($contentType, 'image/webp')) return 'webp';
+        if (str_contains($contentType, 'image/gif')) return 'gif';
+        if (str_contains($contentType, 'image/jpeg') || str_contains($contentType, 'image/jpg')) return 'jpg';
+
+        $fromUrl = strtolower((string) pathinfo((string) parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
+        if (in_array($fromUrl, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true)) {
+            return $fromUrl === 'jpeg' ? 'jpg' : $fromUrl;
+        }
+
+        return 'jpg';
+    }
+
+    private function isAbsoluteUrl(?string $value): bool
+    {
+        if (!$value) return false;
+        return preg_match('/^https?:\/\//i', $value) === 1;
     }
 }
