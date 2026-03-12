@@ -25,6 +25,17 @@ class SignhostGenerateContractRequest extends ApiRequest
             'location_id' => ['required', 'integer', 'exists:locations,id'],
             'title' => ['nullable', 'string', 'max:255'],
             'metadata' => ['nullable', 'array'],
+            'pdf' => ['nullable', 'file', 'mimetypes:application/pdf', 'max:20480'],
+            'send_to_signhost' => ['nullable', 'boolean'],
+            'recipients' => ['nullable', 'array', 'min:1'],
+            'recipients.*.email' => ['nullable', 'email'],
+            'recipients.*.name' => ['nullable', 'string', 'max:255'],
+            'recipients.*.user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'recipients.*.role' => ['nullable', 'string', 'max:50'],
+            'reference' => ['nullable', 'string', 'max:255'],
+            'password' => ['nullable', 'string'],
+            'otp_code' => ['nullable', 'string', 'max:10'],
+            'idempotency_key' => ['nullable', 'string', 'max:255'],
         ];
     }
 }
