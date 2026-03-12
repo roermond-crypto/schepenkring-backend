@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\ChannelIdentity;
 use App\Models\HarborChannel;
 use App\Models\Message;
 use App\Services\WhatsApp360DialogService;
@@ -82,6 +83,20 @@ class SendWhatsAppMessage implements ShouldQueue
             return;
         }
 
+        ChannelIdentity::updateOrCreate([
+            'conversation_id' => $conversation->id,
+            'type' => 'whatsapp',
+            'external_thread_id' => $this->threadKey((int) $conversation->location_id, (string) $waId),
+        ], [
+            'external_user_id' => $waId,
+            'metadata' => array_filter([
+                'display_phone_number' => $channel->from_number,
+                'phone_number_id' => $channel->metadata['phone_number_id'] ?? null,
+                'provider' => '360dialog',
+                'sandbox' => (bool) ($channel->metadata['sandbox'] ?? false),
+            ], static fn ($value) => $value !== null),
+        ]);
+
         $payload = [
             'messaging_product' => 'whatsapp',
             'to' => $waId,
@@ -111,9 +126,13 @@ class SendWhatsAppMessage implements ShouldQueue
             }
 
             $message->status = 'sent';
+            $message->delivery_state = 'sent';
             $message->metadata = array_merge($message->metadata ?? [], [
                 'whatsapp' => array_merge($message->metadata['whatsapp'] ?? [], [
+                    'request' => $payload,
                     'response' => $response,
+                    'recipient_id' => $waId,
+                    'harbor_channel_id' => $channel->id,
                 ]),
             ]);
             $message->save();
@@ -126,9 +145,15 @@ class SendWhatsAppMessage implements ShouldQueue
     private function markFailed(Message $message, string $reason): void
     {
         $message->status = 'failed';
+        $message->delivery_state = 'failed';
         $message->metadata = array_merge($message->metadata ?? [], [
             'whatsapp_error' => $reason,
         ]);
         $message->save();
+    }
+
+    private function threadKey(int $harborId, string $waId): string
+    {
+        return 'whatsapp:'.$harborId.':'.$waId;
     }
 }
