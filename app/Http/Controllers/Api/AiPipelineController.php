@@ -148,7 +148,7 @@ class AiPipelineController extends Controller
                 'dinghy', 'covers', 'spinnaker', 'fenders', 'television', 'cd_player', 'dvd_player',
                 'satellite_reception', 'oven', 'microwave', 'fridge', 'freezer', 'cooker',
                 'owners_comment', 'reg_details', 'known_defects', 'last_serviced', 
-                'short_description_en', 'short_description_nl', 'short_description_de', 'short_description_fr'
+                'short_description_en', 'short_description_nl', 'short_description_de', 'short_description_fr',
                 'year', 'price', 'min_bid_amount', 'vessel_lying', 'location_city', 'status',
                 
                 // Dimensions
