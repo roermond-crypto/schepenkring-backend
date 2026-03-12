@@ -6,15 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Models\User;
+use App\Services\AiCorrectionLoggingService;
+use App\Services\SyncYachtTasksService;
 use App\Services\LocationAccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class YachtController extends Controller
 {
@@ -24,11 +24,76 @@ class YachtController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        return response()->json(
-            $this->visibleYachtsQuery($request->user())
-                ->orderBy('boat_name', 'asc')
-                ->get()
-        );
+        $hasPaginationRequest = $request->hasAny([
+            'per_page',
+            'page',
+            'search',
+            'status',
+            'sort_by',
+            'sort_dir',
+        ]);
+
+        if (! $hasPaginationRequest) {
+            return response()->json(
+                $this->visibleYachtsQuery($request->user())
+                    ->orderBy('boat_name', 'asc')
+                    ->get()
+            );
+        }
+
+        $perPage = (int) $request->integer('per_page', 25);
+        if (! in_array($perPage, [25, 50], true)) {
+            $perPage = 25;
+        }
+
+        $sortBy = (string) $request->input('sort_by', 'boat_name');
+        $allowedSorts = ['boat_name', 'price', 'year', 'created_at', 'updated_at', 'vessel_id', 'manufacturer', 'model', 'status', 'location_city'];
+        if (! in_array($sortBy, $allowedSorts, true)) {
+            $sortBy = 'boat_name';
+        }
+
+        $sortDir = strtolower((string) $request->input('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $search = trim((string) $request->input('search', ''));
+        $status = trim((string) $request->input('status', ''));
+
+        $query = $this->visibleYachtsQuery($request->user());
+        $stats = $this->buildFleetStats(clone $query);
+
+        if ($search !== '') {
+            $query->where(function (Builder $builder) use ($search) {
+                $builder
+                    ->where('boat_name', 'like', "%{$search}%")
+                    ->orWhere('vessel_id', 'like', "%{$search}%")
+                    ->orWhere('manufacturer', 'like', "%{$search}%")
+                    ->orWhere('model', 'like', "%{$search}%")
+                    ->orWhere('location_city', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== '' && strtolower($status) !== 'all') {
+            $query->whereRaw("LOWER(COALESCE(status, 'draft')) = ?", [strtolower($status)]);
+        }
+
+        if ($sortBy === 'price') {
+            $query->orderByRaw("COALESCE(price, min_bid_amount, 0) {$sortDir}");
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+
+        $paginator = $query->paginate($perPage);
+
+        return response()->json([
+            'data' => $paginator->items(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'from' => $paginator->firstItem() ?? 0,
+                'to' => $paginator->lastItem() ?? 0,
+            ],
+            'stats' => $stats,
+        ]);
     }
 
     public function partnerIndex(): JsonResponse
@@ -164,6 +229,9 @@ class YachtController extends Controller
                 $yacht->min_bid_amount = $yacht->price * 0.9;
             }
 
+        app(SyncYachtTasksService::class)->syncForYacht($yacht, $request->user());
+
+        DB::commit();
             $yacht->save();
             $yacht->saveSubTables($request->all());
 
@@ -462,6 +530,25 @@ class YachtController extends Controller
         }
 
         return $query->whereRaw('1 = 0');
+    }
+
+    private function buildFleetStats(Builder $query): array
+    {
+        $counts = $query
+            ->selectRaw("LOWER(COALESCE(status, 'draft')) as normalized_status, COUNT(*) as aggregate")
+            ->groupBy('normalized_status')
+            ->pluck('aggregate', 'normalized_status');
+
+        return [
+            'total' => (int) $counts->sum(),
+            'forSale' => (int) ($counts['for sale'] ?? 0),
+            'forBid' => (int) ($counts['for bid'] ?? 0),
+            'sold' => (int) ($counts['sold'] ?? 0),
+            'draft' => (int) ($counts['draft'] ?? 0),
+            'active' => (int) ($counts['active'] ?? 0),
+            'inactive' => (int) ($counts['inactive'] ?? 0),
+            'maintenance' => (int) ($counts['maintenance'] ?? 0),
+        ];
     }
 
     private function resolveYachtLocationId(Yacht $yacht): ?int

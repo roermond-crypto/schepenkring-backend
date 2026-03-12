@@ -19,7 +19,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class HarborController extends Controller
 {
@@ -58,27 +58,19 @@ class HarborController extends Controller
         $this->authorizeAdmin($request);
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'code' => 'required|string|max:50|unique:locations,code',
-            'status' => 'nullable|string|in:ACTIVE,INACTIVE',
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('locations', 'code')],
+            'status' => ['nullable', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
         ]);
 
-        $payload = $this->normalizePayload($validated);
-        $harbor = Location::create($payload);
-
-        $this->security->log('harbor.created', RiskLevel::LOW, $request->user(), $harbor, [
-            'code' => $harbor->code,
-        ], [
-            'entity_type' => Location::class,
-            'entity_id' => $harbor->id,
-            'location_id' => $harbor->id,
-            'snapshot_after' => $harbor->toArray(),
+        $harbor = Location::create([
+            'name' => trim((string) $validated['name']),
+            'code' => strtoupper(trim((string) $validated['code'])),
+            'status' => $validated['status'] ?? 'ACTIVE',
         ]);
-
-        $counts = $this->buildSnapshotCounts(collect([$harbor->id]));
 
         return response()->json([
-            'data' => $this->serializeHarbor($harbor, $counts),
+            'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
         ], 201);
     }
 
@@ -87,29 +79,23 @@ class HarborController extends Controller
         $this->authorizeAdmin($request);
 
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:50|unique:locations,code,' . $harbor->id,
-            'status' => 'sometimes|string|in:ACTIVE,INACTIVE',
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'code' => ['sometimes', 'required', 'string', 'max:255', 'alpha_dash', Rule::unique('locations', 'code')->ignore($harbor->id)],
+            'status' => ['sometimes', 'required', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
         ]);
 
-        $before = $harbor->toArray();
-        $harbor->fill($this->normalizePayload($validated));
-        $harbor->save();
+        if (array_key_exists('name', $validated)) {
+            $validated['name'] = trim((string) $validated['name']);
+        }
 
-        $this->security->log('harbor.updated', RiskLevel::LOW, $request->user(), $harbor, [
-            'code' => $harbor->code,
-        ], [
-            'entity_type' => Location::class,
-            'entity_id' => $harbor->id,
-            'location_id' => $harbor->id,
-            'snapshot_before' => $before,
-            'snapshot_after' => $harbor->toArray(),
-        ]);
+        if (array_key_exists('code', $validated)) {
+            $validated['code'] = strtoupper(trim((string) $validated['code']));
+        }
 
-        $counts = $this->buildSnapshotCounts(collect([$harbor->id]));
+        $harbor->update($validated);
 
         return response()->json([
-            'data' => $this->serializeHarbor($harbor, $counts),
+            'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
         ]);
     }
 
@@ -117,38 +103,10 @@ class HarborController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $usage = $this->buildBlockingUsageCounts($harbor->id);
-        $activeUsage = array_filter($usage, static fn (int $count) => $count > 0);
-
-        if ($activeUsage !== []) {
-            return response()->json([
-                'message' => 'Harbor is still in use and cannot be deleted.',
-                'usage' => $activeUsage,
-            ], 409);
-        }
-
-        $before = $harbor->toArray();
-
-        try {
-            $harbor->delete();
-        } catch (QueryException) {
-            return response()->json([
-                'message' => 'Harbor is still referenced and cannot be deleted.',
-            ], 409);
-        }
-
-        $this->security->log('harbor.deleted', RiskLevel::LOW, $request->user(), $harbor, [
-            'code' => $before['code'] ?? null,
-            'deleted_harbor_id' => $before['id'] ?? null,
-        ], [
-            'entity_type' => Location::class,
-            'entity_id' => $before['id'] ?? null,
-            'location_id' => null,
-            'snapshot_before' => $before,
-        ]);
+        $harbor->delete();
 
         return response()->json([
-            'message' => 'deleted',
+            'message' => 'Location deleted.',
         ]);
     }
 
@@ -240,6 +198,10 @@ class HarborController extends Controller
 
         if ($request->filled('code')) {
             $query->where('code', (string) $request->query('code'));
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', strtoupper((string) $request->query('status')));
         }
 
         return $query->orderBy('name');

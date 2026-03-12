@@ -80,8 +80,8 @@ class AiCorrectionLoggingService
                 'confidence_before' => $context['field_confidence'][$field] ?? ($context['confidence_before'] ?? null),
                 'ai_session_id' => $context['ai_session_id'] ?? null,
                 'model_name' => $context['model_name'] ?? null,
-                'reason' => $context['reason'] ?? null,
-                'correction_label' => $context['correction_label'] ?? null,
+                'reason' => $context['field_reasons'][$field] ?? ($context['reason'] ?? null),
+                'correction_label' => $context['field_correction_labels'][$field] ?? ($context['correction_label'] ?? null),
                 'meta' => [
                     'scope' => $context['scope'] ?? 'full_form_save',
                 ],
@@ -91,6 +91,15 @@ class AiCorrectionLoggingService
         }
 
         return $count;
+    }
+
+    public function getFieldHistory(int $yachtId, string $fieldName)
+    {
+        return BoatFieldChange::where('yacht_id', $yachtId)
+            ->where('field_name', $fieldName)
+            ->with('user:id,name,email,avatar')
+            ->orderByDesc('created_at')
+            ->get();
     }
 
     private function valuesAreEquivalent(mixed $old, mixed $new): bool

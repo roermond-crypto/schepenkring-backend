@@ -15,6 +15,61 @@ use Illuminate\Support\Facades\Log;
 class AiPipelineController extends Controller
 {
     /**
+     * Flat Step 2 schema keys returned by the extraction pipeline.
+     */
+    private const STEP2_SCHEMA_FIELDS = [
+        'boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category', 'new_or_used',
+        'year', 'price', 'min_bid_amount', 'vessel_lying', 'location_city', 'status',
+        'loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast',
+        'passenger_capacity', 'minimum_height', 'variable_depth', 'max_draft', 'min_draft',
+        'designer', 'builder', 'where', 'hull_colour', 'hull_construction', 'hull_number',
+        'hull_type', 'super_structure_colour', 'super_structure_construction',
+        'deck_colour', 'deck_construction', 'windows', 'cockpit_type', 'control_type', 'flybridge',
+        'engine_manufacturer', 'engine_model', 'engine_type', 'horse_power', 'hours', 'fuel',
+        'engine_quantity', 'engine_year', 'cruising_speed', 'max_speed', 'drive_type', 'propulsion',
+        'tankage', 'gallons_per_hour', 'litres_per_hour', 'engine_location', 'gearbox', 'cylinders',
+        'propeller_type', 'starting_type', 'cooling_system', 'engine_serial_number', 'reversing_clutch',
+        'transmission', 'motorization_summary', 'fuel_tanks_amount', 'fuel_tank_total_capacity',
+        'fuel_tank_material', 'range_km', 'stern_thruster', 'bow_thruster',
+        'cabins', 'berths', 'toilet', 'shower', 'bath', 'heating', 'air_conditioning',
+        'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
+        'interior_type', 'saloon', 'headroom', 'separate_dining_area', 'engine_room',
+        'spaces_inside', 'upholstery_color', 'matrasses', 'cushions', 'curtains',
+        'berths_fixed', 'berths_extra', 'berths_crew',
+        'compass', 'gps', 'radar', 'autopilot', 'vhf', 'plotter', 'ais', 'fishfinder',
+        'depth_instrument', 'wind_instrument', 'speed_instrument', 'navigation_lights',
+        'log_speed', 'windvane_steering', 'charts_guides', 'rudder_position_indicator',
+        'turn_indicator', 'ssb_receiver', 'shortwave_radio', 'short_band_transmitter',
+        'weatherfax_navtex', 'satellite_communication',
+        'life_raft', 'epirb', 'fire_extinguisher', 'bilge_pump', 'mob_system', 'life_jackets',
+        'radar_reflector', 'flares', 'life_buoy', 'bilge_pump_manual', 'bilge_pump_electric',
+        'watertight_door', 'gas_bottle_locker', 'self_draining_cockpit',
+        'battery', 'battery_charger', 'generator', 'inverter', 'shorepower', 'solar_panel',
+        'wind_generator', 'voltage', 'dynamo', 'accumonitor', 'voltmeter', 'shore_power_cable',
+        'consumption_monitor', 'control_panel', 'fuel_tank_gauge', 'tachometer',
+        'oil_pressure_gauge', 'temperature_gauge',
+        'anchor', 'anchor_winch', 'bimini', 'spray_hood', 'swimming_platform', 'swimming_ladder',
+        'teak_deck', 'cockpit_table', 'dinghy', 'trailer', 'television', 'oven', 'microwave',
+        'fridge', 'freezer', 'cooker', 'cd_player', 'dvd_player', 'satellite_reception',
+        'covers', 'fenders', 'cooking_fuel', 'hot_air', 'stove', 'central_heating',
+        'water_tank', 'water_tank_material', 'water_tank_gauge', 'water_maker',
+        'waste_water_tank', 'waste_water_tank_material', 'waste_water_tank_gauge',
+        'waste_water_tank_drainpump', 'deck_suction', 'water_system', 'hot_water',
+        'sea_water_pump', 'deck_wash_pump', 'deck_shower',
+        'anchor_connection', 'stern_anchor', 'spud_pole', 'cockpit_tent', 'outdoor_cushions',
+        'sea_rails', 'pushpit_pullpit', 'sail_lowering_system', 'crutch', 'dinghy_brand',
+        'outboard_engine', 'crane', 'davits', 'oars_paddles',
+        'spinnaker', 'gennaker', 'sailplan_type', 'number_of_masts', 'spars_material',
+        'bowsprit', 'standing_rig', 'sail_surface_area', 'stabilizer_sail', 'sail_amount',
+        'sail_material', 'sail_manufacturer', 'genoa', 'main_sail', 'furling_mainsail',
+        'tri_sail', 'storm_jib', 'mizzen', 'furling_mizzen', 'jib', 'roller_furling_foresail',
+        'genoa_reefing_system', 'flying_jib', 'halfwinder_bollejan', 'winches',
+        'electric_winches', 'manual_winches', 'hydraulic_winches', 'self_tailing_winches',
+        'reg_details', 'known_defects', 'last_serviced', 'owners_comment',
+        'short_description_en', 'short_description_nl', 'short_description_de',
+    ];
+
+    /**
      * Required fields — if any of these are null after Stage 1, enrichment triggers.
      */
     private const REQUIRED_FIELDS = ['boat_name', 'year', 'loa', 'hull_type'];
@@ -80,6 +135,9 @@ class AiPipelineController extends Controller
         AiCorrectionLoggingService $correctionLogging
     ): JsonResponse
     {
+        set_time_limit(480); // 8 minutes
+        ini_set('memory_limit', '1024M'); // 1GB for processing base64 images
+
         $request->validate([
             'images'    => 'required_without:yacht_id|array|max:30',
             'images.*'  => 'image|max:10240',
@@ -95,7 +153,7 @@ class AiPipelineController extends Controller
 
         $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
         $stagesRun = [];
-        $formValues = [];
+        $formValues = $this->buildEmptyFormValues();
         $fieldConfidence = [];
         $fieldSources = [];
         $warnings = [];
@@ -227,27 +285,116 @@ class AiPipelineController extends Controller
             
             if (!isset($formValues['short_description_en']) || $formValues['short_description_en'] === null) {
                 $formValues['short_description_en'] = $hintText;
+        // ─── PARALLEL EXECUTION TRACKS ────────────────────────────────
+        // We run independent stages in parallel to hit the 60s target.
+        // Track 1: Gemini Vision (Images + Hint)
+        // Track 2: Pinecone Pre-emptive Match (Hint only)
+        // Track 3: OpenAI Pre-emptive Enrich (Hint only)
+
+        $responses = Http::pool(function ($pool) use ($apiKey, $request, $hintText) {
+            // Gemini Vision call
+            $payload = $this->prepareGeminiVisionPayload($request, $apiKey);
+            if ($payload) {
+                $pool->as('gemini_vision')->withHeaders($payload['headers'])
+                    ->timeout($payload['timeout'])
+                    ->post($payload['url'], $payload['body']);
             }
 
-        } else {
-            $stagesRun[] = 'gemini_vision';
-            $extracted = $stage1Result['extracted'];
-            $geminiConfidence = $extracted['confidence'] ?? [];
-            if (!empty($extracted['warnings'])) {
-                $warnings = array_merge($warnings, $extracted['warnings']);
-            }
-            $geminiValues = $this->buildFormValues($extracted);
-            
-            foreach ($geminiValues as $key => $value) {
-                if ($value !== null) {
-                    $formValues[$key] = $value;
-                    $fieldConfidence[$key] = $geminiConfidence[$key] ?? 0.80;
-                    $fieldSources[$key] = 'gemini_vision';
+            // OpenAI Enrichment (based on hint text)
+            if (!empty($hintText)) {
+                $openAiKey = config('services.openai.key');
+                if ($openAiKey) {
+                    $pool->as('openai_enrich')->withHeaders(['Authorization' => 'Bearer ' . $openAiKey])
+                        ->timeout(45)
+                        ->post('https://api.openai.com/v1/chat/completions', [
+                            'model' => 'gpt-4o-mini',
+                            'messages' => [
+                                ['role' => 'system', 'content' => $this->getOpenAiEnrichmentPrompt($hintText)],
+                                ['role' => 'user', 'content' => 'Extract boat specs from hint.']
+                            ],
+                            'response_format' => ['type' => 'json_object'],
+                        ]);
                 }
             }
-            foreach ($geminiValues as $key => $value) {
-                if (!isset($formValues[$key])) {
-                    $formValues[$key] = $value;
+
+            // Pinecone Embedding (Stage 1 of Pinecone)
+            if (!empty($hintText)) {
+                $openAiKey = config('services.openai.key');
+                if ($openAiKey) {
+                    $pool->as('pinecone_embed')->withToken($openAiKey)
+                        ->timeout(15)
+                        ->post('https://api.openai.com/v1/embeddings', [
+                            'model' => 'text-embedding-3-small',
+                            'input' => $hintText,
+                            'dimensions' => 1408,
+                        ]);
+                }
+            }
+        });
+
+        // ─── PROCESS RESULTS ──────────────────────────────────────────
+        $feedResult = [
+            'consensus_values' => [],
+            'field_confidence' => [],
+            'field_sources' => [],
+            'top_matches' => [],
+            'warnings' => [],
+        ];
+        
+        // 1. Process Gemini Vision
+        $visionResult = $responses['gemini_vision'] ?? null;
+        if ($visionResult && $visionResult->successful()) {
+            $stagesRun[] = 'gemini_vision';
+            $visionImagesUsed = count($visionResult->json()['candidates'][0]['content']['parts'] ?? []) - 1; // Correcting count
+             // Note: parts[0] is text prompt, the rest are images
+            $extracted = $visionResult->json()['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            if ($extracted) {
+                $extracted = $this->cleanGeminiJson($extracted);
+                $geminiData = json_decode($extracted, true);
+                if ($geminiData) {
+                    $geminiValues = $this->buildFormValues($geminiData);
+                    $geminiConfidence = $geminiData['confidence'] ?? [];
+                    foreach ($geminiValues as $key => $value) {
+                        if ($value !== null) {
+                            $formValues[$key] = $value;
+                            $fieldConfidence[$key] = $geminiConfidence[$key] ?? 0.80;
+                            $fieldSources[$key] = 'gemini_vision';
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Process OpenAI Enrichment
+        $openaiResult = $responses['openai_enrich'] ?? null;
+        if ($openaiResult && $openaiResult->successful()) {
+            $stagesRun[] = 'openai_enrich_parallel';
+            $enriched = $openaiResult->json()['choices'][0]['message']['content'] ?? null;
+            if ($enriched) {
+                $enrichedData = json_decode($enriched, true);
+                if ($enrichedData) {
+                    foreach ($enrichedData as $key => $val) {
+                        if ($val !== null && (!isset($formValues[$key]) || $formValues[$key] === null)) {
+                            $formValues[$key] = $val;
+                            $fieldConfidence[$key] = 0.60;
+                            $fieldSources[$key] = 'openai_enrich_parallel';
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Process Pinecone (Stage 2: Query)
+        $pineconeEmbed = $responses['pinecone_embed'] ?? null;
+        if ($pineconeEmbed && $pineconeEmbed->successful()) {
+            $vector = $pineconeEmbed->json('data.0.embedding');
+            if ($vector) {
+                $feedResult = $pineconeMatcher->queryWithVector($vector);
+                if (!empty($feedResult['consensus_values'])) {
+                    $stagesRun[] = 'pinecone_match_parallel';
+                    foreach ($feedResult['consensus_values'] as $field => $value) {
+                        $this->mergeConsensusValue($field, $value, $feedResult['field_confidence'][$field] ?? 0.90, 'pinecone_match_parallel', $formValues, $fieldConfidence, $fieldSources, $needsConfirmation);
+                    }
                 }
             }
         }
@@ -256,65 +403,35 @@ class AiPipelineController extends Controller
         $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
         $missingRequired = $this->findMissingRequired($formValues);
 
-        // ─── STAGE 2: Local Pinecone DB High-Confidence Consensus ────
-        $feedResult = [
-            'consensus_values' => [],
-            'field_confidence' => [],
-            'field_sources' => [],
-            'top_matches' => [],
-            'warnings' => [],
-        ];
-
-        try {
-            $feedResult = $pineconeMatcher->matchAndBuildConsensus($formValues, $hintText);
-        } catch (\Throwable $e) {
-            Log::warning('[AI Pipeline] Pinecone consensus stage failed', ['error' => $e->getMessage()]);
-            $feedResult['warnings'][] = 'Pinecone consensus failed: ' . $e->getMessage();
-        }
-
-        if (!empty($feedResult['warnings'])) {
-            $warnings = array_merge($warnings, $feedResult['warnings']);
-        }
-
-        if (!empty($feedResult['consensus_values'])) {
-            foreach ($feedResult['consensus_values'] as $field => $value) {
-                if ($value === null || $value === '') continue;
-
-                $feedConfidence = (float) ($feedResult['field_confidence'][$field] ?? 0.95);
-                $existingValue = $formValues[$field] ?? null;
-                $existingConf = (float) ($fieldConfidence[$field] ?? 0.0);
-
-                if ($existingValue === null || $existingValue === '') {
-                    $formValues[$field] = $value;
-                    $fieldConfidence[$field] = $feedConfidence;
-                    $fieldSources[$field] = $feedResult['field_sources'][$field] ?? 'pinecone_database';
-                    continue;
-                }
-
-                if ((string) $existingValue !== (string) $value) {
-                    if ($feedConfidence >= 0.85 && $existingConf < 0.80) {
-                        $formValues[$field] = $value;
-                        $fieldConfidence[$field] = $feedConfidence;
-                        $fieldSources[$field] = $feedResult['field_sources'][$field] ?? 'pinecone_override';
-                        $needsConfirmation[] = $field;
-                    } else {
-                        $needsConfirmation[] = $field;
-                    }
-                }
+        // ─── STAGE 2: Local Database Lookup (FAST) ───────────────────
+        // We still run this locally because it's nearly instant (<50ms).
+        $databaseResult = $this->runDatabaseCatalogConsensus($formValues, $hintText);
+        if (!empty($databaseResult['consensus_values'])) {
+            $stagesRun[] = 'database_catalog_consensus';
+            foreach ($databaseResult['consensus_values'] as $field => $value) {
+                $this->mergeConsensusValue($field, $value, $databaseResult['field_confidence'][$field] ?? 0.82, 'database_catalog', $formValues, $fieldConfidence, $fieldSources, $needsConfirmation);
             }
-            $stagesRun[] = 'pinecone_database_consensus';
         }
+
+        $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
+        $missingRequired = $this->findMissingRequired($formValues);
 
         // ─── FAST PATH & HIGH-CONFIDENCE SKIP ────────────────────────
         $pineconeFieldCount = count($feedResult['consensus_values'] ?? []);
         $pineconeMatchCount = count($feedResult['top_matches'] ?? []);
         $hasAllRequired = empty($missingRequired);
         $highConfidence = $overallConfidence >= 0.90; // Higher threshold for auto-skip
+        $visionRan = in_array('gemini_vision', $stagesRun, true);
+        $filledFieldCount = count(array_filter($formValues, fn($v) => $v !== null && $v !== '' && $v !== 'unknown'));
 
-        // Decision logic: skip slow stages if we have enough data or high confidence
-        $useFastPath = $speedMode === 'fast'
-            || ($speedMode !== 'deep' && $pineconeFieldCount >= 12 && $pineconeMatchCount >= 1)
-            || ($speedMode !== 'deep' && $hasAllRequired && $highConfidence);
+        // Decision logic: skip slow stages ONLY if:
+        //   1. Vision actually ran successfully (if it failed, we NEED enrichment to compensate)
+        //   2. Speed mode is 'fast', OR high confidence + all required + pinecone match
+        // When vision fails, always run the full slow path — matching old project behavior.
+        $useFastPath = $visionRan && (
+            $speedMode === 'fast'
+            || ($speedMode !== 'deep' && $hasAllRequired && $highConfidence && $pineconeMatchCount >= 1 && $filledFieldCount >= 20)
+        );
 
         if ($useFastPath) {
             Log::info('[AI Pipeline] OPTIMIZATION: Skipping slow validation stages', [
@@ -359,10 +476,13 @@ class AiPipelineController extends Controller
             $geminiEnriched = $this->runEnrichment($formValues, $fieldConfidence, $apiKey);
             if (!empty($geminiEnriched)) {
                 $stagesRun[] = 'gemini_db_enrichment';
+                $gemConf = $geminiEnriched['confidence'] ?? [];
+                unset($geminiEnriched['confidence'], $geminiEnriched['warnings']);
+
                 foreach ($geminiEnriched as $key => $val) {
                     if ($val !== null && (!isset($formValues[$key]) || $formValues[$key] === null)) {
                         $formValues[$key] = $val;
-                        $fieldConfidence[$key] = 0.60;
+                        $fieldConfidence[$key] = $gemConf[$key] ?? 0.60;
                         $fieldSources[$key] = 'gemini_db_enrichment';
                     }
                 }
@@ -374,10 +494,13 @@ class AiPipelineController extends Controller
                 $openaiEnriched = $this->runOpenAiEnrichment($formValues, $fieldConfidence, $openAiKeyEnv, []);
                 if (!empty($openaiEnriched)) {
                     $stagesRun[] = 'openai_world_knowledge_enrichment';
+                    $oaConf = $openaiEnriched['confidence'] ?? [];
+                    unset($openaiEnriched['confidence'], $openaiEnriched['warnings']);
+
                     foreach ($openaiEnriched as $key => $val) {
                         if ($val !== null && (!isset($formValues[$key]) || $formValues[$key] === null)) {
                             $formValues[$key] = $val;
-                            $fieldConfidence[$key] = 0.50;
+                            $fieldConfidence[$key] = $oaConf[$key] ?? 0.50;
                             $fieldSources[$key] = 'openai_world_knowledge_enrichment';
                         }
                     }
@@ -389,7 +512,7 @@ class AiPipelineController extends Controller
             if (!empty($pineconeResult['similar_boats'])) $stagesRun[] = 'pinecone_cross_validation';
 
             // ChatGPT Validation
-            $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $request);
+            $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $databaseResult, $request);
             if (!empty($validationResult['confirmed_fields']) || !empty($validationResult['removed_fields'])) {
                 $stagesRun[] = 'chatgpt_validation';
             }
@@ -433,6 +556,7 @@ class AiPipelineController extends Controller
             'warnings'                => $warnings,
             'similar_boats_count'     => count($pineconeResult['similar_boats']),
             'feed_matches_count'      => count($feedResult['top_matches'] ?? []),
+            'database_matches_count'  => count($databaseResult['top_matches'] ?? []),
             'speed_mode'              => $speedMode,
             'vision_images_used'      => $visionImagesUsed,
             'model_name'              => 'gemini-2.5-flash',
@@ -470,6 +594,26 @@ class AiPipelineController extends Controller
             $meta['ai_session_id'] = null;
         }
 
+        // Trigger batch AI enhancement for all yacht images in the background
+        $yachtId = $request->integer('yacht_id');
+        if ($yachtId) {
+            \App\Models\YachtImage::where('yacht_id', $yachtId)
+                ->whereIn('status', ['approved', 'ready_for_review'])
+                ->where('enhancement_method', '!=', 'cloudinary')
+                ->each(function ($image) {
+                    \App\Jobs\EnhanceYachtImageJob::dispatch($image->id)->delay(now()->addSeconds(2));
+                });
+        }
+
+        // ── FINAL SANITIZATION: Strip ALL "unknown" values ──────────────
+        // AI models sometimes ignore prompt instructions and return "unknown".
+        // This hard filter guarantees "unknown" never reaches the frontend.
+        foreach ($formValues as $field => $value) {
+            if (is_string($value) && strtolower(trim($value)) === 'unknown') {
+                $formValues[$field] = null;
+            }
+        }
+
         return response()->json([
             'success' => true,
             'step2_form_values' => $formValues,
@@ -501,37 +645,40 @@ class AiPipelineController extends Controller
         $parts[] = ['text' => "STRICT VISUAL ANALYSIS: Examine each image carefully. Report ONLY what you can directly SEE or READ. Do NOT guess or infer from general boat knowledge."];
 
         // Add all images as inline_data FIRST
+        // Priority: DB images first (higher quality, already processed), then FormData fallback
+        // This matches the old project's behavior for reliability.
         $imageCount = 0;
-        
+
         if ($request->has('yacht_id')) {
             $yachtId = $request->input('yacht_id');
             $images = \App\Models\YachtImage::where('yacht_id', $yachtId)
-                ->approved()
+                ->whereIn('status', ['approved', 'ready_for_review', 'processing', 'uploaded'])
                 ->orderBy('sort_order')
                 ->limit($maxVisionImages)
                 ->get();
             foreach ($images as $yachtImage) {
                 try {
-                    // Extract relative path from URL
-                    $path = str_replace(url('storage') . '/', '', $yachtImage->optimized_master_url);
-                    $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($path);
-                    
-                    if (file_exists($fullPath)) {
-                        $imageData = base64_encode(file_get_contents($fullPath));
-                        $mimeType = mime_content_type($fullPath) ?: 'image/jpeg';
-                        $parts[] = [
-                            'inline_data' => [
-                                'mime_type' => $mimeType,
-                                'data'      => $imageData,
-                            ]
-                        ];
-                        $imageCount++;
+                    $fullPath = $this->resolveStoredImagePath($yachtImage);
+                    if (!$fullPath || !file_exists($fullPath)) {
+                        continue;
                     }
+
+                    $imageData = base64_encode(file_get_contents($fullPath));
+                    $mimeType = mime_content_type($fullPath) ?: 'image/jpeg';
+                    $parts[] = [
+                        'inline_data' => [
+                            'mime_type' => $mimeType,
+                            'data'      => $imageData,
+                        ]
+                    ];
+                    $imageCount++;
                 } catch (\Exception $e) {
                     Log::warning("[AI Pipeline] Failed to read db image: " . $e->getMessage());
                 }
             }
-        } elseif ($request->hasFile('images')) {
+        }
+
+        if ($imageCount === 0 && $request->hasFile('images')) {
             foreach (array_slice($request->file('images'), 0, $maxVisionImages) as $image) {
                 try {
                     $imageData = base64_encode(file_get_contents($image->getRealPath()));
@@ -561,9 +708,15 @@ SELLER-PROVIDED TEXT DATA:
 
 Extract data from this text into JSON fields. Text-sourced data gets confidence 0.90.
 For fields NOT mentioned in text, ONLY fill if clearly visible in images.
+
+🚨 CONSERVATIVE DETECTION RULE for equipment (e.g. life jackets, bimini, etc.):
+- IF clearly visible or explicitly written in text -> "yes"
+- IF clearly absent or text says "no" -> "no"
+- IF unsure or not visible/mentioned -> "unknown"
+DO NOT guess "yes" or "no" for equipment if evidence is missing.
 HINT];
         } else {
-            $parts[] = ['text' => "No seller text provided. Extract ONLY what is visible in the images above."];
+            $parts[] = ['text' => "No seller text provided. Extract ONLY what is visible in the images above. 🚨 CONSERVATIVE DETECTION RULE: For equipment, if unsure, return null, NOT yes/no."];
         }
 
         try {
@@ -574,9 +727,9 @@ HINT];
                 default => 2,
             };
             $requestTimeout = match ($speedMode) {
-                'fast' => 20,
-                'deep' => 35,
-                default => 25,
+                'fast' => 35,
+                'deep' => 60,
+                default => 45,
             };
             $response = null;
             for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
@@ -604,7 +757,7 @@ HINT];
                 }
 
                 if ($response->status() === 429 && $attempt < $maxRetries) {
-                    $waitSeconds = $attempt; // 1s, 2s
+                    $waitSeconds = match ($attempt) { 1 => 5, 2 => 10, default => 15 };
                     Log::warning("[AI Pipeline] Gemini 429 rate limit, retrying in {$waitSeconds}s (attempt {$attempt}/{$maxRetries})");
                     sleep($waitSeconds);
                     continue;
@@ -724,30 +877,32 @@ HINT];
 
             $optionalFields = implode(', ', self::OPTIONAL_EQUIPMENT_FIELDS);
             $enrichPrompt = <<<PROMPT
-You are a conservative boat data enrichment assistant.
+You are a boat data enrichment expert with deep knowledge of yacht and boat specifications.
 You have partial data about a boat (from image analysis) and a database of similar boats for reference.
 
-Your goal is to improve missing fields WITHOUT guessing.
+Your goal is to fill AS MANY null fields as possible.
 
 RULES:
+- Fill ALL null/missing fields using BOTH the reference data AND your world knowledge about this boat make/model.
+- If you know the manufacturer and model, use your knowledge of that specific model's standard specifications.
+- Use reference boats to infer LIKELY values (e.g. if all similar boats have diesel engines, this one probably does too).
+- For equipment fields (GPS, compass, radar, fridge, oven, etc.) — if they are STANDARD on this type/size of boat, set them to "Yes" or provide a typical brand.
+- For boolean fields (heating, air_conditioning) — infer from the boat type and size.
 - NEVER contradict existing non-null values.
-- Fill a field only when supported by explicit evidence in current data or strong reference consensus.
-- NEVER infer optional equipment from "typical boat knowledge".
-- For optional equipment fields ({$optionalFields}), return ONLY: "yes", "no", or "unknown".
-- If evidence is not explicit for optional equipment, return "unknown" (not "yes").
-- If uncertain on non-optional fields, keep null.
+- Mark inferred values with confidence 0.50-0.65.
+- ONLY leave a field null if you truly have no basis to fill it.
 - Return ONLY valid JSON with the same field names.
 
 PARTIAL DATA (from vision analysis):
 {$partialData}
 
-FIELDS STILL NULL:
+FIELDS STILL NULL (fill as many as possible):
 {$nullFieldsList}
 
 REFERENCE BOATS FROM DATABASE:
 {$fleetContext}
 
-Return JSON with ONLY fields you can justify. Include a "confidence" object and a "warnings" array. Do not return fields that already have values.
+Return JSON with ONLY the fields you can fill (the currently-null ones). Include a "confidence" object and a "warnings" array. Do not return fields that already have values.
 PROMPT;
 
             $model    = "gemini-2.5-flash";
@@ -756,7 +911,7 @@ PROMPT;
             // Retry logic for Gemini 429 rate limits
             $response = null;
             for ($attempt = 1; $attempt <= 3; $attempt++) {
-                $response = Http::timeout(20)->post($endpoint, [
+                $response = Http::timeout(45)->post($endpoint, [
                     'contents' => [['parts' => [['text' => $enrichPrompt]]]],
                     'generationConfig' => [
                         'responseMimeType' => 'application/json',
@@ -821,31 +976,15 @@ PROMPT;
             );
 
             $nullFields = array_keys(array_filter($currentValues, fn($v) => $v === null));
-            $safeFillFields = array_values(array_unique(array_merge(
-                $missingImportant,
-                self::REQUIRED_FIELDS,
-                [
-                    'manufacturer', 'model', 'boat_type', 'boat_category', 'new_or_used',
-                    'year', 'loa', 'beam', 'draft', 'hull_type', 'displacement', 'ballast',
-                    'cabins', 'berths', 'ce_category', 'fuel', 'engine_manufacturer',
-                    'horse_power', 'tankage', 'water_tank', 'waste_water_tank'
-                ]
-            )));
-            $targetFields = array_values(array_intersect($nullFields, $safeFillFields));
-
-            if (empty($targetFields)) {
-                return null;
-            }
-
-            $nullFieldsList = implode(', ', $targetFields);
-            $optionalFields = implode(', ', self::OPTIONAL_EQUIPMENT_FIELDS);
+            $nullFieldsList = implode(', ', $nullFields);
 
             $systemPrompt = <<<PROMPT
-You are a conservative yacht data completion assistant.
+You are a marine data enrichment expert with DEEP, comprehensive knowledge of yacht and boat specifications, makes, models, and standard equipment.
 
-Given partial data about a boat, fill only fields that are strongly supported.
+Given partial data about a boat, your CRITICAL task is to fill in AS MANY missing fields as possible using your extensive world knowledge.
 
 RULES:
+- FILL EVERY FIELD YOU POSSIBLY CAN. Do NOT leave fields null if you have any reasonable basis to fill them.
 - NEVER contradict or overwrite existing values.
 - If you can identify the exact make/model, provide ALL standard specifications for that model (dimensions, engine, equipment, etc.).
 - For equipment fields (GPS, radar, compass, fridge, oven, etc.): if that equipment is STANDARD on this type/size of boat, set to "Yes".
@@ -853,13 +992,14 @@ RULES:
 - For dimension fields (loa, beam, draft): if you know the model, provide the factory specifications.
 - For engine fields: provide typical engine specs for this model if known.
 - For comfort fields (cabins, berths, toilet, shower): provide typical layout for this model.
+- Generate short_description_nl (Dutch translation of the English description) and short_description_de (German translation) if missing.
 - Generate short_description_nl (Dutch translation of the English description), short_description_de (German translation), and short_description_fr (French translation) if missing.
 - Return ONLY valid JSON containing the fields you can fill, plus "confidence" object and "warnings" array.
 
 PARTIAL DATA ALREADY KNOWN:
 {$partialData}
 
-FIELDS TO TRY TO FILL (focus on these first):
+FIELDS TO TRY TO FILL (fill as many as possible):
 {$nullFieldsList}
 PROMPT;
 
@@ -867,7 +1007,7 @@ PROMPT;
 
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiKey,
-            ])->timeout(20)->post($endpoint, [
+            ])->timeout(45)->post($endpoint, [
                 'model' => 'gpt-4o-mini',
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
@@ -890,8 +1030,14 @@ PROMPT;
             $enriched = json_decode($text, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                Log::warning('[AI Pipeline] Failed to parse OpenAI enrichment JSON');
-                return null;
+                // OpenAI often wraps JSON in markdown blocks, try stripping them
+                $cleaned = preg_replace('/```json\s*|\s*```/', '', $text);
+                $enriched = json_decode($cleaned, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::warning('[AI Pipeline] Failed to parse OpenAI enrichment JSON', ['raw_text' => $text]);
+                    return null;
+                }
             }
 
             return $enriched;
@@ -1342,7 +1488,14 @@ You are an EXPERT YACHT DATA EXTRACTION AGENT. You extract data from boat images
 🚨 ANTI-HALLUCINATION RULES:
 1. Colors: Report exactly what you see.
 2. Boat type: Identify as sailboat/motorboat/catamaran based on visible features.
-3. Equipment: Only mark as "yes" if visible or mentioned in text.
+3. Equipment (Life jackets, bimini, anchor, etc.): 
+   - set to "yes" ONLY if clearly visible or mentioned in text.
+   - set to "no" ONLY if clearly absent.
+   - set to null IF unsure or not visible. NEVER GUESS for equipment. DO NOT use the word "Unknown" or "unknown".
+
+🚨 LANGUAGE RULES:
+- All descriptive text values (colors, categories, materials, etc.) MUST be returned in Dutch (Nederlands).
+- Do NOT return English words for values like "White" (use "Wit"), "Steel" (use "Staal"), etc.
 
 🚨 CONFIDENCE RULES:
 - Identified from text/labels: 0.95
@@ -1428,15 +1581,15 @@ Return EXACTLY this JSON structure:
   "fuel_tank_total_capacity": "string|null",
   "fuel_tank_material": "string|null",
   "range_km": "string|null",
-  "stern_thruster": "string|null (yes/no/unknown)",
-  "bow_thruster": "string|null (yes/no/unknown)",
+  "stern_thruster": "string|null (yes/no/null)",
+  "bow_thruster": "string|null (yes/no/null)",
 
   "// accommodation": "Interior and living spaces",
   "cabins": "string|null",
   "berths": "string|null",
-  "toilet": "string|null (yes/no/unknown)",
-  "shower": "string|null (yes/no/unknown)",
-  "bath": "string|null (yes/no/unknown)",
+  "toilet": "string|null (yes/no/null)",
+  "shower": "string|null (yes/no/null)",
+  "bath": "string|null (yes/no/null)",
   "interior_type": "string|null",
   "saloon": "string|null",
   "headroom": "string|null",
@@ -1458,8 +1611,8 @@ Return EXACTLY this JSON structure:
   "autopilot": "string|null",
   "vhf": "string|null",
   "plotter": "string|null",
-  "ais": "string|null (yes/no/unknown)",
-  "fishfinder": "string|null (yes/no/unknown)",
+  "ais": "string|null (yes/no/null)",
+  "fishfinder": "string|null (yes/no/null)",
   "depth_instrument": "string|null",
   "wind_instrument": "string|null",
   "speed_instrument": "string|null",
@@ -1476,29 +1629,29 @@ Return EXACTLY this JSON structure:
   "satellite_communication": "string|null",
 
   "// safety": "Safety equipment",
-  "life_raft": "string|null (yes/no/unknown)",
-  "epirb": "string|null (yes/no/unknown)",
-  "fire_extinguisher": "string|null (yes/no/unknown)",
-  "bilge_pump": "string|null (yes/no/unknown)",
-  "mob_system": "string|null (yes/no/unknown)",
-  "life_jackets": "string|null (yes/no/unknown)",
-  "radar_reflector": "string|null (yes/no/unknown)",
-  "flares": "string|null (yes/no/unknown)",
-  "life_buoy": "string|null (yes/no/unknown)",
-  "bilge_pump_manual": "string|null (yes/no/unknown)",
-  "bilge_pump_electric": "string|null (yes/no/unknown)",
-  "watertight_door": "string|null (yes/no/unknown)",
-  "gas_bottle_locker": "string|null (yes/no/unknown)",
-  "self_draining_cockpit": "string|null (yes/no/unknown)",
+  "life_raft": "string|null (yes/no/null)",
+  "epirb": "string|null (yes/no/null)",
+  "fire_extinguisher": "string|null (yes/no/null)",
+  "bilge_pump": "string|null (yes/no/null)",
+  "mob_system": "string|null (yes/no/null)",
+  "life_jackets": "string|null (yes/no/null)",
+  "radar_reflector": "string|null (yes/no/null)",
+  "flares": "string|null (yes/no/null)",
+  "life_buoy": "string|null (yes/no/null)",
+  "bilge_pump_manual": "string|null (yes/no/null)",
+  "bilge_pump_electric": "string|null (yes/no/null)",
+  "watertight_door": "string|null (yes/no/null)",
+  "gas_bottle_locker": "string|null (yes/no/null)",
+  "self_draining_cockpit": "string|null (yes/no/null)",
 
   "// electrical": "Electrical systems",
   "battery": "string|null",
   "battery_charger": "string|null",
   "generator": "string|null",
   "inverter": "string|null",
-  "shorepower": "string|null (yes/no/unknown)",
-  "solar_panel": "string|null (yes/no/unknown)",
-  "wind_generator": "string|null (yes/no/unknown)",
+  "shorepower": "string|null (yes/no/null)",
+  "solar_panel": "string|null (yes/no/null)",
+  "wind_generator": "string|null (yes/no/null)",
   "voltage": "string|null",
   "dynamo": "string|null",
   "accumonitor": "string|null",
@@ -1512,21 +1665,21 @@ Return EXACTLY this JSON structure:
   "temperature_gauge": "string|null",
 
   "// deck_comfort": "Deck equipment and comfort features",
-  "anchor": "string|null (yes/no/unknown)",
+  "anchor": "string|null (yes/no/null)",
   "anchor_winch": "string|null (Electric/Manual/None)",
-  "bimini": "string|null (yes/no/unknown)",
-  "spray_hood": "string|null (yes/no/unknown)",
-  "swimming_platform": "string|null (yes/no/unknown)",
-  "swimming_ladder": "string|null (yes/no/unknown)",
-  "teak_deck": "string|null (yes/no/unknown)",
-  "cockpit_table": "string|null (yes/no/unknown)",
-  "dinghy": "string|null (yes/no/unknown)",
-  "trailer": "string|null (yes/no/unknown)",
-  "television": "string|null (yes/no/unknown)",
-  "oven": "string|null (yes/no/unknown)",
-  "microwave": "string|null (yes/no/unknown)",
-  "fridge": "string|null (yes/no/unknown)",
-  "freezer": "string|null (yes/no/unknown)",
+  "bimini": "string|null (yes/no/null)",
+  "spray_hood": "string|null (yes/no/null)",
+  "swimming_platform": "string|null (yes/no/null)",
+  "swimming_ladder": "string|null (yes/no/null)",
+  "teak_deck": "string|null (yes/no/null)",
+  "cockpit_table": "string|null (yes/no/null)",
+  "dinghy": "string|null (yes/no/null)",
+  "trailer": "string|null (yes/no/null)",
+  "television": "string|null (yes/no/null)",
+  "oven": "string|null (yes/no/null)",
+  "microwave": "string|null (yes/no/null)",
+  "fridge": "string|null (yes/no/null)",
+  "freezer": "string|null (yes/no/null)",
   "cooker": "string|null (Electric/Gas/Petrol/Alcohol)",
   "cd_player": "string|null",
   "dvd_player": "string|null",
@@ -1567,8 +1720,8 @@ Return EXACTLY this JSON structure:
   "oars_paddles": "string|null",
 
   "// rigging": "Sail and rigging details",
-  "spinnaker": "string|null (yes/no/unknown)",
-  "gennaker": "string|null (yes/no/unknown)",
+  "spinnaker": "string|null (yes/no/null)",
+  "gennaker": "string|null (yes/no/null)",
   "sailplan_type": "string|null",
   "number_of_masts": "string|null",
   "spars_material": "string|null",
@@ -1644,21 +1797,16 @@ SCHEMA;
             $normalized = $this->coerceOptionalEquipmentValue($raw);
 
             if ($normalized === null) {
-                $formValues[$field] = 'unknown';
-                $fieldSources[$field] = $fieldSources[$field] ?? 'conservative_unknown_default';
+                $formValues[$field] = null;
                 continue;
             }
 
             $source = (string) ($fieldSources[$field] ?? '');
             $confidence = (float) ($fieldConfidence[$field] ?? 0.0);
 
-            if ($normalized !== 'unknown' && ($this->isInferredSource($source) || $confidence < 0.80)) {
-                $formValues[$field] = 'unknown';
-                $fieldSources[$field] = 'conservative_override';
-                $warnings[] = "Optional field '{$field}' downgraded to unknown due to weak evidence.";
-                continue;
-            }
-
+            // We no longer conservatively downgrade to unknown.
+            // We trust the enrichment stages (Gemini/OpenAI/Pinecone) to provide the best possible guess.
+            // If it's unknown, it's unknown, but we don't force it.
             $formValues[$field] = $normalized;
         }
 
@@ -1694,7 +1842,7 @@ SCHEMA;
         }
 
         if (in_array($normalized, ['unknown', 'unsure', 'uncertain', 'not sure', 'maybe'], true)) {
-            return 'unknown';
+            return null;
         }
 
         if (in_array($normalized, ['yes', 'y', 'true', 'present', 'included', 'installed', 'available'], true)) {
@@ -1923,6 +2071,7 @@ SCHEMA;
         array $fieldConfidence,
         array $pineconeResult,
         array $feedResult,
+        array $databaseResult,
         Request $request
     ): array {
         $result = [
@@ -1977,6 +2126,15 @@ SCHEMA;
                 }
             }
 
+            $databaseMatchText = '';
+            if (!empty($databaseResult['top_matches'])) {
+                $databaseMatchText = "LOCAL DATABASE MATCHES (SOLD + AVAILABLE):\n";
+                foreach (array_slice($databaseResult['top_matches'], 0, 5) as $idx => $match) {
+                    $boat = json_encode($match['boat'] ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                    $databaseMatchText .= "Database Match " . ($idx + 1) . " (score: {$match['score']}):\n{$boat}\n\n";
+                }
+            }
+
             // Build messages for GPT-4o
             $messages = [];
 
@@ -1993,9 +2151,10 @@ VALIDATION RULES:
 4. Remove inferred equipment/spec fields ONLY if there is clear contradicting evidence.
 5. If Pinecone anomaly detected for a field (most similar boats disagree), REDUCE that field's confidence by 0.20.
 6. Cross-check: if boat_type = "sailboat" but no mast/rigging visible in images/text → flag/adjust.
-7. Optional equipment fields (life_jackets, bimini, anchor, fishfinder, bow_thruster, trailer, heating, toilet, fridge, etc.) must be yes/no/unknown.
-8. If optional equipment evidence is weak or inferred, set value to "unknown" instead of yes/no.
+7. Optional equipment fields (life_jackets, bimini, anchor, fishfinder, bow_thruster, trailer, heating, toilet, fridge, etc.) must be yes/no/null.
+8. If optional equipment evidence is missing, set value to null. Do NOT use the word "unknown" or "Unknown".
 9. Ensure numeric values are realistic (e.g. LOA in meters, Beam < LOA).
+10. All text values MUST be in Dutch (Nederlands). Translate English terms to Dutch (e.g. "White" -> "Wit", "Steel" -> "Staal", "Unknown" -> null).
 
 You MUST respond in this JSON structure:
 {
@@ -2060,6 +2219,8 @@ YACHTSHIFT FEED CONSENSUS:
 
 {$feedMatchText}
 
+{$databaseMatchText}
+
 USER HINT/DESCRIPTION:
 "{$request->input('hint_text')}"
 
@@ -2076,7 +2237,7 @@ CONTEXT,
 
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $openAiKey,
-            ])->timeout(25)->post('https://api.openai.com/v1/chat/completions', [
+            ])->timeout(45)->post('https://api.openai.com/v1/chat/completions', [
                 'model'           => 'gpt-4o-mini',
                 'messages'        => $messages,
                 'response_format' => ['type' => 'json_object'],
@@ -2099,10 +2260,17 @@ CONTEXT,
             }
 
             $validated = json_decode($text, true);
+
             if (json_last_error() !== JSON_ERROR_NONE) {
-                Log::warning('[AI Pipeline] Failed to parse ChatGPT validation JSON');
-                $result['notes'] = 'chatgpt_validation_failed';
-                return $result;
+                // OpenAI often wraps JSON in markdown blocks, try stripping them
+                $cleaned = preg_replace('/```json\s*|\s*```/', '', $text);
+                $validated = json_decode($cleaned, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::warning('[AI Pipeline] Failed to parse ChatGPT validation JSON', ['raw_text' => $text]);
+                    $result['notes'] = 'chatgpt_validation_failed';
+                    return $result;
+                }
             }
 
             Log::info('[AI Pipeline] ChatGPT validation complete', [
@@ -2201,7 +2369,8 @@ CONTEXT,
             if ($value === null) continue;
 
             if (is_string($value) && strtolower(trim($value)) === 'unknown') {
-                $fieldConfidence[$field] = max((float) ($fieldConfidence[$field] ?? 0.0), 0.90);
+                $formValues[$field] = null;
+                $fieldConfidence[$field] = 0.50;
                 continue;
             }
 
@@ -2233,8 +2402,358 @@ CONTEXT,
         ];
     }
 
+    private function buildEmptyFormValues(): array
+    {
+        return array_fill_keys(self::STEP2_SCHEMA_FIELDS, null);
+    }
+
+    private function resolveStoredImagePath(\App\Models\YachtImage $yachtImage): ?string
+    {
+        $candidates = array_filter([
+            $yachtImage->thumb_url,
+            $yachtImage->optimized_master_url,
+            $yachtImage->url,
+            $yachtImage->original_kept_url,
+            $yachtImage->original_temp_url,
+        ]);
+
+        foreach ($candidates as $candidate) {
+            if (!is_string($candidate) || trim($candidate) === '') {
+                continue;
+            }
+
+            $value = trim($candidate);
+            if (preg_match('/^https?:\/\//i', $value) === 1) {
+                $prefixes = [
+                    rtrim(url('storage'), '/') . '/',
+                    rtrim((string) config('app.url'), '/') . '/storage/',
+                    '/storage/', // Relative fallback
+                ];
+
+                foreach ($prefixes as $prefix) {
+                    if (str_contains($value, $prefix)) {
+                        $parts = explode($prefix, $value);
+                        $relative = ltrim(end($parts), '/');
+                        $path = \Illuminate\Support\Facades\Storage::disk('public')->path($relative);
+                        if (file_exists($path)) {
+                            return $path;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            $publicCandidate = ltrim((string) preg_replace('#^storage/#', '', $value), '/');
+            $publicPath = \Illuminate\Support\Facades\Storage::disk('public')->path($publicCandidate);
+            if (file_exists($publicPath)) {
+                return $publicPath;
+            }
+
+            if (str_starts_with($value, '/')) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function runDatabaseCatalogConsensus(array $formValues, ?string $hintText = null): array
+    {
+        $result = [
+            'consensus_values' => [],
+            'field_confidence' => [],
+            'field_sources' => [],
+            'top_matches' => [],
+            'warnings' => [],
+        ];
+
+        try {
+            $searchParts = array_filter([
+                $formValues['manufacturer'] ?? null,
+                $formValues['model'] ?? null,
+                $formValues['boat_name'] ?? null,
+                $formValues['boat_type'] ?? null,
+                $hintText,
+            ], fn($value) => is_string($value) ? trim($value) !== '' : $value !== null);
+
+            $searchText = trim(implode(' ', $searchParts));
+            if (mb_strlen($searchText) < 3) {
+                return $result;
+            }
+
+            $terms = $this->tokenizeDatabaseSearchTerms($searchText);
+            if (empty($terms)) {
+                return $result;
+            }
+
+            $boats = Yacht::query()
+                ->where(function ($query) use ($terms, $searchText, $formValues) {
+                    $query->whereRaw('1 = 0');
+
+                    if (!empty($formValues['manufacturer'])) {
+                        $query->orWhere('manufacturer', 'like', '%' . $formValues['manufacturer'] . '%');
+                    }
+                    if (!empty($formValues['model'])) {
+                        $query->orWhere('model', 'like', '%' . $formValues['model'] . '%');
+                    }
+                    if (!empty($formValues['boat_name'])) {
+                        $query->orWhere('boat_name', 'like', '%' . $formValues['boat_name'] . '%');
+                    }
+
+                    $query->orWhereRaw(
+                        "CONCAT(COALESCE(manufacturer, ''), ' ', COALESCE(model, ''), ' ', COALESCE(boat_name, '')) LIKE ?",
+                        ['%' . $searchText . '%']
+                    );
+
+                    foreach ($terms as $term) {
+                        $query->orWhere('manufacturer', 'like', '%' . $term . '%')
+                            ->orWhere('model', 'like', '%' . $term . '%')
+                            ->orWhere('boat_name', 'like', '%' . $term . '%')
+                            ->orWhere('short_description_en', 'like', '%' . $term . '%')
+                            ->orWhere('short_description_nl', 'like', '%' . $term . '%')
+                            ->orWhere('owners_comment', 'like', '%' . $term . '%');
+                    }
+                })
+                ->limit(30)
+                ->get();
+
+            if ($boats->isEmpty()) {
+                return $result;
+            }
+
+            $scored = $boats
+                ->map(function (Yacht $boat) use ($formValues, $terms, $searchText) {
+                    $flat = $boat->toArray();
+
+                    return [
+                        'boat' => $boat,
+                        'flat' => $flat,
+                        'score' => $this->scoreDatabaseCandidate($flat, $formValues, $terms, $searchText),
+                    ];
+                })
+                ->filter(fn(array $candidate) => $candidate['score'] > 0)
+                ->sortByDesc('score')
+                ->take(5)
+                ->values();
+
+            if ($scored->isEmpty()) {
+                return $result;
+            }
+
+            $topScore = (float) ($scored->first()['score'] ?? 0.0);
+            $result['top_matches'] = $scored->map(function (array $candidate) {
+                /** @var Yacht $boat */
+                $boat = $candidate['boat'];
+                $flat = $candidate['flat'];
+
+                return [
+                    'score' => (int) round($candidate['score']),
+                    'boat' => array_filter([
+                        'id' => $boat->id,
+                        'status' => $boat->status,
+                        'manufacturer' => $boat->manufacturer,
+                        'model' => $boat->model,
+                        'boat_name' => $boat->boat_name,
+                        'year' => $boat->year,
+                        'loa' => $flat['loa'] ?? null,
+                        'beam' => $flat['beam'] ?? null,
+                        'draft' => $flat['draft'] ?? null,
+                        'fuel' => $flat['fuel'] ?? null,
+                        'engine_manufacturer' => $flat['engine_manufacturer'] ?? null,
+                        'price' => $boat->price,
+                        'source' => $boat->source ?? null,
+                    ], fn($value) => $value !== null && $value !== ''),
+                ];
+            })->all();
+
+            $fieldVotes = [];
+            foreach ($scored as $candidate) {
+                $weight = max(1.0, (float) $candidate['score']);
+                $flat = $candidate['flat'];
+
+                foreach (self::STEP2_SCHEMA_FIELDS as $field) {
+                    $normalized = $this->normalizeDatabaseConsensusValue($field, $flat[$field] ?? null);
+                    if ($normalized === null) {
+                        continue;
+                    }
+
+                    $voteKey = is_bool($normalized) ? ($normalized ? 'true' : 'false') : (string) $normalized;
+                    if (!isset($fieldVotes[$field][$voteKey])) {
+                        $fieldVotes[$field][$voteKey] = [
+                            'value' => $normalized,
+                            'weight' => 0.0,
+                            'count' => 0,
+                        ];
+                    }
+
+                    $fieldVotes[$field][$voteKey]['weight'] += $weight;
+                    $fieldVotes[$field][$voteKey]['count']++;
+                }
+            }
+
+            foreach ($fieldVotes as $field => $votes) {
+                uasort($votes, fn(array $left, array $right) => $right['weight'] <=> $left['weight']);
+                $winner = reset($votes);
+                if (!is_array($winner)) {
+                    continue;
+                }
+
+                $totalWeight = array_sum(array_column($votes, 'weight'));
+                $ratio = $totalWeight > 0 ? ($winner['weight'] / $totalWeight) : 0.0;
+                $winnerCount = (int) ($winner['count'] ?? 0);
+
+                if ($ratio < 0.55 && !($winnerCount >= 2 && $ratio >= 0.45) && !($topScore >= 92 && $winnerCount >= 1)) {
+                    continue;
+                }
+
+                $result['consensus_values'][$field] = $winner['value'];
+                $result['field_confidence'][$field] = round(min(0.93, 0.58 + ($ratio * 0.22) + (min($topScore, 100) / 100 * 0.12)), 2);
+                $result['field_sources'][$field] = $winnerCount >= 2 ? 'database_catalog_consensus' : 'database_catalog_top_match';
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[AI Pipeline] Database catalog consensus failed', [
+                'error' => $e->getMessage(),
+            ]);
+            $result['warnings'][] = 'Database catalog comparison failed: ' . $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    private function tokenizeDatabaseSearchTerms(string $text): array
+    {
+        $terms = preg_split('/[^\pL\pN]+/u', mb_strtolower($text)) ?: [];
+        $terms = array_values(array_unique(array_filter($terms, fn($term) => mb_strlen((string) $term) >= 3)));
+
+        return array_slice($terms, 0, 12);
+    }
+
+    private function scoreDatabaseCandidate(array $flat, array $formValues, array $terms, string $searchText): float
+    {
+        $score = 0.0;
+        $manufacturer = mb_strtolower(trim((string) ($flat['manufacturer'] ?? '')));
+        $model = mb_strtolower(trim((string) ($flat['model'] ?? '')));
+        $boatName = mb_strtolower(trim((string) ($flat['boat_name'] ?? '')));
+        $boatType = mb_strtolower(trim((string) ($flat['boat_type'] ?? '')));
+        $description = mb_strtolower(trim((string) (($flat['short_description_en'] ?? '') . ' ' . ($flat['short_description_nl'] ?? '') . ' ' . ($flat['owners_comment'] ?? ''))));
+        $combined = trim(implode(' ', array_filter([$manufacturer, $model, $boatName, $boatType, $description])));
+        $normalizedSearchText = mb_strtolower(trim($searchText));
+
+        $searchManufacturer = mb_strtolower(trim((string) ($formValues['manufacturer'] ?? '')));
+        $searchModel = mb_strtolower(trim((string) ($formValues['model'] ?? '')));
+        $searchBoatName = mb_strtolower(trim((string) ($formValues['boat_name'] ?? '')));
+        $searchBoatType = mb_strtolower(trim((string) ($formValues['boat_type'] ?? '')));
+
+        if ($searchManufacturer !== '') {
+            if ($manufacturer === $searchManufacturer) {
+                $score += 35;
+            } elseif (str_contains($manufacturer, $searchManufacturer) || str_contains($boatName, $searchManufacturer)) {
+                $score += 24;
+            }
+        }
+
+        if ($searchModel !== '') {
+            if ($model === $searchModel) {
+                $score += 38;
+            } elseif (str_contains($model, $searchModel) || str_contains($boatName, $searchModel)) {
+                $score += 26;
+            }
+        }
+
+        if ($searchBoatName !== '') {
+            if ($boatName === $searchBoatName) {
+                $score += 40;
+            } elseif (str_contains($boatName, $searchBoatName) || str_contains($searchBoatName, $boatName)) {
+                $score += 24;
+            }
+        }
+
+        if ($searchBoatType !== '' && $boatType !== '') {
+            if ($boatType === $searchBoatType) {
+                $score += 10;
+            } elseif (str_contains($boatType, $searchBoatType) || str_contains($searchBoatType, $boatType)) {
+                $score += 6;
+            }
+        }
+
+        if ($normalizedSearchText !== '' && $combined !== '' && str_contains($combined, $normalizedSearchText)) {
+            $score += 16;
+        }
+
+        foreach ($terms as $term) {
+            if ($manufacturer !== '' && str_contains($manufacturer, $term)) {
+                $score += 6;
+            } elseif ($model !== '' && str_contains($model, $term)) {
+                $score += 6;
+            } elseif ($boatName !== '' && str_contains($boatName, $term)) {
+                $score += 4;
+            } elseif ($combined !== '' && str_contains($combined, $term)) {
+                $score += 2;
+            }
+        }
+
+        if (!empty($formValues['year']) && !empty($flat['year']) && (int) $formValues['year'] === (int) $flat['year']) {
+            $score += 6;
+        }
+
+        if (!empty($formValues['fuel']) && !empty($flat['fuel']) && mb_strtolower((string) $formValues['fuel']) === mb_strtolower((string) $flat['fuel'])) {
+            $score += 4;
+        }
+
+        return min(100.0, $score);
+    }
+
+    private function normalizeDatabaseConsensusValue(string $field, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '' || strtolower($trimmed) === 'null') {
+                return null;
+            }
+            $value = $trimmed;
+        }
+
+        if (in_array($field, ['price', 'min_bid_amount'], true)) {
+            if (!is_numeric($value)) {
+                return null;
+            }
+            return (int) round((float) $value);
+        }
+
+        if (in_array($field, ['year', 'cabins', 'berths', 'engine_quantity', 'passenger_capacity'], true)) {
+            if (!is_numeric($value)) {
+                return null;
+            }
+            return (int) round((float) $value);
+        }
+
+        if (in_array($field, ['loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast', 'minimum_height', 'max_draft', 'min_draft'], true)) {
+            if (!is_numeric($value)) {
+                return null;
+            }
+            return round((float) $value, 2);
+        }
+
+        if (is_bool($value) || is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        return is_string($value) ? $value : null;
+    }
+
     /**
-     * Generate custom descriptions based on tone and word count settings.
+     * RAG-Based Description Generation — Step 3.
+     *
+     * Retrieval-augmented flow:
+     *   1. Gather all Step 2 structured specs
+     *   2. Search Pinecone for top 5 similar boats → collect their descriptions
+     *   3. Query local DB for same brand/model boats with descriptions
+     *   4. Build rich GPT-4o prompt with specs + example descriptions
+     *   5. Generate NL/EN/DE marketplace-ready texts
      */
     public function generateDescription(Request $request): JsonResponse
     {
@@ -2243,10 +2762,12 @@ CONTEXT,
             'tone' => 'nullable|string',
             'min_words' => 'nullable|integer',
             'max_words' => 'nullable|integer',
+            'form_values' => 'nullable|array',
         ]);
 
         $yacht = Yacht::findOrFail($request->input('yacht_id'));
-        
+        $formValues = is_array($request->input('form_values')) ? $request->input('form_values') : [];
+
         $openAiKey = config('services.openai.key');
         if (!$openAiKey) {
             return response()->json(['error' => 'OPENAI_API_KEY not configured'], 500);
@@ -2256,51 +2777,193 @@ CONTEXT,
         $minWords = $request->input('min_words', 200);
         $maxWords = $request->input('max_words', 500);
 
-        // Build context from the yacht data, excluding internal/visual fields to save tokens
-        $skipFields = ['images', 'created_at', 'updated_at', 'location_lat', 'location_lng'];
-        $filteredData = collect($yacht->toArray())
-            ->except($skipFields)
-            ->filter(fn($val) => $val !== null && $val !== '')
-            ->toArray();
-        $yachtData = json_encode($filteredData);
+        // ── 1. GATHER STRUCTURED STEP 2 DATA ─────────────────────────────
+        $allSpecs = $this->buildDescriptionInputData($yacht, $formValues);
+        $specSections = $this->organizeSpecsForDescription($allSpecs);
+        $specsText = '';
+        foreach ($specSections as $section => $fields) {
+            if (empty($fields)) continue;
+            $specsText .= "\n### {$section}\n";
+            foreach ($fields as $key => $val) {
+                $label = str_replace('_', ' ', ucfirst($key));
+                $specsText .= "- {$label}: {$val}\n";
+            }
+        }
+        $sellingPoints = $this->buildDescriptionSellingPoints($allSpecs);
+        $sellingPointsBlock = empty($sellingPoints)
+            ? ''
+            : "\n\n## VERIFIED SELLING POINTS:\n" . implode("\n", array_map(fn($point) => "- {$point}", $sellingPoints));
+        $remarksBlock = $this->buildDescriptionRemarksBlock($allSpecs);
+
+        // ── 2. PINECONE SEARCH — Find similar boats with descriptions ────
+        $exampleDescriptions = [];
+        $similarBoatSummaries = [];
+        $rankedReferences = [];
+
+        try {
+            $pineconeReferences = $this->fetchPineconeDescriptionMatches($allSpecs, $yacht->id, $openAiKey);
+            foreach ($pineconeReferences as $reference) {
+                $referenceId = $reference['yacht']->id;
+                $rankedReferences[$referenceId] = [
+                    'yacht' => $reference['yacht'],
+                    'score' => $this->scoreDescriptionReferenceBoat($allSpecs, $reference['yacht'], (int) ($reference['score'] ?? 0)),
+                    'source' => 'pinecone',
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[AI Description RAG] Pinecone search failed: ' . $e->getMessage());
+        }
+
+        // ── 3. LOCAL DB SEARCH — Same brand/model boats with descriptions ─
+        try {
+            foreach ($this->fetchDatabaseDescriptionCandidates($yacht, $allSpecs) as $candidate) {
+                $candidateId = $candidate->id;
+                $candidateScore = $this->scoreDescriptionReferenceBoat($allSpecs, $candidate);
+                if (isset($rankedReferences[$candidateId])) {
+                    $rankedReferences[$candidateId]['score'] = max($rankedReferences[$candidateId]['score'], $candidateScore);
+                    $rankedReferences[$candidateId]['source'] = 'pinecone+database';
+                    continue;
+                }
+
+                $rankedReferences[$candidateId] = [
+                    'yacht' => $candidate,
+                    'score' => $candidateScore,
+                    'source' => 'database',
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[AI Description RAG] DB search failed: ' . $e->getMessage());
+        }
+
+        usort($rankedReferences, fn(array $left, array $right) => ($right['score'] ?? 0) <=> ($left['score'] ?? 0));
+        $rankedReferences = array_slice($rankedReferences, 0, 8);
+
+        foreach ($rankedReferences as $reference) {
+            $similarBoatSummaries[] = $this->buildDescriptionReferenceSummary(
+                $reference['yacht'],
+                (int) ($reference['score'] ?? 0),
+                (string) ($reference['source'] ?? 'database'),
+            );
+            $exampleDescriptions = array_merge(
+                $exampleDescriptions,
+                $this->extractDescriptionExamplesFromYacht($reference['yacht'])
+            );
+        }
+
+        $exampleDescriptions = $this->dedupeDescriptionExamples($exampleDescriptions, 6);
+
+        // ── 4. BUILD RICH GPT-4o PROMPT ──────────────────────────────────
+        $boatTitle = $this->buildBoatTitleFromSpecs($allSpecs);
+
+        $examplesBlock = '';
+        if (!empty($exampleDescriptions)) {
+            $examplesBlock = "\n\n## INTERNAL LISTING EXAMPLES (style guidance only, never copy facts or sentences):\n";
+            foreach (array_slice($exampleDescriptions, 0, 4) as $i => $ex) {
+                $n = $i + 1;
+                $examplesBlock .= "\n### Example {$n}: {$ex['boat']} ({$ex['lang']})\n{$ex['text']}\n";
+            }
+        }
+
+        $similarBlock = '';
+        if (!empty($similarBoatSummaries)) {
+            $similarBlock = "\n\n## BEST INTERNAL REFERENCE BOATS:\n" . implode("\n", array_map(fn($s) => "- {$s}", $similarBoatSummaries));
+        }
 
         $systemPrompt = <<<PROMPT
-You are an expert yacht copywriter. Given the data of a yacht, generate an engaging, descriptive marketing summary.
-Follow these requirements STRICTLY:
-- Tone: {$tone}
-- Length: Ensure the word count is between {$minWords} and {$maxWords} words per language. Do not output less than {$minWords} words!
-- Language: Provide the description in English, Dutch, German, and French.
-- Focus on the key features, amenities, and unique selling points of the boat.
-- Return ONLY a JSON object with keys "en", "nl", "de", and "fr".
+You are a senior yacht broker copywriter for Schepenkring.
+You write high-converting, trustworthy yacht listings that sound like they were written by an experienced broker, not by a generic AI assistant.
+
+Your writing style:
+- Broker-grade, fluent, and commercially sharp
+- Specific and grounded in verified boat data
+- Structured with a strong opening, logical feature flow, and a confident closing
+- Natural, not repetitive, not stuffed with specs
+- Native-sounding in Dutch, English, and German; do not translate literally line-by-line
+
+CRITICAL RULES:
+1. Tone: {$tone}
+2. Word count: Each language version MUST be between {$minWords} and {$maxWords} words. This is a HARD requirement.
+3. Languages: Generate in Dutch (nl), English (en), and German (de). Each should feel native, NOT a translation.
+4. The CURRENT BOAT structured profile is the source of truth. Similar boats and example listings are only writing guidance.
+5. NEVER transfer facts, dimensions, engine specs, layout, or equipment from the reference boats into the current boat.
+6. ONLY mention specifications, equipment, and features that are verified in the current boat data. NEVER invent or hallucinate.
+7. If data is incomplete, write a strong draft around the verified facts only. Omit unknown specs gracefully.
+8. Avoid generic filler like "well maintained" or "ideal for enjoyable cruising" unless the verified context supports it with concrete details.
+9. If remarks mention defects or condition notes, handle them professionally and honestly without making the text negative or awkward.
+10. Return ONLY a valid JSON object with keys "nl", "en", "de". No markdown, no explanation.
+
 PROMPT;
 
-        $endpoint = 'https://api.openai.com/v1/chat/completions';
+        $userPrompt = <<<USER
+# CURRENT BOAT
+{$boatTitle}
 
+## VERIFIED STRUCTURED PROFILE (Step 2 + current form state)
+{$specsText}
+{$sellingPointsBlock}
+{$remarksBlock}
+{$similarBlock}
+{$examplesBlock}
+
+Write marketplace-ready listing descriptions now.
+Requirements:
+- Use the verified structured profile as the factual source.
+- Use the reference boats and example listings only to calibrate quality, positioning, and structure.
+- Produce unique copy for this exact boat.
+- Keep the tone broker-like, confident, and commercially useful.
+- No bullets, no headings, no markdown in the final output.
+USER;
+
+        Log::info('[AI Description RAG] Generating for ' . $boatTitle, [
+            'specs_count' => count($allSpecs),
+            'reference_matches' => count($similarBoatSummaries),
+            'example_descriptions' => count($exampleDescriptions),
+        ]);
+
+        // ── 5. CALL GPT-4o ──────────────────────────────────────────────
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $openAiKey,
-            ])->timeout(45)->post($endpoint, [
+            ])->timeout(90)->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o',
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
-                    ['role' => 'user', 'content' => "Yacht Data:\n" . $yachtData]
+                    ['role' => 'user', 'content' => $userPrompt],
                 ],
                 'response_format' => ['type' => 'json_object'],
+                'temperature' => 0.7,
             ]);
 
             if (!$response->successful()) {
-                Log::error('[AI Description] API error: ' . $response->body());
+                Log::error('[AI Description RAG] API error: ' . $response->body());
                 return response()->json(['error' => 'OpenAI API failed'], 500);
             }
 
             $body = $response->json();
             $text = $body['choices'][0]['message']['content'] ?? null;
-            
+
             if (!$text) {
                 return response()->json(['error' => 'Empty response from OpenAI'], 500);
             }
 
             $extracted = json_decode($text, true);
+
+            if (!$extracted || (!isset($extracted['nl']) && !isset($extracted['en']))) {
+                Log::error('[AI Description RAG] Invalid JSON response', ['raw' => $text]);
+                return response()->json(['error' => 'Invalid AI response format'], 500);
+            }
+
+            Log::info('[AI Description RAG] Generated successfully for ' . $boatTitle, [
+                'nl_words' => str_word_count($extracted['nl'] ?? ''),
+                'en_words' => str_word_count($extracted['en'] ?? ''),
+                'de_words' => str_word_count($extracted['de'] ?? ''),
+            ]);
+
+            $yacht->forceFill([
+                'short_description_nl' => $extracted['nl'] ?? $yacht->short_description_nl,
+                'short_description_en' => $extracted['en'] ?? $yacht->short_description_en,
+                'short_description_de' => $extracted['de'] ?? $yacht->short_description_de,
+            ])->save();
 
             return response()->json([
                 'success' => true,
@@ -2309,13 +2972,712 @@ PROMPT;
                     'nl' => $extracted['nl'] ?? null,
                     'de' => $extracted['de'] ?? null,
                     'fr' => $extracted['fr'] ?? null,
-                ]
+                ],
+                'context' => [
+                    'specs_count' => count($allSpecs),
+                    'reference_matches' => count($similarBoatSummaries),
+                    'example_descriptions' => count($exampleDescriptions),
+                ],
             ]);
 
         } catch (\Exception $e) {
-            Log::error('[AI Description] Exception: ' . $e->getMessage());
+            Log::error('[AI Description RAG] Exception: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Organize yacht specs into logical sections for the description prompt.
+     */
+    private function organizeSpecsForDescription(array $specs): array
+    {
+        $sections = [
+            'General' => ['boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category',
+                          'year', 'new_or_used', 'price', 'vessel_lying', 'location_city',
+                          'ce_category', 'where'],
+            'Dimensions' => ['loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast',
+                            'max_draft', 'min_draft', 'variable_depth', 'minimum_height', 'passenger_capacity'],
+            'Engine & Propulsion' => ['engine_manufacturer', 'engine_model', 'engine_quantity', 'horse_power',
+                                     'engine_type', 'engine_year', 'hours', 'fuel', 'tankage', 'drive_type',
+                                     'propulsion', 'max_speed', 'cruising_speed', 'gallons_per_hour',
+                                     'litres_per_hour', 'bow_thruster', 'stern_thruster'],
+            'Accommodation' => ['cabins', 'berths', 'heads', 'toilet', 'shower', 'passenger_capacity',
+                               'bath', 'heating', 'air_conditioning', 'interior_type', 'headroom',
+                               'engine_room', 'hot_water'],
+            'Navigation & Electronics' => ['autopilot', 'gps', 'plotter', 'radar', 'vhf', 'ais',
+                                          'compass', 'fishfinder', 'depth_instrument', 'speed_instrument',
+                                          'wind_instrument', 'navigation_lights'],
+            'Deck & Outdoor Living' => ['bimini', 'spray_hood', 'swimming_platform', 'swimming_ladder',
+                                'teak_deck', 'anchor', 'anchor_winch', 'cockpit_table', 'dinghy',
+                                'trailer', 'covers', 'fenders'],
+            'Kitchen & Comfort' => ['oven', 'microwave', 'fridge', 'freezer', 'cooker', 'television',
+                                   'cd_player', 'dvd_player', 'shorepower', 'solar_panel', 'wind_generator',
+                                   'generator', 'inverter', 'satellite_reception', 'water_tank', 'water_maker'],
+            'Safety' => ['life_raft', 'fire_extinguisher', 'epirb', 'life_jackets', 'safety_harness',
+                        'bilge_pump', 'mob_system', 'radar_reflector', 'flares'],
+            'Sails & Rigging' => ['main_sail', 'genoa', 'jib', 'spinnaker', 'gennaker',
+                                 'sailplan_type', 'number_of_masts', 'standing_rig', 'sail_surface_area'],
+            'Construction' => ['hull_type', 'hull_construction', 'hull_colour', 'hull_number',
+                              'super_structure_colour', 'super_structure_construction',
+                              'deck_colour', 'deck_construction', 'designer', 'builder', 'cockpit_type',
+                              'control_type', 'flybridge'],
+            'Remarks' => ['owners_comment', 'known_defects', 'reg_details', 'last_serviced'],
+        ];
+
+        $organized = [];
+        $assigned = [];
+
+        foreach ($sections as $section => $keys) {
+            $sectionData = [];
+            foreach ($keys as $key) {
+                if (!array_key_exists($key, $specs)) {
+                    continue;
+                }
+
+                $formattedValue = $this->formatDescriptionSpecValue($key, $specs[$key]);
+                if ($formattedValue !== null) {
+                    $sectionData[$key] = $formattedValue;
+                    $assigned[] = $key;
+                }
+            }
+            if (!empty($sectionData)) {
+                $organized[$section] = $sectionData;
+            }
+        }
+
+        // Add any remaining fields not in a section
+        $remaining = [];
+        foreach (array_diff_key($specs, array_flip($assigned)) as $key => $value) {
+            $formattedValue = $this->formatDescriptionSpecValue($key, $value);
+            if ($formattedValue !== null) {
+                $remaining[$key] = $formattedValue;
+            }
+        }
+        if (!empty($remaining)) {
+            $organized['Other Details'] = $remaining;
+        }
+
+        return $organized;
+    }
+
+    private function buildDescriptionInputData(Yacht $yacht, array $overrides): array
+    {
+        $skipFields = [
+            'id', 'user_id', 'images', 'created_at', 'updated_at', 'deleted_at',
+            'location_lat', 'location_lng', 'pinecone_indexed_at', 'ai_extraction_id',
+        ];
+        $allowedFields = array_flip(array_merge(self::STEP2_SCHEMA_FIELDS, [
+            'external_url', 'print_url', 'advertise_as', 'source', 'source_identifier', 'vessel_id',
+        ]));
+
+        $data = collect($yacht->toArray())
+            ->except($skipFields)
+            ->toArray();
+
+        foreach ($overrides as $field => $value) {
+            if (!is_string($field) || !isset($allowedFields[$field])) {
+                continue;
+            }
+
+            $normalized = $this->normalizeDescriptionSourceValue($value);
+            if ($normalized === null) {
+                unset($data[$field]);
+                continue;
+            }
+
+            $data[$field] = $normalized;
+        }
+
+        unset(
+            $data['short_description_en'],
+            $data['short_description_nl'],
+            $data['short_description_de'],
+            $data['short_description_fr']
+        );
+
+        return $data;
+    }
+
+    private function normalizeDescriptionSourceValue(mixed $value): mixed
+    {
+        if (is_array($value) || is_object($value)) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return is_finite((float) $value) ? $value : null;
+        }
+
+        $text = trim(strip_tags((string) $value));
+        return $this->isPlaceholderText($text) ? null : $text;
+    }
+
+    private function isPlaceholderText(string $value): bool
+    {
+        $normalized = mb_strtolower(trim($value));
+
+        return $normalized === ''
+            || in_array($normalized, ['-', '--', 'n/a', 'na', 'null', 'undefined', 'unknown', 'onbekend'], true);
+    }
+
+    private function formatDescriptionSpecValue(string $field, mixed $value): ?string
+    {
+        if (is_bool($value)) {
+            return $value ? 'Yes' : null;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            if ((float) $value === 0.0) {
+                return null;
+            }
+
+            return $this->formatDescriptionNumber((float) $value);
+        }
+
+        $text = trim(strip_tags((string) $value));
+        if ($this->isPlaceholderText($text)) {
+            return null;
+        }
+
+        $optionalFeatureFields = [
+            'life_jackets', 'bimini', 'anchor', 'fishfinder', 'bow_thruster', 'stern_thruster',
+            'trailer', 'heating', 'toilet', 'fridge', 'freezer', 'ais', 'life_raft',
+            'fire_extinguisher', 'bilge_pump', 'solar_panel', 'swimming_platform',
+            'swimming_ladder', 'teak_deck', 'cockpit_table', 'dinghy', 'television',
+            'oven', 'microwave', 'spinnaker', 'gennaker', 'epirb', 'mob_system',
+            'radar_reflector', 'flares', 'wind_generator', 'shorepower', 'generator',
+            'inverter', 'battery_charger', 'depth_instrument', 'wind_instrument',
+            'speed_instrument', 'navigation_lights', 'radar', 'autopilot', 'gps',
+            'vhf', 'plotter', 'compass', 'water_tank', 'bath', 'shower', 'spray_hood',
+        ];
+
+        if (in_array($field, $optionalFeatureFields, true)) {
+            return $this->normalizeAffirmativeValue($text) ? 'Yes' : null;
+        }
+
+        return $text;
+    }
+
+    private function formatDescriptionNumber(float $value): string
+    {
+        if ((float) ((int) $value) === $value) {
+            return (string) ((int) $value);
+        }
+
+        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+    }
+
+    private function normalizeAffirmativeValue(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            if ((float) $value === 0.0) {
+                return false;
+            }
+
+            return true;
+        }
+
+        $normalized = mb_strtolower(trim(strip_tags((string) $value)));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (in_array($normalized, ['yes', 'y', 'true', '1', 'present', 'included', 'equipped'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['no', 'n', 'false', '0', 'absent', 'not installed'], true)) {
+            return false;
+        }
+
+        if (preg_match('/\b(with|installed|available|fitted)\b/', $normalized)) {
+            return true;
+        }
+
+        if (preg_match('/\b(without|missing|not present)\b/', $normalized)) {
+            return false;
+        }
+
+        return null;
+    }
+
+    private function buildDescriptionSellingPoints(array $specs): array
+    {
+        $points = [];
+
+        if (!empty($specs['boat_type']) || !empty($specs['boat_category'])) {
+            $points[] = trim(implode(' ', array_filter([
+                $specs['boat_type'] ?? null,
+                $specs['boat_category'] ?? null,
+            ])));
+        }
+
+        if (!empty($specs['loa'])) {
+            $points[] = 'Length overall approx. ' . $this->formatDescriptionSpecValue('loa', $specs['loa']) . ' m';
+        }
+
+        if (!empty($specs['cabins']) || !empty($specs['berths'])) {
+            $layoutParts = [];
+            if (!empty($specs['cabins'])) {
+                $layoutParts[] = $this->formatDescriptionSpecValue('cabins', $specs['cabins']) . ' cabin(s)';
+            }
+            if (!empty($specs['berths'])) {
+                $layoutParts[] = $this->formatDescriptionSpecValue('berths', $specs['berths']) . ' berth(s)';
+            }
+            if (!empty($layoutParts)) {
+                $points[] = implode(', ', $layoutParts);
+            }
+        }
+
+        $engineParts = array_filter([
+            !empty($specs['engine_quantity']) ? $this->formatDescriptionSpecValue('engine_quantity', $specs['engine_quantity']) . ' engine(s)' : null,
+            !empty($specs['engine_manufacturer']) ? $specs['engine_manufacturer'] : null,
+            !empty($specs['engine_model']) ? $specs['engine_model'] : null,
+            !empty($specs['horse_power']) ? $this->formatDescriptionSpecValue('horse_power', $specs['horse_power']) . ' hp' : null,
+            !empty($specs['fuel']) ? $specs['fuel'] : null,
+        ]);
+        if (!empty($engineParts)) {
+            $points[] = implode(', ', $engineParts);
+        }
+
+        $featureLabels = [
+            'bow_thruster' => 'bow thruster',
+            'stern_thruster' => 'stern thruster',
+            'heating' => 'heating',
+            'air_conditioning' => 'air conditioning',
+            'generator' => 'generator',
+            'inverter' => 'inverter',
+            'autopilot' => 'autopilot',
+            'gps' => 'GPS',
+            'radar' => 'radar',
+            'plotter' => 'chartplotter',
+            'vhf' => 'VHF',
+            'bimini' => 'bimini',
+            'spray_hood' => 'sprayhood',
+            'teak_deck' => 'teak deck',
+            'swimming_platform' => 'swimming platform',
+            'swimming_ladder' => 'swimming ladder',
+            'anchor_winch' => 'anchor winch',
+        ];
+
+        $enabledFeatures = [];
+        foreach ($featureLabels as $field => $label) {
+            if ($this->normalizeAffirmativeValue($specs[$field] ?? null) === true) {
+                $enabledFeatures[] = $label;
+            }
+        }
+        if (!empty($enabledFeatures)) {
+            $points[] = 'Notable equipment: ' . implode(', ', array_slice($enabledFeatures, 0, 6));
+        }
+
+        if (!empty($specs['owners_comment'])) {
+            $points[] = 'Owner / broker context: ' . mb_substr(trim(strip_tags((string) $specs['owners_comment'])), 0, 180);
+        }
+
+        return array_values(array_unique(array_filter($points)));
+    }
+
+    private function buildDescriptionRemarksBlock(array $specs): string
+    {
+        $remarks = [];
+
+        foreach ([
+            'owners_comment' => 'Owner / broker remarks',
+            'known_defects' => 'Known defects or transparency notes',
+            'reg_details' => 'Registration details',
+            'last_serviced' => 'Last serviced',
+        ] as $field => $label) {
+            $formattedValue = $this->formatDescriptionSpecValue($field, $specs[$field] ?? null);
+            if ($formattedValue !== null) {
+                $remarks[] = "- {$label}: {$formattedValue}";
+            }
+        }
+
+        return empty($remarks)
+            ? ''
+            : "\n\n## EXTRA VERIFIED NOTES:\n" . implode("\n", $remarks);
+    }
+
+    private function buildDescriptionRetrievalText(array $specs): string
+    {
+        return trim(implode('. ', array_filter([
+            $this->buildBoatTitleFromSpecs($specs),
+            !empty($specs['boat_type']) ? 'Type ' . $specs['boat_type'] : null,
+            !empty($specs['boat_category']) ? 'Category ' . $specs['boat_category'] : null,
+            !empty($specs['year']) ? 'Year ' . $specs['year'] : null,
+            !empty($specs['loa']) ? 'Length ' . $this->formatDescriptionSpecValue('loa', $specs['loa']) . ' meter' : null,
+            !empty($specs['beam']) ? 'Beam ' . $this->formatDescriptionSpecValue('beam', $specs['beam']) . ' meter' : null,
+            !empty($specs['draft']) ? 'Draft ' . $this->formatDescriptionSpecValue('draft', $specs['draft']) . ' meter' : null,
+            !empty($specs['cabins']) ? $this->formatDescriptionSpecValue('cabins', $specs['cabins']) . ' cabins' : null,
+            !empty($specs['berths']) ? $this->formatDescriptionSpecValue('berths', $specs['berths']) . ' berths' : null,
+            !empty($specs['engine_manufacturer']) ? 'Engine ' . trim($specs['engine_manufacturer'] . ' ' . ($specs['engine_model'] ?? '')) : null,
+            !empty($specs['horse_power']) ? $this->formatDescriptionSpecValue('horse_power', $specs['horse_power']) . ' horsepower' : null,
+            !empty($specs['fuel']) ? 'Fuel ' . $specs['fuel'] : null,
+            !empty($specs['price']) ? 'Price class ' . $this->classifyPriceBand((float) $specs['price']) : null,
+            !empty($specs['owners_comment']) ? mb_substr(trim(strip_tags((string) $specs['owners_comment'])), 0, 180) : null,
+            implode('. ', array_slice($this->buildDescriptionSellingPoints($specs), 0, 6)),
+        ])));
+    }
+
+    private function fetchPineconeDescriptionMatches(array $specs, int $excludeId, string $openAiKey): array
+    {
+        $pineconeKey = config('services.pinecone.key');
+        $pineconeHost = config('services.pinecone.host');
+
+        if (!$pineconeKey || !$pineconeHost) {
+            return [];
+        }
+
+        $searchText = $this->buildDescriptionRetrievalText($specs);
+        if (mb_strlen($searchText) < 12) {
+            return [];
+        }
+
+        $embedResponse = Http::withToken($openAiKey)
+            ->timeout(15)
+            ->post('https://api.openai.com/v1/embeddings', [
+                'model' => 'text-embedding-3-small',
+                'input' => $searchText,
+                'dimensions' => 1408,
+            ]);
+
+        if (!$embedResponse->successful()) {
+            return [];
+        }
+
+        $vector = $embedResponse->json('data.0.embedding');
+        if (!$vector) {
+            return [];
+        }
+
+        $pineconeResponse = Http::withHeaders([
+            'Api-Key' => $pineconeKey,
+            'Content-Type' => 'application/json',
+        ])->timeout(12)->post("{$pineconeHost}/query", [
+            'vector' => $vector,
+            'topK' => 8,
+            'includeMetadata' => true,
+        ]);
+
+        if (!$pineconeResponse->successful()) {
+            return [];
+        }
+
+        $scoreMap = [];
+        foreach ($pineconeResponse->json('matches') ?? [] as $match) {
+            $metadata = is_array($match['metadata'] ?? null) ? $match['metadata'] : [];
+            $matchId = (int) ($metadata['id'] ?? $match['id'] ?? 0);
+            if ($matchId <= 0 || $matchId === $excludeId) {
+                continue;
+            }
+
+            $scoreMap[$matchId] = max(
+                $scoreMap[$matchId] ?? 0,
+                (int) round(((float) ($match['score'] ?? 0)) * 100)
+            );
+        }
+
+        if (empty($scoreMap)) {
+            return [];
+        }
+
+        $candidates = Yacht::query()
+            ->whereIn('id', array_keys($scoreMap))
+            ->get()
+            ->filter(fn(Yacht $candidate) => !empty($this->extractDescriptionExamplesFromYacht($candidate)))
+            ->sortByDesc(fn(Yacht $candidate) => $scoreMap[$candidate->id] ?? 0)
+            ->values();
+
+        return $candidates
+            ->map(fn(Yacht $candidate) => [
+                'yacht' => $candidate,
+                'score' => $scoreMap[$candidate->id] ?? 0,
+            ])
+            ->all();
+    }
+
+    private function fetchDatabaseDescriptionCandidates(Yacht $yacht, array $specs): array
+    {
+        $baseQuery = Yacht::query()
+            ->where('id', '!=', $yacht->id)
+            ->where(function ($query) {
+                $query
+                    ->where(function ($inner) {
+                        $inner->whereNotNull('short_description_nl')
+                            ->where('short_description_nl', '!=', '')
+                            ->where('short_description_nl', '!=', ' ');
+                    })
+                    ->orWhere(function ($inner) {
+                        $inner->whereNotNull('short_description_en')
+                            ->where('short_description_en', '!=', '')
+                            ->where('short_description_en', '!=', ' ');
+                    })
+                    ->orWhere(function ($inner) {
+                        $inner->whereNotNull('short_description_de')
+                            ->where('short_description_de', '!=', '')
+                            ->where('short_description_de', '!=', ' ');
+                    });
+            });
+
+        $candidateSets = [];
+
+        if (!empty($specs['manufacturer']) && !empty($specs['model'])) {
+            $candidateSets[] = (clone $baseQuery)
+                ->where('manufacturer', 'LIKE', (string) $specs['manufacturer'])
+                ->where('model', 'LIKE', '%' . (string) $specs['model'] . '%')
+                ->limit(6)
+                ->get();
+        }
+
+        if (!empty($specs['manufacturer'])) {
+            $candidateSets[] = (clone $baseQuery)
+                ->where('manufacturer', 'LIKE', (string) $specs['manufacturer'])
+                ->limit(10)
+                ->get();
+        }
+
+        if (!empty($specs['boat_type'])) {
+            $candidateSets[] = (clone $baseQuery)
+                ->where('boat_type', (string) $specs['boat_type'])
+                ->limit(12)
+                ->get();
+        }
+
+        if (!empty($specs['boat_category'])) {
+            $candidateSets[] = (clone $baseQuery)
+                ->where('boat_category', (string) $specs['boat_category'])
+                ->limit(12)
+                ->get();
+        }
+
+        if (!empty($specs['year'])) {
+            $candidateSets[] = (clone $baseQuery)
+                ->whereBetween('year', [max(1900, (int) $specs['year'] - 5), (int) $specs['year'] + 5])
+                ->limit(8)
+                ->get();
+        }
+
+        if (!empty($specs['price']) && is_numeric($specs['price'])) {
+            $price = (float) $specs['price'];
+            $candidateSets[] = (clone $baseQuery)
+                ->whereBetween('price', [max(0, $price * 0.6), $price * 1.4])
+                ->limit(10)
+                ->get();
+        }
+
+        return collect($candidateSets)
+            ->flatten(1)
+            ->filter(fn(Yacht $candidate) => !empty($this->extractDescriptionExamplesFromYacht($candidate)))
+            ->unique('id')
+            ->values()
+            ->all();
+    }
+
+    private function scoreDescriptionReferenceBoat(array $inputSpecs, Yacht $candidate, int $baseScore = 0): int
+    {
+        $candidateSpecs = $candidate->toArray();
+        $score = $baseScore;
+
+        $sameValue = function (string $field) use ($inputSpecs, $candidateSpecs): bool {
+            if (empty($inputSpecs[$field]) || empty($candidateSpecs[$field])) {
+                return false;
+            }
+
+            return mb_strtolower(trim((string) $inputSpecs[$field])) === mb_strtolower(trim((string) $candidateSpecs[$field]));
+        };
+
+        if ($sameValue('manufacturer')) {
+            $score += 40;
+        }
+
+        if (!empty($inputSpecs['model']) && !empty($candidateSpecs['model'])) {
+            $inputModel = mb_strtolower((string) $inputSpecs['model']);
+            $candidateModel = mb_strtolower((string) $candidateSpecs['model']);
+            if ($inputModel === $candidateModel) {
+                $score += 40;
+            } elseif (str_contains($inputModel, $candidateModel) || str_contains($candidateModel, $inputModel)) {
+                $score += 26;
+            }
+        }
+
+        if ($sameValue('boat_type')) {
+            $score += 22;
+        }
+
+        if ($sameValue('boat_category')) {
+            $score += 18;
+        }
+
+        if ($sameValue('fuel')) {
+            $score += 14;
+        }
+
+        if ($sameValue('engine_manufacturer')) {
+            $score += 12;
+        }
+
+        if (!empty($inputSpecs['loa']) && !empty($candidateSpecs['loa'])) {
+            $loaDiff = abs((float) $inputSpecs['loa'] - (float) $candidateSpecs['loa']);
+            if ($loaDiff <= 0.5) {
+                $score += 22;
+            } elseif ($loaDiff <= 1.5) {
+                $score += 14;
+            } elseif ($loaDiff <= 3) {
+                $score += 8;
+            }
+        }
+
+        if (!empty($inputSpecs['year']) && !empty($candidateSpecs['year'])) {
+            $yearDiff = abs((int) $inputSpecs['year'] - (int) $candidateSpecs['year']);
+            if ($yearDiff <= 3) {
+                $score += 10;
+            } elseif ($yearDiff <= 7) {
+                $score += 5;
+            }
+        }
+
+        if (!empty($inputSpecs['price']) && !empty($candidateSpecs['price'])) {
+            if ($this->classifyPriceBand((float) $inputSpecs['price']) === $this->classifyPriceBand((float) $candidateSpecs['price'])) {
+                $score += 10;
+            }
+        }
+
+        if (!empty($inputSpecs['cabins']) && !empty($candidateSpecs['cabins']) && (int) $inputSpecs['cabins'] === (int) $candidateSpecs['cabins']) {
+            $score += 8;
+        }
+
+        if (!empty($inputSpecs['berths']) && !empty($candidateSpecs['berths']) && (int) $inputSpecs['berths'] === (int) $candidateSpecs['berths']) {
+            $score += 6;
+        }
+
+        $featureOverlap = array_intersect(
+            $this->extractEnabledDescriptionFeatures($inputSpecs),
+            $this->extractEnabledDescriptionFeatures($candidateSpecs)
+        );
+        $score += min(24, count($featureOverlap) * 4);
+
+        $score += min(12, count($this->extractDescriptionExamplesFromYacht($candidate)) * 4);
+
+        return $score;
+    }
+
+    private function extractEnabledDescriptionFeatures(array $specs): array
+    {
+        $features = [
+            'bow_thruster', 'stern_thruster', 'heating', 'air_conditioning', 'generator',
+            'inverter', 'autopilot', 'gps', 'radar', 'plotter', 'vhf', 'ais',
+            'bimini', 'spray_hood', 'teak_deck', 'swimming_platform',
+            'swimming_ladder', 'anchor_winch', 'cockpit_table',
+        ];
+
+        return array_values(array_filter($features, fn(string $field) => $this->normalizeAffirmativeValue($specs[$field] ?? null) === true));
+    }
+
+    private function buildDescriptionReferenceSummary(Yacht $candidate, int $score, string $source): string
+    {
+        $specs = $candidate->toArray();
+        $summaryParts = array_filter([
+            !empty($specs['year']) ? 'year ' . $specs['year'] : null,
+            !empty($specs['boat_type']) ? $specs['boat_type'] : null,
+            !empty($specs['loa']) ? $this->formatDescriptionSpecValue('loa', $specs['loa']) . 'm' : null,
+            !empty($specs['cabins']) ? $this->formatDescriptionSpecValue('cabins', $specs['cabins']) . ' cabin(s)' : null,
+            !empty($specs['berths']) ? $this->formatDescriptionSpecValue('berths', $specs['berths']) . ' berth(s)' : null,
+            !empty($specs['fuel']) ? $specs['fuel'] : null,
+            !empty($specs['price']) ? 'price band ' . $this->classifyPriceBand((float) $specs['price']) : null,
+        ]);
+
+        return trim($this->buildBoatTitleFromSpecs($specs) . ' | ' . implode(' | ', $summaryParts) . " | {$source} match {$score}");
+    }
+
+    private function extractDescriptionExamplesFromYacht(Yacht $yacht): array
+    {
+        $title = $this->buildBoatTitleFromSpecs($yacht->toArray());
+        $examples = [];
+
+        foreach ([
+            'short_description_nl' => 'nl',
+            'short_description_en' => 'en',
+            'short_description_de' => 'de',
+        ] as $field => $lang) {
+            $text = trim(strip_tags((string) $yacht->{$field}));
+            if (mb_strlen($text) < 120) {
+                continue;
+            }
+
+            $examples[] = [
+                'boat' => $title,
+                'lang' => $lang,
+                'text' => mb_substr($text, 0, 1500),
+            ];
+        }
+
+        return $examples;
+    }
+
+    private function dedupeDescriptionExamples(array $examples, int $limit): array
+    {
+        $seen = [];
+        $deduped = [];
+
+        foreach ($examples as $example) {
+            $key = ($example['boat'] ?? '') . '|' . ($example['lang'] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $deduped[] = $example;
+
+            if (count($deduped) >= $limit) {
+                break;
+            }
+        }
+
+        return $deduped;
+    }
+
+    private function buildBoatTitleFromSpecs(array $specs): string
+    {
+        $parts = [];
+        foreach ([$specs['manufacturer'] ?? null, $specs['model'] ?? null] as $part) {
+            if ($part) {
+                $parts[] = trim((string) $part);
+            }
+        }
+
+        $boatName = trim((string) ($specs['boat_name'] ?? ''));
+        if ($boatName !== '' && !in_array($boatName, $parts, true)) {
+            $parts[] = $boatName;
+        }
+
+        if (!empty($specs['year'])) {
+            $parts[] = '(' . $specs['year'] . ')';
+        }
+
+        return trim(implode(' ', array_filter($parts))) ?: 'Unnamed yacht';
+    }
+
+    private function classifyPriceBand(float $price): string
+    {
+        if ($price < 25000) {
+            return 'entry';
+        }
+        if ($price < 75000) {
+            return 'mid-range';
+        }
+        if ($price < 200000) {
+            return 'premium';
+        }
+
+        return 'luxury';
     }
 
     /**
@@ -2849,5 +4211,99 @@ PROMPT;
         }
 
         return true;
+    }
+
+    private function prepareGeminiVisionPayload(Request $request, string $apiKey): ?array
+    {
+        $visionImages = [];
+        $maxVisionImages = 5; // Reduced for speed in parallel track
+        
+        // 1. Get images from DB if yacht_id provided
+        if ($request->has('yacht_id')) {
+            $yacht = \App\Models\Yacht::find($request->yacht_id);
+            if ($yacht) {
+                $images = $yacht->images()->orderBy('sort_order')->limit($maxVisionImages)->get();
+                foreach ($images as $img) {
+                    $path = $this->resolveStoredImagePath($img);
+                    if ($path && file_exists($path)) {
+                        $visionImages[] = [
+                            'mime_type' => mime_content_type($path) ?: 'image/jpeg',
+                            'data' => base64_encode(file_get_contents($path))
+                        ];
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback to uploaded images if needed
+        if (count($visionImages) < $maxVisionImages && $request->hasFile('images')) {
+            foreach (array_slice($request->file('images'), 0, $maxVisionImages - count($visionImages)) as $image) {
+                $visionImages[] = [
+                    'mime_type' => $image->getMimeType(),
+                    'data' => base64_encode(file_get_contents($image->getRealPath()))
+                ];
+            }
+        }
+
+        if (empty($visionImages)) return null;
+
+        $model = 'gemini-1.5-flash';
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        
+        $parts = [];
+        $parts[] = ['text' => $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text')];
+        foreach ($visionImages as $img) {
+            $parts[] = [
+                'inline_data' => [
+                    'mime_type' => $img['mime_type'],
+                    'data' => $img['data']
+                ]
+            ];
+        }
+
+        return [
+            'url' => $url,
+            'headers' => ['Content-Type' => 'application/json'],
+            'body' => ['contents' => [['parts' => $parts]]],
+            'timeout' => 50,
+            'image_count' => count($visionImages)
+        ];
+    }
+
+    private function getOpenAiEnrichmentPrompt(string $hintText): string
+    {
+        return "You are a marine data expert. Extract boat specifications from the following text into JSON format. " .
+               "FIELDS TO EXTRACT: manufacturer, model, boat_type, year, price, loa, beam, draft, cabins, berths, fuel, engine_manufacturer, hull_construction.\n\nTEXT: " . $hintText;
+    }
+
+    private function mergeConsensusValue(string $field, $value, float $confidence, string $source, array &$formValues, array &$fieldConfidence, array &$fieldSources, array &$needsConfirmation): void
+    {
+        if ($value === null || $value === '') return;
+
+        $existingValue = $formValues[$field] ?? null;
+        $existingConf = (float) ($fieldConfidence[$field] ?? 0.0);
+
+        if ($existingValue === null || $existingValue === '') {
+            $formValues[$field] = $value;
+            $fieldConfidence[$field] = $confidence;
+            $fieldSources[$field] = $source;
+            return;
+        }
+
+        if ((string) $existingValue !== (string) $value) {
+            if ($confidence > $existingConf + 0.10) {
+                $formValues[$field] = $value;
+                $fieldConfidence[$field] = $confidence;
+                $fieldSources[$field] = $source . '_override';
+                $needsConfirmation[] = $field;
+            }
+        }
+    }
+
+    private function cleanGeminiJson(string $text): string
+    {
+        $text = preg_replace('/```json\s*|\s*```/', '', $text);
+        $text = trim($text);
+        return $text;
     }
 }

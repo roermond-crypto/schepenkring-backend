@@ -86,6 +86,21 @@ Route::prefix('public/conversations/{conversationId}')->group(function () {
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
 });
 
+// ── Image Pipeline ──────────
+Route::prefix('yachts/{yachtId}/images')->group(function () {
+    Route::post('/upload', [ImagePipelineController::class, 'upload']);
+    Route::get('/', [ImagePipelineController::class, 'index']);
+    Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
+    Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
+    Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
+    Route::post('/reorder', [ImagePipelineController::class, 'reorder']);
+    Route::post('/auto-classify', [ImagePipelineController::class, 'autoClassify']);
+    Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
+});
+Route::get('yachts/{yachtId}/fields/{fieldName}/history', [\App\Http\Controllers\Api\YachtFieldHistoryController::class, 'show']);
+Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
+Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
+
 // AI pipeline
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
@@ -332,9 +347,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('harbors', [AdminHarborController::class, 'index']);
     Route::post('harbors', [AdminHarborController::class, 'store']);
     Route::get('harbors/performance', [AdminHarborController::class, 'performance']);
-    Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
     Route::patch('harbors/{harbor}', [AdminHarborController::class, 'update']);
     Route::delete('harbors/{harbor}', [AdminHarborController::class, 'destroy']);
+    Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
+    Route::get('locations', [AdminHarborController::class, 'index']);
+    Route::post('locations', [AdminHarborController::class, 'store']);
+    Route::patch('locations/{harbor}', [AdminHarborController::class, 'update']);
+    Route::delete('locations/{harbor}', [AdminHarborController::class, 'destroy']);
+    Route::get('locations/{harbor}', [AdminHarborController::class, 'show']);
 
     // Users
     Route::post('users', [AdminUserController::class, 'store']);
@@ -354,6 +374,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // Audit
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
+    Route::get('boat-audit', [\App\Http\Controllers\Api\Admin\BoatAuditController::class, 'index']);
 
     // Copilot admin
     Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);

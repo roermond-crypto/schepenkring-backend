@@ -17,9 +17,10 @@ class YachtshiftImportService
      * Imports boats directly from a Yachtshift XML feed into the Yachts table as current stock.
      * 
      * @param string $url The XML feed URL
+     * @param int|null $locationId The location ID to associate with the imported boats
      * @return array Result summary with imported, updated, and error counts
      */
-    public function importFromUrl(string $url): array
+    public function importFromUrl(string $url, ?int $locationId = null): array
     {
         // Increase memory and time limit for large XML files and image downloads
         ini_set('memory_limit', '512M');
@@ -80,10 +81,9 @@ class YachtshiftImportService
 
                     // Status
                     $xmlStatus = (string) ($node->attributes()['status'] ?? '');
-                    if (strtolower($xmlStatus) !== 'available') {
-                        continue;
-                    }
-                    $dbStatus = 'For Sale';
+                    
+                    // Removed 'available' filter to import all boats (sold, etc.)
+                    $dbStatus = (strtolower($xmlStatus) === 'available') ? 'For Sale' : 'sold';
 
                     $getFeature = function($section, $name) use ($bf) {
                         if (!$bf) return null;
@@ -196,12 +196,15 @@ class YachtshiftImportService
                             $yacht = new Yacht();
                             $yacht->vessel_id = $vesselId;
                             $yacht->user_id = $adminId;
+                            $yacht->location_id = $locationId;
                         }
 
                         // Core fields
                         $yacht->boat_name = $boatName;
                         $yacht->manufacturer = $manufacturer;
                         $yacht->model = $modelName;
+                        $yacht->source = 'yachtshift';
+                        $yacht->source_identifier = $ref;
                         $yacht->boat_type = $features ? trim((string) $features->boat_type) : null;
                         $yacht->boat_category = $features ? trim((string) ($features->boat_category ?? '')) : null;
                         $yacht->new_or_used = $features ? trim((string) ($features->new_or_used ?? '')) : null;
@@ -211,6 +214,10 @@ class YachtshiftImportService
                         $yacht->vessel_lying = $vesselLying;
                         $yacht->short_description_nl = $descNl;
                         $yacht->min_bid_amount = $priceEur ? $priceEur * 0.9 : 0;
+                        $publicSlug = Str::slug($boatName ?: trim("{$manufacturer} {$modelName}"));
+                        $yacht->external_url = $publicSlug !== ''
+                            ? "https://www.schepenkring.nl/aanbod-boten/{$ref}/{$publicSlug}/"
+                            : "https://www.schepenkring.nl/aanbod-boten/{$ref}/";
                         
                         // Handle Main Image (only for new or if no main image)
                         $mainImageUrl = count($images) > 0 ? $images[0] : null;
