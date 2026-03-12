@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 
 use App\Models\Yacht;
+use App\Models\YachtAiExtraction;
+use App\Models\YachtImage;
 use App\Services\AiCorrectionLoggingService;
 use App\Services\PineconeMatcherService;
 use Illuminate\Http\Request;
@@ -14,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 
 class AiPipelineController extends Controller
 {
+    private const CACHE_POLICY_VERSION = 2;
+
     /**
      * Flat Step 2 schema keys returned by the extraction pipeline.
      */
@@ -152,6 +156,20 @@ class AiPipelineController extends Controller
         }
 
         $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
+        $hintText = trim((string) $request->input('hint_text', ''));
+        $hintText = $hintText !== '' ? $hintText : null;
+        $requestSignature = $this->buildInputSignature($request, $hintText, $speedMode);
+        $cachedExtraction = $this->findCachedExtraction(
+            $request->integer('yacht_id') ?: null,
+            $hintText,
+            $speedMode,
+            $requestSignature
+        );
+
+        if ($cachedExtraction) {
+            return $this->buildCachedExtractionResponse($cachedExtraction, $requestSignature);
+        }
+
         $stagesRun = [];
         $formValues = $this->buildEmptyFormValues();
         $fieldConfidence = [];
@@ -161,7 +179,6 @@ class AiPipelineController extends Controller
         $visionImagesUsed = 0;
 
         // ─── STAGE 0: Local Text Parsing (always runs, no API) ────────
-        $hintText = $request->input('hint_text');
         if (!empty($hintText)) {
             $localParsed = $this->runLocalTextParse($hintText);
             if (!empty($localParsed)) {
@@ -311,25 +328,40 @@ class AiPipelineController extends Controller
         // ─── FAST PATH & HIGH-CONFIDENCE SKIP ────────────────────────
         $pineconeFieldCount = count($feedResult['consensus_values'] ?? []);
         $pineconeMatchCount = count($feedResult['top_matches'] ?? []);
+        $databaseTopScore = (int) ($databaseResult['top_matches'][0]['score'] ?? 0);
+        $feedTopScore = (int) ($feedResult['top_matches'][0]['score'] ?? 0);
+        $strongCatalogMatch = max($databaseTopScore, $feedTopScore) >= 92;
         $hasAllRequired = empty($missingRequired);
         $highConfidence = $overallConfidence >= 0.90; // Higher threshold for auto-skip
         $visionRan = in_array('gemini_vision', $stagesRun, true);
-        $filledFieldCount = count(array_filter($formValues, fn($v) => $v !== null && $v !== '' && $v !== 'unknown'));
+        $filledFieldCount = $this->countFilledFields($formValues);
+        $fastPathReason = $speedMode === 'fast'
+            ? 'Fast mode requested.'
+            : ($strongCatalogMatch
+                ? 'Strong catalog match allowed skipping slow validation.'
+                : 'High confidence or Pinecone match allowed skipping slow validation.');
 
         // Decision logic: skip slow stages ONLY if:
         //   1. Vision actually ran successfully (if it failed, we NEED enrichment to compensate)
-        //   2. Speed mode is 'fast', OR high confidence + all required + pinecone match
+        //   2. Only explicit fast mode may bypass enrichment stages.
         // When vision fails, always run the full slow path — matching old project behavior.
         $useFastPath = $visionRan && (
             $speedMode === 'fast'
-            || ($speedMode !== 'deep' && $hasAllRequired && $highConfidence && $pineconeMatchCount >= 1 && $filledFieldCount >= 20)
+            && $hasAllRequired
+            && $filledFieldCount >= 18
+            && (
+                ($highConfidence && $pineconeMatchCount >= 1)
+                || $strongCatalogMatch
+            )
         );
 
         if ($useFastPath) {
             Log::info('[AI Pipeline] OPTIMIZATION: Skipping slow validation stages', [
                 'speed_mode' => $speedMode,
                 'overall_confidence' => $overallConfidence,
-                'pinecone_fields' => $pineconeFieldCount
+                'pinecone_fields' => $pineconeFieldCount,
+                'database_top_score' => $databaseTopScore,
+                'feed_top_score' => $feedTopScore,
             ]);
             $stagesRun[] = 'confidence_optimization_skip';
 
@@ -353,12 +385,14 @@ class AiPipelineController extends Controller
 
             $pineconeResult = ['similar_boats' => [], 'anomalies' => [], 'anomaly_fields' => []];
             $removedFields = [];
+            $needsConfirmation = $this->collectNeedsConfirmationFields($formValues, $fieldConfidence, $needsConfirmation);
+
             $mergeResult = [
                 'form_values'        => $formValues,
                 'field_confidence'   => $fieldConfidence,
                 'removed_fields'     => [],
-                'needs_confirmation' => [],
-                'validation_notes'   => 'Optimized flow: High confidence or Pinecone match allowed skipping slow validation.',
+                'needs_confirmation' => $needsConfirmation,
+                'validation_notes'   => 'Optimized flow: ' . $fastPathReason,
             ];
 
         } else {
@@ -380,9 +414,17 @@ class AiPipelineController extends Controller
                 }
             }
 
+            $missingRequiredAfterGemini = $this->findMissingRequired($formValues);
+
             // Try OpenAI World Knowledge for remaining
             $openAiKeyEnv = config('services.openai.key');
-            if (!empty($openAiKeyEnv)) {
+            $shouldRunOpenAiWorldKnowledge = !empty($openAiKeyEnv)
+                && (
+                    $speedMode !== 'fast'
+                    || !in_array('openai_enrich_parallel', $stagesRun, true)
+                    || !empty($missingRequiredAfterGemini)
+                );
+            if ($shouldRunOpenAiWorldKnowledge) {
                 $openaiEnriched = $this->runOpenAiEnrichment($formValues, $fieldConfidence, $openAiKeyEnv, []);
                 if (!empty($openaiEnriched)) {
                     $stagesRun[] = 'openai_world_knowledge_enrichment';
@@ -399,23 +441,49 @@ class AiPipelineController extends Controller
                 }
             }
 
-            // Cross-Validation
-            $pineconeResult = $this->runPineconeCrossValidation($formValues, $fieldConfidence);
-            if (!empty($pineconeResult['similar_boats'])) $stagesRun[] = 'pinecone_cross_validation';
+            $postEnrichmentOverallConfidence = $this->computeOverallConfidence($fieldConfidence);
+            $postEnrichmentMissingRequired = $this->findMissingRequired($formValues);
+            $postEnrichmentFilledFieldCount = $this->countFilledFields($formValues);
+            $canSkipDeepValidation = $speedMode !== 'deep'
+                && empty($postEnrichmentMissingRequired)
+                && $postEnrichmentOverallConfidence >= 0.80
+                && $postEnrichmentFilledFieldCount >= 18
+                && ($strongCatalogMatch || ($pineconeMatchCount >= 1 && $databaseTopScore >= 85));
 
-            // ChatGPT Validation
-            $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $databaseResult, $request);
-            if (!empty($validationResult['confirmed_fields']) || !empty($validationResult['removed_fields'])) {
-                $stagesRun[] = 'chatgpt_validation';
+            if ($canSkipDeepValidation) {
+                $stagesRun[] = 'post_enrichment_validation_skip';
+                $pineconeResult = ['similar_boats' => [], 'anomalies' => [], 'anomaly_fields' => []];
+                $removedFields = [];
+                $needsConfirmation = $this->collectNeedsConfirmationFields($formValues, $fieldConfidence, $needsConfirmation);
+                $mergeResult = [
+                    'form_values'        => $formValues,
+                    'field_confidence'   => $fieldConfidence,
+                    'removed_fields'     => [],
+                    'needs_confirmation' => $needsConfirmation,
+                    'validation_notes'   => 'Optimized flow: skipped deep validation after enrichment because catalog evidence was already strong.',
+                ];
+                $overallConfidence = $postEnrichmentOverallConfidence;
+            } else {
+                // Cross-Validation
+                $pineconeResult = $this->runPineconeCrossValidation($formValues, $fieldConfidence);
+                if (!empty($pineconeResult['similar_boats'])) {
+                    $stagesRun[] = 'pinecone_cross_validation';
+                }
+
+                // ChatGPT Validation
+                $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $databaseResult, $request);
+                if (!empty($validationResult['confirmed_fields']) || !empty($validationResult['removed_fields'])) {
+                    $stagesRun[] = 'chatgpt_validation';
+                }
+
+                // Merge
+                $mergeResult = $this->mergeWithConfidence($formValues, $fieldConfidence, $validationResult, $pineconeResult);
+                $formValues = $mergeResult['form_values'];
+                $fieldConfidence = $mergeResult['field_confidence'];
+                $removedFields = $mergeResult['removed_fields'];
+                $needsConfirmation = array_values(array_unique(array_merge($needsConfirmation, $mergeResult['needs_confirmation'])));
+                $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
             }
-
-            // Merge
-            $mergeResult = $this->mergeWithConfidence($formValues, $fieldConfidence, $validationResult, $pineconeResult);
-            $formValues      = $mergeResult['form_values'];
-            $fieldConfidence  = $mergeResult['field_confidence'];
-            $removedFields    = $mergeResult['removed_fields'];
-            $needsConfirmation = array_values(array_unique(array_merge($needsConfirmation, $mergeResult['needs_confirmation'])));
-            $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
         }
  // end slow path
 
@@ -449,9 +517,14 @@ class AiPipelineController extends Controller
             'similar_boats_count'     => count($pineconeResult['similar_boats']),
             'feed_matches_count'      => count($feedResult['top_matches'] ?? []),
             'database_matches_count'  => count($databaseResult['top_matches'] ?? []),
+            'filled_fields_count'     => $this->countFilledFields($formValues),
+            'empty_fields_count'      => $this->countEmptyFields($formValues),
             'speed_mode'              => $speedMode,
             'vision_images_used'      => $visionImagesUsed,
             'model_name'              => 'gemini-2.5-flash',
+            'cache_hit'               => false,
+            'cache_policy_version'    => self::CACHE_POLICY_VERSION,
+            'input_signature'         => $requestSignature,
         ];
 
         try {
@@ -474,6 +547,8 @@ class AiPipelineController extends Controller
                     'stages_run' => $stagesRun,
                     'warnings' => $warnings,
                     'speed_mode' => $speedMode,
+                    'cache_policy_version' => self::CACHE_POLICY_VERSION,
+                    'input_signature' => $requestSignature,
                 ],
                 'extracted_at' => now(),
             ]);
@@ -2292,6 +2367,172 @@ CONTEXT,
             'needs_confirmation' => $needsConfirmation,
             'validation_notes'   => $validationResult['notes'] ?? '',
         ];
+    }
+
+    private function buildInputSignature(Request $request, ?string $hintText, string $speedMode): ?string
+    {
+        $payload = [
+            'speed_mode' => $speedMode,
+            'hint_text' => $hintText,
+        ];
+
+        $yachtId = $request->integer('yacht_id');
+        if ($yachtId) {
+            $images = YachtImage::query()
+                ->where('yacht_id', $yachtId)
+                ->whereIn('status', ['approved', 'ready_for_review', 'processing', 'uploaded'])
+                ->orderBy('sort_order')
+                ->get([
+                    'id',
+                    'status',
+                    'sort_order',
+                    'updated_at',
+                    'thumb_url',
+                    'optimized_master_url',
+                    'url',
+                    'original_kept_url',
+                    'original_temp_url',
+                ]);
+
+            if ($images->isEmpty()) {
+                return null;
+            }
+
+            $payload['yacht_id'] = $yachtId;
+            $payload['images'] = $images->map(function (YachtImage $image) {
+                return [
+                    'id' => (int) $image->id,
+                    'status' => (string) $image->status,
+                    'sort_order' => (int) $image->sort_order,
+                    'updated_at' => $image->updated_at?->toISOString(),
+                    'asset' => (string) ($image->thumb_url
+                        ?: $image->optimized_master_url
+                        ?: $image->url
+                        ?: $image->original_kept_url
+                        ?: $image->original_temp_url
+                        ?: ''),
+                ];
+            })->all();
+        } elseif ($request->hasFile('images')) {
+            $files = [];
+            foreach ($request->file('images') as $image) {
+                $files[] = [
+                    'name' => $image->getClientOriginalName(),
+                    'size' => $image->getSize(),
+                    'mime_type' => $image->getMimeType(),
+                    'hash' => md5_file($image->getRealPath()),
+                ];
+            }
+
+            if (empty($files)) {
+                return null;
+            }
+
+            $payload['images'] = $files;
+        } else {
+            return null;
+        }
+
+        return hash(
+            'sha256',
+            json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: ''
+        );
+    }
+
+    private function findCachedExtraction(
+        ?int $yachtId,
+        ?string $hintText,
+        string $speedMode,
+        ?string $requestSignature
+    ): ?YachtAiExtraction {
+        if (!$yachtId || !$requestSignature) {
+            return null;
+        }
+
+        return YachtAiExtraction::query()
+            ->where('yacht_id', $yachtId)
+            ->where('status', 'completed')
+            ->where('hint_text', $hintText)
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->first(function (YachtAiExtraction $extraction) use ($speedMode, $requestSignature) {
+                $meta = is_array($extraction->meta_json) ? $extraction->meta_json : [];
+                $cachePolicyVersion = (int) ($meta['cache_policy_version'] ?? 0);
+
+                if ($cachePolicyVersion !== self::CACHE_POLICY_VERSION) {
+                    return false;
+                }
+
+                return ($meta['speed_mode'] ?? 'balanced') === $speedMode
+                    && ($meta['input_signature'] ?? null) === $requestSignature;
+            });
+    }
+
+    private function buildCachedExtractionResponse(
+        YachtAiExtraction $cachedExtraction,
+        ?string $requestSignature
+    ): JsonResponse {
+        $rawOutput = is_array($cachedExtraction->raw_output_json) ? $cachedExtraction->raw_output_json : [];
+        $step2FormValues = $rawOutput['step2_form_values'] ?? $cachedExtraction->normalized_fields_json ?? [];
+        $meta = is_array($rawOutput['meta'] ?? null) ? $rawOutput['meta'] : [];
+
+        $meta['ai_session_id'] = $cachedExtraction->session_id;
+        $meta['cache_hit'] = true;
+        $meta['cached_at'] = $cachedExtraction->extracted_at?->toISOString();
+        $meta['input_signature'] = $requestSignature;
+        $meta['cache_policy_version'] = self::CACHE_POLICY_VERSION;
+        $meta['filled_fields_count'] = $meta['filled_fields_count'] ?? $this->countFilledFields($step2FormValues);
+        $meta['empty_fields_count'] = $meta['empty_fields_count'] ?? $this->countEmptyFields($step2FormValues);
+        $meta['stages_run'] = array_values(array_unique(array_merge(
+            $meta['stages_run'] ?? [],
+            ['cached_response']
+        )));
+
+        return response()->json([
+            'success' => true,
+            'step2_form_values' => $step2FormValues,
+            'meta' => $meta,
+        ]);
+    }
+
+    private function collectNeedsConfirmationFields(
+        array $formValues,
+        array $fieldConfidence,
+        array $needsConfirmation = []
+    ): array {
+        foreach ($formValues as $field => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            $confidence = (float) ($fieldConfidence[$field] ?? 0.5);
+            if ($confidence < 0.85) {
+                $needsConfirmation[] = $field;
+            }
+        }
+
+        return array_values(array_unique($needsConfirmation));
+    }
+
+    private function countFilledFields(array $formValues): int
+    {
+        return count(array_filter($formValues, static function ($value) {
+            if ($value === null || $value === '') {
+                return false;
+            }
+
+            if (is_string($value) && strtolower(trim($value)) === 'unknown') {
+                return false;
+            }
+
+            return true;
+        }));
+    }
+
+    private function countEmptyFields(array $formValues): int
+    {
+        return count(self::STEP2_SCHEMA_FIELDS) - $this->countFilledFields($formValues);
     }
 
     private function buildEmptyFormValues(): array
