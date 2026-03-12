@@ -212,6 +212,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Copilot
     Route::post('copilot/resolve', [CopilotController::class, 'resolve']);
     Route::post('copilot/track', [CopilotController::class, 'track']);
+    Route::post('copilot/feedback', [CopilotController::class, 'feedback']);
     Route::get('copilot/audit', [CopilotAuditController::class, 'index']);
     Route::get('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'show']);
     Route::put('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'update']);

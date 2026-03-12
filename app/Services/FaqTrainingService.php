@@ -5,12 +5,15 @@ namespace App\Services;
 use App\Models\Faq;
 use App\Models\Message;
 use App\Models\User;
+use App\Support\CopilotLanguage;
 use Illuminate\Validation\ValidationException;
 
 class FaqTrainingService
 {
-    public function __construct(private CopilotMemoryService $memory)
-    {
+    public function __construct(
+        private CopilotMemoryService $memory,
+        private CopilotLanguage $language
+    ) {
     }
 
     public function upsertFaq(
@@ -19,7 +22,10 @@ class FaqTrainingService
         string $answer,
         ?string $category = null,
         ?string $sourceMessageId = null,
-        ?User $trainer = null
+        ?User $trainer = null,
+        array $attributes = [],
+        ?Faq $existingFaq = null,
+        bool $forceCreate = false
     ): Faq {
         $question = trim($question);
         $answer = trim($answer);
@@ -30,18 +36,46 @@ class FaqTrainingService
             ]);
         }
 
-        $faq = Faq::query()->firstOrNew([
-            'location_id' => $locationId,
-            'question' => $question,
-        ]);
+        if ($existingFaq) {
+            $faq = $existingFaq;
+        } elseif ($forceCreate) {
+            $faq = new Faq();
+        } else {
+            $faq = Faq::query()->firstOrNew([
+                'location_id' => $locationId,
+                'question' => $question,
+            ]);
+        }
 
+        $normalizedTags = $this->normalizeTags($attributes['tags'] ?? $faq->tags ?? []);
+        $language = $this->language->normalize($attributes['language'] ?? null)
+            ?? $this->language->detectFromText($question . ' ' . $answer)
+            ?? $this->language->normalize($trainer?->locale)
+            ?? $faq->language
+            ?? 'en';
+
+        $faq->location_id = $locationId;
+        $faq->question = $question;
         $faq->answer = $answer;
         $faq->category = $category ?: ($faq->category ?: 'Chat');
+        $faq->language = $language;
+        $faq->department = $this->normalizeNullableString($attributes['department'] ?? $faq->department);
+        $faq->visibility = $this->normalizeVisibility($attributes['visibility'] ?? $faq->visibility);
+        $faq->brand = $this->normalizeNullableString($attributes['brand'] ?? $faq->brand);
+        $faq->model = $this->normalizeNullableString($attributes['model'] ?? $faq->model);
+        $faq->tags = $normalizedTags === [] ? null : $normalizedTags;
+        $faq->source_type = $this->normalizeNullableString($attributes['source_type'] ?? $faq->source_type) ?: 'faq';
+        $faq->deprecated_at = null;
+        $faq->superseded_by_faq_id = null;
         $faq->source_message_id = $sourceMessageId;
         $faq->trained_by_user_id = $trainer?->id;
         $faq->save();
 
-        $this->memory->rememberFaq($faq);
+        if ($this->memory->rememberFaq($faq)) {
+            $faq->forceFill([
+                'last_indexed_at' => now(),
+            ])->saveQuietly();
+        }
 
         return $faq->fresh();
     }
@@ -119,9 +153,60 @@ class FaqTrainingService
         ];
     }
 
+    public function deprecateFaq(Faq $faq, ?Faq $replacement = null): void
+    {
+        $faq->forceFill([
+            'deprecated_at' => now(),
+            'superseded_by_faq_id' => $replacement?->id,
+        ])->saveQuietly();
+
+        $this->memory->forgetFaq($faq);
+    }
+
     public function deleteFaq(Faq $faq): void
     {
         $this->memory->forgetFaq($faq);
         $faq->delete();
+    }
+
+    /**
+     * @param  array<int, mixed>|mixed  $tags
+     * @return array<int, string>
+     */
+    private function normalizeTags($tags): array
+    {
+        if (! is_array($tags)) {
+            return [];
+        }
+
+        $normalized = array_values(array_unique(array_filter(array_map(function ($tag) {
+            if (! is_string($tag)) {
+                return null;
+            }
+
+            $tag = trim($tag);
+
+            return $tag === '' ? null : $tag;
+        }, $tags))));
+
+        return array_slice($normalized, 0, 20);
+    }
+
+    private function normalizeNullableString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
+    }
+
+    private function normalizeVisibility(mixed $value): string
+    {
+        $value = $this->normalizeNullableString($value) ?? 'internal';
+
+        return in_array($value, ['internal', 'staff', 'public'], true) ? $value : 'internal';
     }
 }

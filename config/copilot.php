@@ -10,6 +10,15 @@ return [
     'ai_model' => env('COPILOT_AI_MODEL', 'gpt-4o-mini'),
     'ai_provider' => env('COPILOT_AI_PROVIDER', 'openai'),
     'answer_ai_enabled' => (bool) env('COPILOT_ANSWER_AI_ENABLED', false),
+    'knowledge' => [
+        'top_k' => (int) env('COPILOT_KNOWLEDGE_TOP_K', 8),
+        'max_sources' => (int) env('COPILOT_KNOWLEDGE_MAX_SOURCES', 3),
+        'strong_match_score' => (float) env('COPILOT_KNOWLEDGE_STRONG_SCORE', 0.82),
+        'merge_match_score' => (float) env('COPILOT_KNOWLEDGE_MERGE_SCORE', 0.68),
+        'minimum_match_score' => (float) env('COPILOT_KNOWLEDGE_MIN_SCORE', 0.52),
+        'strong_margin' => (float) env('COPILOT_KNOWLEDGE_STRONG_MARGIN', 0.05),
+        'db_fallback_limit' => (int) env('COPILOT_KNOWLEDGE_DB_FALLBACK_LIMIT', 5),
+    ],
     'learning' => [
         'enabled' => (bool) env('COPILOT_LEARNING_ENABLED', true),
         'min_occurrences' => (int) env('COPILOT_LEARNING_MIN_OCCURRENCES', 3),

@@ -76,6 +76,18 @@ class CopilotLanguage
                 'fr' => 'Quelle action vouliez-vous dire ?',
                 default => 'Which action did you mean?',
             },
+            'knowledge_low_confidence' => match ($language) {
+                'nl' => 'Dit lijkt het dichtstbijzijnde kennisbankantwoord, maar de betrouwbaarheid is laag. Controleer het voordat u erop vertrouwt.',
+                'de' => 'Dies scheint die naechstliegende Wissensdatenbank-Antwort zu sein, aber die Zuverlaessigkeit ist niedrig. Bitte pruefen Sie sie vor der Verwendung.',
+                'fr' => 'Ceci semble etre la reponse la plus proche de la base de connaissances, mais la confiance est faible. Veuillez la verifier avant de vous y fier.',
+                default => 'This looks like the closest knowledge-base answer, but confidence is low. Please verify it before relying on it.',
+            },
+            'knowledge_not_found' => match ($language) {
+                'nl' => 'Ik kon nog geen betrouwbaar antwoord vinden in de kennisbank. Voeg een FAQ toe of vraag om een handmatige review.',
+                'de' => 'Ich konnte noch keine verlaessliche Antwort in der Wissensdatenbank finden. Fuegen Sie einen FAQ-Eintrag hinzu oder bitten Sie um eine manuelle Pruefung.',
+                'fr' => 'Je n ai pas encore trouve de reponse fiable dans la base de connaissances. Ajoutez une FAQ ou demandez une verification manuelle.',
+                default => 'I could not find a trusted answer in the knowledge base yet. Please add an FAQ entry or request a manual review.',
+            },
             default => '',
         };
     }

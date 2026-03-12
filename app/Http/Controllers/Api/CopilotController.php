@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\CopilotAuditEvent;
 use App\Http\Controllers\Controller;
+use App\Services\CopilotFeedbackService;
 use App\Services\CopilotLearningService;
 use App\Services\CopilotResolverService;
 use App\Support\CopilotLanguage;
@@ -107,6 +108,38 @@ class CopilotController extends Controller
         return response()->json(['message' => 'tracked']);
     }
 
+    public function feedback(Request $request, CopilotFeedbackService $feedback)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+        if (! $user->isStaff()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'audit_event_id' => 'nullable|integer|exists:copilot_audit_events,id',
+            'faq_id' => 'nullable|integer|exists:faqs,id',
+            'supersede_faq_id' => 'nullable|integer|exists:faqs,id',
+            'location_id' => 'nullable|integer|exists:locations,id',
+            'question' => 'nullable|string|max:255',
+            'wrong_answer' => 'nullable|string',
+            'corrected_answer' => 'required|string',
+            'category' => 'nullable|string|max:100',
+            'language' => 'nullable|string|max:5',
+            'department' => 'nullable|string|max:100',
+            'visibility' => 'nullable|string|in:internal,staff,public',
+            'brand' => 'nullable|string|max:100',
+            'model' => 'nullable|string|max:100',
+            'tags' => 'nullable|array',
+            'tags.*' => 'string|max:50',
+            'source_type' => 'nullable|string|max:40',
+        ]);
+
+        return response()->json($feedback->capture($user, $validated), 201);
+    }
+
     private function logResolveEvent(Request $request, int $userId, string $input, array $response): void
     {
         $actions = $response['actions'] ?? [];
@@ -129,12 +162,14 @@ class CopilotController extends Controller
             'matching_detail' => [
                 'search_results' => $results,
                 'answers' => $answers,
+                'knowledge_trace' => $response['knowledge_trace'] ?? null,
+                'answer_strategy' => $response['answer_strategy'] ?? null,
                 'clarifying_question' => $response['clarifying_question'] ?? null,
             ],
             'deeplink_returned' => $actions[0]['deeplink'] ?? null,
             'confidence' => $response['confidence'] ?? null,
-            'status' => empty($actions) ? 'no_match' : 'resolved',
-            'failure_reason' => empty($actions) ? 'no_action' : null,
+            'status' => empty($actions) && empty($answers) ? 'no_match' : 'resolved',
+            'failure_reason' => empty($actions) && empty($answers) ? 'no_action' : null,
             'request_id' => $request->header('X-Request-Id'),
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),

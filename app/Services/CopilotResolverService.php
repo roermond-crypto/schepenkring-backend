@@ -17,6 +17,7 @@ class CopilotResolverService
         private CopilotFuzzyMatcher $matcher,
         private CopilotAiRouterService $aiRouter,
         private CopilotFaqService $faqService,
+        private CopilotLanguage $language,
         private LocationAccessService $locationAccess,
         private PineconeMatcherService $pineconeMatcher
     ) {
@@ -71,7 +72,9 @@ class CopilotResolverService
         $results = $this->searchService->search($input, $user, (int) config('copilot.fuzzy_limit', 8));
         $results = $this->attachDeeplinks($results);
 
-        $answers = $this->buildAnswers($input, $this->faqLocationScope($user, $context));
+        $knowledge = $this->buildAnswers($input, $this->faqLocationScope($user, $context), $context);
+        $answers = $knowledge['answers'];
+        $confidence = max($confidence, (float) ($knowledge['confidence'] ?? 0.0));
 
         if (empty($actions) && empty($results) && empty($answers)) {
             $clarifying = $clarifying ?: $this->language->translate('clarify_open_or_search', (string) $language);
@@ -87,6 +90,8 @@ class CopilotResolverService
             'needs_confirmation' => $needsConfirmation,
             'confidence' => round($confidence, 3),
             'source' => $source,
+            'answer_strategy' => $knowledge['strategy'] ?? null,
+            'knowledge_trace' => $knowledge['trace'] ?? null,
         ];
     }
 
@@ -447,24 +452,30 @@ class CopilotResolverService
 
     /**
      * @param  int|array<int>|null  $locationScope
+     * @return array{answers:array<int, array<string, mixed>>,trace:array<string, mixed>|null,confidence:float,strategy:string|null}
      */
-    private function buildAnswers(string $input, int|array|null $locationScope = null): array
+    private function buildAnswers(string $input, int|array|null $locationScope = null, array $context = []): array
     {
-        if (!$this->looksLikeQuestion($input)) {
-            return [];
-        }
-
-        $answers = [];
-        $faqItems = $this->faqService->search($input, $locationScope, 2);
-
-        foreach ($faqItems as $faq) {
-            $answers[] = [
-                'question' => $faq['question'],
-                'answer' => $faq['answer'],
-                'category' => $faq['category'],
-                'actions' => $this->relatedActions($faq['question'] . ' ' . $faq['answer']),
+        if (! $this->shouldBuildAnswers($input)) {
+            return [
+                'answers' => [],
+                'trace' => null,
+                'confidence' => 0.0,
+                'strategy' => null,
             ];
         }
+
+        $knowledge = $this->faqService->answer($input, $locationScope, $context, 3);
+        $answers = array_map(function (array $answer) {
+            $answer['actions'] = $answer['actions'] ?? $this->relatedActions(
+                trim(implode(' ', array_filter([
+                    $answer['question'] ?? null,
+                    $answer['answer'] ?? null,
+                ])))
+            );
+
+            return $answer;
+        }, $knowledge['answers'] ?? []);
 
         // Add historical sales integration
         if ($this->isHistoricalQuery($input)) {
@@ -485,7 +496,14 @@ class CopilotResolverService
                             'question' => "Market Data: " . ($topMatch['manufacturer'] ?? '') . " " . ($topMatch['model'] ?? ''),
                             'answer' => implode("\n", $answerParts),
                             'category' => 'Market Intelligence',
-                            'source' => 'schepenkring_archive'
+                            'source' => 'schepenkring_archive',
+                            'source_type' => 'historical_archive',
+                            'strategy' => 'historical_reference',
+                            'confidence' => 0.65,
+                            'confidence_label' => 'medium',
+                            'used_fallback' => false,
+                            'sources' => [],
+                            'actions' => [],
                         ];
                     }
                 }
@@ -494,7 +512,12 @@ class CopilotResolverService
             }
         }
 
-        return $answers;
+        return [
+            'answers' => $answers,
+            'trace' => $knowledge['trace'] ?? null,
+            'confidence' => (float) ($knowledge['confidence'] ?? 0.0),
+            'strategy' => $knowledge['strategy'] ?? null,
+        ];
     }
 
     /**
@@ -535,6 +558,22 @@ class CopilotResolverService
     private function looksLikeQuestion(string $input): bool
     {
         return $this->language->looksLikeQuestion($input);
+    }
+
+    private function shouldBuildAnswers(string $input): bool
+    {
+        if (! $this->looksLikeQuestion($input)) {
+            return false;
+        }
+
+        $normalized = $this->matcher->normalize($input);
+
+        return preg_match('/\b(open|openen|ouvrir|oeffnen|search|zoeken|rechercher|find|vinden|chercher)\b/', $normalized) !== 1;
+    }
+
+    private function isHistoricalQuery(string $input): bool
+    {
+        return preg_match('/\b(price|sold|market|archive|historical|valuation|worth)\b/i', $input) === 1;
     }
 
     private function anyNeedsConfirmation(array $actions): bool

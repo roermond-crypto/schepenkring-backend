@@ -24,6 +24,14 @@ class FaqController extends Controller
         $validated = $request->validate([
             'location_id' => 'nullable|integer|exists:locations,id',
             'search' => 'nullable|string|max:255',
+            'language' => 'nullable|string|max:5',
+            'category' => 'nullable|string|max:100',
+            'department' => 'nullable|string|max:100',
+            'visibility' => 'nullable|string|in:internal,staff,public',
+            'brand' => 'nullable|string|max:100',
+            'model' => 'nullable|string|max:100',
+            'tag' => 'nullable|string|max:50',
+            'include_deprecated' => 'nullable|boolean',
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
@@ -35,12 +43,30 @@ class FaqController extends Controller
             $query->where('location_id', (int) $validated['location_id']);
         }
 
+        if (empty($validated['include_deprecated'])) {
+            $query->whereNull('deprecated_at');
+        }
+
+        foreach (['language', 'category', 'department', 'visibility', 'brand', 'model'] as $filter) {
+            if (! empty($validated[$filter])) {
+                $query->where($filter, $validated[$filter]);
+            }
+        }
+
+        if (! empty($validated['tag'])) {
+            $tag = trim((string) $validated['tag']);
+            $query->whereJsonContains('tags', $tag);
+        }
+
         if (! empty($validated['search'])) {
             $search = '%' . trim((string) $validated['search']) . '%';
             $query->where(function (Builder $builder) use ($search) {
                 $builder->where('question', 'like', $search)
                     ->orWhere('answer', 'like', $search)
-                    ->orWhere('category', 'like', $search);
+                    ->orWhere('category', 'like', $search)
+                    ->orWhere('department', 'like', $search)
+                    ->orWhere('brand', 'like', $search)
+                    ->orWhere('model', 'like', $search);
             });
         }
 
@@ -56,6 +82,14 @@ class FaqController extends Controller
             'question' => 'required|string|max:255',
             'answer' => 'required|string',
             'category' => 'nullable|string|max:100',
+            'language' => 'nullable|string|max:5',
+            'department' => 'nullable|string|max:100',
+            'visibility' => 'nullable|string|in:internal,staff,public',
+            'brand' => 'nullable|string|max:100',
+            'model' => 'nullable|string|max:100',
+            'tags' => 'nullable|array',
+            'tags.*' => 'string|max:50',
+            'source_type' => 'nullable|string|max:40',
         ]);
 
         $this->authorizeLocation($user, (int) $validated['location_id']);
@@ -66,7 +100,8 @@ class FaqController extends Controller
             $validated['answer'],
             $validated['category'] ?? null,
             null,
-            $user
+            $user,
+            $validated
         );
 
         return response()->json($faq, 201);
@@ -82,6 +117,14 @@ class FaqController extends Controller
             'question' => 'sometimes|required|string|max:255',
             'answer' => 'sometimes|required|string',
             'category' => 'sometimes|nullable|string|max:100',
+            'language' => 'sometimes|nullable|string|max:5',
+            'department' => 'sometimes|nullable|string|max:100',
+            'visibility' => 'sometimes|nullable|string|in:internal,staff,public',
+            'brand' => 'sometimes|nullable|string|max:100',
+            'model' => 'sometimes|nullable|string|max:100',
+            'tags' => 'sometimes|nullable|array',
+            'tags.*' => 'string|max:50',
+            'source_type' => 'sometimes|nullable|string|max:40',
         ]);
 
         $faq = $this->training->upsertFaq(
@@ -90,7 +133,9 @@ class FaqController extends Controller
             $validated['answer'] ?? $faq->answer,
             $validated['category'] ?? $faq->category,
             $faq->source_message_id,
-            $user
+            $user,
+            $validated,
+            $faq
         );
 
         return response()->json($faq);
