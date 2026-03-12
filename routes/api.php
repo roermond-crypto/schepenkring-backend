@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
 use App\Http\Controllers\Api\FaqController;
+use App\Http\Controllers\Api\FaqKnowledgeController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
@@ -251,6 +252,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Location FAQ training
     Route::get('faqs', [FaqController::class, 'index']);
     Route::post('faqs', [FaqController::class, 'store']);
+    Route::get('faqs/knowledge/documents', [FaqKnowledgeController::class, 'documents']);
+    Route::post('faqs/knowledge/documents', [FaqKnowledgeController::class, 'upload']);
+    Route::get('faqs/knowledge/items', [FaqKnowledgeController::class, 'items']);
+    Route::patch('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'review']);
+    Route::delete('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'destroy']);
+    Route::get('faqs/knowledge/analytics', [FaqKnowledgeController::class, 'analytics']);
     Route::put('faqs/{faq}', [FaqController::class, 'update']);
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
