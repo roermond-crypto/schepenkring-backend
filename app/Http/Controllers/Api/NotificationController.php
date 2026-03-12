@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\NotificationCountUpdated;
+use App\Events\NotificationRead;
 use App\Http\Controllers\Controller;
-use App\Models\AppNotification;
+use App\Models\UserNotification;
 use Illuminate\Http\Request;
 
 class NotificationController extends Controller
@@ -13,13 +15,22 @@ class NotificationController extends Controller
      */
     public function index(Request $request)
     {
-        $query = $request->user()->notifications()->orderByDesc('created_at');
+        $query = $request->user()
+            ->userNotifications()
+            ->with('notification')
+            ->orderByDesc('created_at');
 
         if ($request->boolean('unread_only')) {
             $query->unread();
         }
 
-        return $query->paginate($request->input('per_page', 25));
+        if ($request->filled('type')) {
+            $query->whereHas('notification', function ($notificationQuery) use ($request) {
+                $notificationQuery->where('type', $request->input('type'));
+            });
+        }
+
+        return $query->paginate((int) $request->input('per_page', 25));
     }
 
     /**
@@ -28,7 +39,7 @@ class NotificationController extends Controller
     public function unreadCount(Request $request)
     {
         return response()->json([
-            'count' => $request->user()->notifications()->unread()->count(),
+            'count' => $request->user()->userNotifications()->unread()->count(),
         ]);
     }
 
@@ -37,10 +48,21 @@ class NotificationController extends Controller
      */
     public function markAsRead(Request $request, int $id)
     {
-        $notification = $request->user()->notifications()->findOrFail($id);
-        $notification->markAsRead();
+        $userNotification = $request->user()
+            ->userNotifications()
+            ->with('notification')
+            ->findOrFail($id);
 
-        return response()->json(['success' => true]);
+        if (! $userNotification->read) {
+            $userNotification->markAsRead();
+
+            $this->broadcastReadUpdate($request, $userNotification);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notification marked as read',
+        ]);
     }
 
     /**
@@ -48,8 +70,25 @@ class NotificationController extends Controller
      */
     public function markAllAsRead(Request $request)
     {
-        $request->user()->notifications()->unread()->update(['read_at' => now()]);
+        $request->user()->userNotifications()->unread()->update([
+            'read' => true,
+            'read_at' => now(),
+        ]);
 
-        return response()->json(['success' => true]);
+        broadcast(new NotificationCountUpdated($request->user()->id, 0));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'All notifications marked as read',
+        ]);
+    }
+
+    private function broadcastReadUpdate(Request $request, UserNotification $userNotification): void
+    {
+        $unreadCount = $request->user()->userNotifications()->unread()->count();
+        $locationId = $userNotification->notification?->location_id;
+
+        broadcast(new NotificationRead($userNotification, $unreadCount, $locationId));
+        broadcast(new NotificationCountUpdated($request->user()->id, $unreadCount, $locationId));
     }
 }
