@@ -20,15 +20,22 @@ use Illuminate\Http\Request;
 
 class SignhostController extends Controller
 {
-    public function generateContract(SignhostGenerateContractRequest $request, GenerateContractAction $action)
+    public function generateContract(
+        SignhostGenerateContractRequest $request,
+        GenerateContractAction $action,
+        CreateSignhostRequestAction $createAction
+    )
     {
-        $signRequest = $action->execute($request->user(), $request->validated());
+        $validated = $request->validated();
+        $signRequest = $action->execute($request->user(), $validated);
+        $signRequest = $this->maybeCreateSignhost($request, $signRequest, $validated, $createAction);
         $metadata = $signRequest->metadata ?? [];
 
         return response()->json([
-            'message' => 'Contract generated',
+            'message' => $signRequest->signhost_transaction_id ? 'Contract generated and Signhost request created' : 'Contract generated',
             'contract_pdf_path' => $metadata['contract_pdf_path'] ?? null,
             'contract_sha256' => $metadata['contract_sha256'] ?? null,
+            'sign_url' => $signRequest->sign_url,
             'sign_request' => new SignRequestResource($signRequest),
         ]);
     }
@@ -94,21 +101,36 @@ class SignhostController extends Controller
     }
 
     // Compatibility: NauticSecure deal endpoints
-    public function generateDealContract(int $dealId, SignhostGenerateContractRequest $request, GenerateContractAction $action)
+    public function generateDealContract(
+        int $dealId,
+        SignhostGenerateContractRequest $request,
+        GenerateContractAction $action,
+        CreateSignhostRequestAction $createAction
+    )
     {
-        $payload = array_merge($request->validated(), [
+        $validated = $request->validated();
+        $payload = array_merge($validated, [
             'entity_type' => 'Deal',
             'entity_id' => $dealId,
         ]);
 
         $signRequest = $action->execute($request->user(), $payload);
+        $signRequest = $this->maybeCreateSignhost($request, $signRequest, $validated, $createAction);
         $metadata = $signRequest->metadata ?? [];
 
-        return response()->json([
-            'message' => 'Contract generated',
+        $response = [
+            'message' => $signRequest->signhost_transaction_id ? 'Contract generated and Signhost request created' : 'Contract generated',
             'contract_pdf_path' => $metadata['contract_pdf_path'] ?? null,
             'contract_sha256' => $metadata['contract_sha256'] ?? null,
-        ]);
+            'sign_url' => $signRequest->sign_url,
+            'sign_request' => new SignRequestResource($signRequest),
+        ];
+
+        if ($signRequest->signhost_transaction_id) {
+            $response['transaction'] = $this->legacyTransaction($signRequest);
+        }
+
+        return response()->json($response);
     }
 
     public function createDealSignhost(int $dealId, SignhostRequestCreateRequest $request, CreateSignhostRequestAction $action)
@@ -222,5 +244,31 @@ class SignhostController extends Controller
         }
 
         return $url ?: $signRequest->sign_url;
+    }
+
+    private function maybeCreateSignhost(
+        Request $request,
+        SignRequest $signRequest,
+        array $validated,
+        CreateSignhostRequestAction $action
+    ): SignRequest {
+        $recipients = $validated['recipients'] ?? [];
+        $shouldCreate = $request->boolean('send_to_signhost') || $recipients !== [];
+
+        if (! $shouldCreate) {
+            return $signRequest->load('documents');
+        }
+
+        return $action->execute(
+            $request->user(),
+            array_filter([
+                'sign_request_id' => $signRequest->id,
+                'recipients' => $recipients,
+                'reference' => $validated['reference'] ?? null,
+                'password' => $validated['password'] ?? null,
+                'otp_code' => $validated['otp_code'] ?? null,
+            ], static fn ($value, $key) => $key === 'recipients' || $value !== null, ARRAY_FILTER_USE_BOTH),
+            $request->header('Idempotency-Key') ?? $validated['idempotency_key'] ?? null
+        );
     }
 }

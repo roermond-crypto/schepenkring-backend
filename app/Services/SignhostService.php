@@ -153,7 +153,7 @@ class SignhostService
             throw new \RuntimeException("Signhost API error ({$path}): " . ($body ?: 'Empty response'));
         }
 
-        return $response->json();
+        return $response->json() ?? [];
     }
 
     private function requestRaw(string $method, string $path, array $options = []): array
