@@ -77,7 +77,7 @@ class CopilotResolverService
         $confidence = max($confidence, (float) ($knowledge['confidence'] ?? 0.0));
 
         if (empty($actions) && empty($results) && empty($answers)) {
-            $clarifying = $clarifying ?: $this->language->translate('clarify_open_or_search', (string) $language);
+            $clarifying = $clarifying ?: $this->copilotLanguage()->translate('clarify_open_or_search', (string) $language);
         }
 
         $needsConfirmation = $needsConfirmation || $this->anyNeedsConfirmation($actions);
@@ -258,7 +258,7 @@ class CopilotResolverService
         }
 
         if (count($actions) > 1 && !$clarifying) {
-            $clarifying = $this->language->translate('clarify_action', (string) $language);
+            $clarifying = $this->copilotLanguage()->translate('clarify_action', (string) $language);
         }
 
         return $actions;
@@ -557,7 +557,16 @@ class CopilotResolverService
 
     private function looksLikeQuestion(string $input): bool
     {
-        return $this->language->looksLikeQuestion($input);
+        return $this->copilotLanguage()->looksLikeQuestion($input);
+    }
+
+    private function copilotLanguage(): CopilotLanguage
+    {
+        if (isset($this->language) && $this->language instanceof CopilotLanguage) {
+            return $this->language;
+        }
+
+        return app(CopilotLanguage::class);
     }
 
     private function shouldBuildAnswers(string $input): bool
