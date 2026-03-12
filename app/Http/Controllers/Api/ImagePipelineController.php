@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\EnhanceYachtImageJob;
 use App\Jobs\ProcessYachtImageJob;
 use App\Models\Yacht;
 use App\Models\YachtImage;
@@ -76,17 +77,17 @@ class ImagePipelineController extends Controller
 
                 // Create DB record
                 $image = $yacht->images()->create([
-                    'url'               => $tempPath, // Will be updated after processing
+                    'url'               => $tempPath, // Points to original_temp until optimized
                     'original_temp_url' => $tempPath,
                     'original_name'     => $file->getClientOriginalName(),
                     'category'          => $category,
                     'part_name'         => $category,
-                    'status'            => 'processing',
+                    'status'            => 'ready_for_review', // Instant ready for review/approval
                     'keep_original'     => false,
                     'sort_order'        => $currentCount + $index,
                 ]);
 
-                // Dispatch processing job
+                // Dispatch processing job (silent optimization in background)
                 ProcessYachtImageJob::dispatch($image->id);
 
                 $uploaded[] = $image->fresh();
@@ -153,6 +154,11 @@ class ImagePipelineController extends Controller
         }
 
         $image->update(['status' => 'approved']);
+
+        // Trigger AI enhancement if not already done
+        if ($image->enhancement_method !== 'cloudinary') {
+            EnhanceYachtImageJob::dispatch($image->id)->delay(now()->addSeconds(1));
+        }
 
         // Handle original cleanup if keep_original is false
         if (!$image->keep_original && $image->original_temp_url) {
@@ -352,6 +358,14 @@ class ImagePipelineController extends Controller
         $updated = $yacht->images()
             ->where('status', 'ready_for_review')
             ->update(['status' => 'approved']);
+
+        // Trigger AI enhancement for all newly approved images
+        $yacht->images()
+            ->where('status', 'approved')
+            ->where('enhancement_method', '!=', 'cloudinary')
+            ->each(function ($image) {
+                EnhanceYachtImageJob::dispatch($image->id)->delay(now()->addSeconds(1));
+            });
 
         // Cleanup temp originals where keep_original = false
         $toCleanup = $yacht->images()

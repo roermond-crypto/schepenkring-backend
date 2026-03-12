@@ -4,8 +4,8 @@ namespace App\Traits;
 
 use App\Enums\AuditResult;
 use App\Enums\RiskLevel;
+use App\Jobs\IngestAuditLogLearningJob;
 use App\Models\AuditLog;
-use App\Services\CopilotLearningService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Request;
 
@@ -83,7 +83,7 @@ trait Auditable
             'user_agent' => Request::userAgent(),
         ]);
 
-        app(CopilotLearningService::class)->ingestAuditLog($log);
+        IngestAuditLogLearningJob::dispatch($log->id);
 
         return $log;
     }
