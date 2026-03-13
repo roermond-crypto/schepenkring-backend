@@ -7,3 +7,6 @@ Route::any('{any}', function () {
         'message' => 'NauticSecure Backend API. Web access is disabled.',
     ], 404);
 })->where('any', '^(?!api(?:/|$)|storage(?:/|$)).*');
+
+
+// Hello
