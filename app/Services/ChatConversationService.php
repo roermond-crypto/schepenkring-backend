@@ -115,6 +115,8 @@ class ChatConversationService
             $senderType = 'admin';
         }
 
+        $text = $payload['text'] ?? $payload['body'] ?? null;
+
         $metadata = $payload['metadata'] ?? null;
         if ($user && (($payload['message_type'] ?? null) === 'call')) {
             $metadata = array_merge($metadata ?? [], [
@@ -126,14 +128,16 @@ class ChatConversationService
             'conversation_id' => $conversation->id,
             'sender_type' => $senderType,
             'employee_id' => $user?->id,
-            'text' => $payload['text'] ?? null,
-            'body' => $payload['text'] ?? null,
+            'text' => $text,
+            'body' => $text,
             'language' => $this->language->normalize($payload['language'] ?? $conversation->language_preferred),
             'channel' => $payload['channel'] ?? 'web',
             'external_message_id' => $payload['external_message_id'] ?? null,
             'message_type' => $payload['message_type'] ?? 'text',
             'status' => $payload['status'] ?? null,
             'metadata' => $metadata,
+            'client_message_id' => $payload['client_message_id'] ?? null,
+            'delivery_state' => $payload['delivery_state'] ?? 'sent',
         ]);
 
         if ($message->channel === 'whatsapp' && $message->sender_type !== 'visitor' && ! $message->status) {

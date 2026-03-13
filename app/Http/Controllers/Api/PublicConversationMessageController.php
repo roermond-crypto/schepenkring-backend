@@ -51,15 +51,13 @@ class PublicConversationMessageController extends Controller
             $conversation->contact?->language_preferred
         );
 
-        $message = Message::create([
-            'conversation_id' => $conversationId,
+        $message = $service->addMessage($conversation, [
             'sender_type' => 'visitor',
             'text' => $validated['body'],
-            'body' => $validated['body'],
             'language' => $resolvedLanguage['language'],
             'client_message_id' => $validated['client_message_id'],
             'delivery_state' => 'sent',
-        ]);
+        ], $request);
 
         $service->syncLanguageContext($conversation, $resolvedLanguage, null, 'visitor', true);
 
