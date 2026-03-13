@@ -19,7 +19,7 @@ class TaskRepository
             'assignedTo:id,name,email',
             'creator:id,name,email',
             'user:id,name,email',
-            'yacht:id,name',
+            'yacht:id,boat_name',
             'column',
         ]);
     }

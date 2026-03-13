@@ -41,6 +41,6 @@ class ListTaskAutomationTemplatesAction
             $query->where('is_active', filter_var($filters['is_active'], FILTER_VALIDATE_BOOLEAN));
         }
 
-        return $query->orderBy('id', 'desc')->get();
+        return $query->with('items')->orderBy('id', 'desc')->get();
     }
 }
