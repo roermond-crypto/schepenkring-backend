@@ -433,3 +433,6 @@ Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->gro
     Route::post('/{error}/note', [PlatformErrorController::class, 'note']);
     Route::post('/{error}/assign', [PlatformErrorController::class, 'assign']);
 });
+
+
+// Scrape 3000+ boats
