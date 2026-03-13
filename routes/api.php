@@ -87,19 +87,7 @@ Route::prefix('public/conversations/{conversationId}')->group(function () {
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
 });
 
-// ── Image Pipeline ──────────
-Route::prefix('yachts/{yachtId}/images')->group(function () {
-    Route::post('/upload', [ImagePipelineController::class, 'upload']);
-    Route::get('/', [ImagePipelineController::class, 'index']);
-    Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
-    Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
-    Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
-    Route::post('/reorder', [ImagePipelineController::class, 'reorder']);
-    Route::post('/auto-classify', [ImagePipelineController::class, 'autoClassify']);
-    Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
-});
 Route::get('yachts/{yachtId}/fields/{fieldName}/history', [\App\Http\Controllers\Api\YachtFieldHistoryController::class, 'show']);
-Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
 Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
 
 // AI pipeline
