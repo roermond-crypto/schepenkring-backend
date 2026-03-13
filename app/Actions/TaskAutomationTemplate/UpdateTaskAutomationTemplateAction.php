@@ -39,9 +39,28 @@ class UpdateTaskAutomationTemplateAction
         }
 
         $before = $template->toArray();
+
+        $items = $data['items'] ?? null;
+        unset($data['items']);
+
         $data['location_id'] = $locationId;
 
         $updated = $this->templates->update($template, $data);
+
+        // Sync template items if provided
+        if (is_array($items)) {
+            $updated->items()->delete();
+            foreach ($items as $index => $item) {
+                $updated->items()->create([
+                    'title' => $item['title'] ?? "Task item " . ($index + 1),
+                    'description' => $item['description'] ?? null,
+                    'priority' => $item['priority'] ?? $updated->priority ?? 'Medium',
+                    'position' => $item['position'] ?? $index,
+                ]);
+            }
+        }
+
+        $updated->load('items');
 
         $this->security->log('task.automation_template.update', RiskLevel::LOW, $actor, $updated, [
             'fields' => array_keys($data),

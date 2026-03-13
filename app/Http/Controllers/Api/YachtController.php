@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Yacht;
 use App\Models\YachtImage;
+use App\Models\YachtAiExtraction;
 use App\Models\User;
 use App\Services\AiCorrectionLoggingService;
+use App\Services\BoatTaskAutomationService;
 use App\Services\SyncYachtTasksService;
 use App\Services\LocationAccessService;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,7 +22,21 @@ use Illuminate\Support\Facades\Storage;
 
 class YachtController extends Controller
 {
-    public function __construct(private readonly LocationAccessService $locationAccess)
+    private const ALLOWED_CHANGED_BY_TYPES = ['ai', 'user', 'admin', 'import', 'scraper'];
+    private const ALLOWED_SOURCE_TYPES = ['manual', 'image', 'text', 'api', 'inferred', 'import', 'scraper', 'system'];
+    private const ALLOWED_CORRECTION_LABELS = [
+        'wrong_image_detection',
+        'wrong_text_interpretation',
+        'guessed_too_much',
+        'duplicate_data_issue',
+        'import_mismatch',
+        'other',
+    ];
+
+    public function __construct(
+        private readonly LocationAccessService $locationAccess,
+        private readonly AiCorrectionLoggingService $correctionLogging
+    )
     {
     }
 
@@ -169,6 +185,9 @@ class YachtController extends Controller
                 'drift_restriction_controls', 'trimflaps', 'stabilizer',
             ];
             $booleanFields = ['allow_bidding'];
+            $trackableFields = $this->buildTrackableFields($coreFields, $booleanFields);
+            $submittedFields = $this->extractSubmittedTrackableFields($request, $trackableFields);
+            $beforeSnapshot = $this->captureBeforeSnapshot($yacht, $submittedFields, $isUpdate);
 
             foreach ($coreFields as $field) {
                 if (! $request->has($field)) {
@@ -231,9 +250,6 @@ class YachtController extends Controller
                 $yacht->min_bid_amount = $yacht->price * 0.9;
             }
 
-        app(SyncYachtTasksService::class)->syncForYacht($yacht, $request->user());
-
-        DB::commit();
             $yacht->save();
             $yacht->saveSubTables($request->all());
 
@@ -259,9 +275,34 @@ class YachtController extends Controller
                 }
             }
 
+            $savedYacht = Yacht::query()->findOrFail($yacht->id);
+            $afterSnapshot = $this->buildSnapshotForFields($savedYacht->toArray(), $submittedFields);
+            $aiExtraction = $this->findAiExtraction($request);
+            $loggingContext = $this->buildFieldLoggingContext($request, $actor, $aiExtraction, $isUpdate);
+
+            if ($submittedFields !== []) {
+                $this->correctionLogging->logFieldDiffs(
+                    $savedYacht->id,
+                    $beforeSnapshot,
+                    $afterSnapshot,
+                    $loggingContext
+                );
+            }
+
+            app(SyncYachtTasksService::class)->syncForYacht($savedYacht, $actor);
+
             DB::commit();
 
-            $yacht->load(['images', 'availabilityRules']);
+            $yacht = $savedYacht->load(['images', 'availabilityRules']);
+
+            // Fire task automation for newly created yachts
+            if (! $isUpdate && $yacht->boat_type) {
+                try {
+                    app(BoatTaskAutomationService::class)->fireForYacht($yacht, $actor);
+                } catch (\Throwable $e) {
+                    Log::warning('[BoatTaskAutomation] Non-critical failure: ' . $e->getMessage());
+                }
+            }
 
             return response()->json($yacht, $isUpdate ? 200 : 201);
         } catch (\Throwable $e) {
@@ -855,6 +896,79 @@ SCHEMA;
         return $snapshot;
     }
 
+    private function captureBeforeSnapshot(Yacht $yacht, array $submittedFields, bool $isUpdate): array
+    {
+        if ($submittedFields === []) {
+            return [];
+        }
+
+        if (! $isUpdate) {
+            return array_fill_keys($submittedFields, null);
+        }
+
+        return $this->buildSnapshotForFields($yacht->toArray(), $submittedFields);
+    }
+
+    private function buildTrackableFields(array $coreFields, array $booleanFields): array
+    {
+        $subTableFields = [];
+        foreach (Yacht::SUB_TABLE_MAP as $fields) {
+            $subTableFields = array_merge($subTableFields, $fields);
+        }
+
+        return array_values(array_unique(array_merge(
+            $coreFields,
+            $booleanFields,
+            $subTableFields,
+            ['main_image', 'ref_harbor_id']
+        )));
+    }
+
+    private function findAiExtraction(Request $request): ?YachtAiExtraction
+    {
+        $sessionId = trim((string) $request->input('ai_session_id', ''));
+        if ($sessionId === '') {
+            return null;
+        }
+
+        return YachtAiExtraction::query()
+            ->where('session_id', $sessionId)
+            ->first();
+    }
+
+    private function buildFieldLoggingContext(
+        Request $request,
+        ?User $actor,
+        ?YachtAiExtraction $aiExtraction,
+        bool $isUpdate
+    ): array {
+        $requestedSessionId = trim((string) $request->input('ai_session_id', ''));
+        $requestedConfidence = $this->extractFieldConfidenceMap($request);
+        $extractionConfidence = is_array($aiExtraction?->field_confidence_json) ? $aiExtraction->field_confidence_json : [];
+        $fieldConfidence = array_merge($extractionConfidence, $requestedConfidence);
+        $fieldCorrectionLabels = $this->extractNormalizedCorrectionLabelMap($request->input('field_correction_labels'));
+        $fieldReasons = $this->extractStringMap($request->input('field_reasons'));
+        $reason = trim((string) ($request->input('change_reason') ?: $request->input('reason', '')));
+        $modelName = trim((string) $request->input('model_name', ''));
+
+        return [
+            'changed_by_type' => $this->resolveChangedByType($request),
+            'changed_by_id' => $actor?->id,
+            'source_type' => $this->normalizeSourceType($request->input('source_type')),
+            'field_confidence' => $fieldConfidence,
+            'ai_session_id' => $aiExtraction?->session_id ?? ($requestedSessionId !== '' ? $requestedSessionId : null),
+            'model_name' => $modelName !== '' ? $modelName : $aiExtraction?->model_name,
+            'model_version' => $aiExtraction?->model_version,
+            'reason' => $reason !== '' ? $reason : null,
+            'correction_label' => $this->normalizeCorrectionLabel($request->input('correction_label')),
+            'field_correction_labels' => $fieldCorrectionLabels,
+            'field_reasons' => $fieldReasons,
+            'scope' => $isUpdate ? 'yacht_update' : 'yacht_create',
+            'ai_proposed_values' => is_array($aiExtraction?->normalized_fields_json) ? $aiExtraction->normalized_fields_json : [],
+            'ai_field_sources' => is_array($aiExtraction?->field_sources_json) ? $aiExtraction->field_sources_json : [],
+        ];
+    }
+
     private function resolveChangedByType(Request $request): string
     {
         $requested = strtolower((string) $request->input('changed_by_type', ''));
@@ -911,6 +1025,37 @@ SCHEMA;
                 if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                     return $decoded;
                 }
+            }
+        }
+
+        return [];
+    }
+
+    private function extractNormalizedCorrectionLabelMap(mixed $value): array
+    {
+        $decoded = $this->extractStringMap($value);
+        $normalized = [];
+
+        foreach ($decoded as $field => $label) {
+            $candidate = $this->normalizeCorrectionLabel($label);
+            if ($candidate !== null) {
+                $normalized[$field] = $candidate;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function extractStringMap(mixed $value): array
+    {
+        if (is_array($value)) {
+            return array_filter($value, static fn ($item) => is_scalar($item) && trim((string) $item) !== '');
+        }
+
+        if (is_string($value) && $value !== '') {
+            $decoded = json_decode($value, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return array_filter($decoded, static fn ($item) => is_scalar($item) && trim((string) $item) !== '');
             }
         }
 

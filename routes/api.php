@@ -172,6 +172,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('yacht-drafts/{draftId}/attach-yacht', [YachtDraftController::class, 'attachYacht']);
     Route::post('yacht-drafts/{draftId}/commit', [YachtDraftController::class, 'commit']);
 
+    // Yacht task automation (manual trigger)
+    Route::post('yachts/{id}/trigger-automation', function (Illuminate\Http\Request $request, $id) {
+        $yacht = \App\Models\Yacht::findOrFail($id);
+        $service = app(\App\Services\BoatTaskAutomationService::class);
+        $tasks = $service->fireForYacht($yacht, $request->user());
+        return response()->json([
+            'message' => count($tasks) . ' task(s) created',
+            'tasks' => $tasks,
+        ]);
+    });
+
     // Yacht documents
     Route::prefix('yachts/{yachtId}/documents')->group(function () {
         Route::get('/', [BoatDocumentController::class, 'index']);

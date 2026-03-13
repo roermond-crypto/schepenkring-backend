@@ -42,9 +42,26 @@ class CreateTaskAutomationTemplateAction
             throw new AuthorizationException('Unauthorized');
         }
 
+        $items = $data['items'] ?? [];
+        unset($data['location_id'], $data['items']);
+
         $data['location_id'] = $locationId;
 
         $template = $this->templates->create($data);
+
+        // Sync template items if provided
+        if (! empty($items) && is_array($items)) {
+            foreach ($items as $index => $item) {
+                $template->items()->create([
+                    'title' => $item['title'] ?? "Task item " . ($index + 1),
+                    'description' => $item['description'] ?? null,
+                    'priority' => $item['priority'] ?? $template->priority ?? 'Medium',
+                    'position' => $item['position'] ?? $index,
+                ]);
+            }
+        }
+
+        $template->load('items');
 
         $this->security->log('task.automation_template.create', RiskLevel::LOW, $actor, $template, [], [
             'location_id' => $locationId,

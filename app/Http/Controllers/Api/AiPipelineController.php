@@ -3834,6 +3834,7 @@ USER;
         $result = $pineconeMatcher->matchAndBuildConsensus($partialValues, $query);
         $result = $this->prepareAssistantSuggestions($result);
         $result = $this->mergeLocalArchiveSuggestions($result, $query);
+        $result = $this->sanitizeSuggestionResult($result);
 
         return response()->json($result);
     }
@@ -3864,15 +3865,7 @@ USER;
         }
 
         $result['top_matches'] = $preparedMatches;
-        $result['consensus_values'] = is_array($result['consensus_values'] ?? null)
-            ? $this->filterSuggestionFields($result['consensus_values'])
-            : [];
-        $result['field_confidence'] = is_array($result['field_confidence'] ?? null)
-            ? $this->filterSuggestionFields($result['field_confidence'])
-            : [];
-        $result['field_sources'] = is_array($result['field_sources'] ?? null)
-            ? $this->filterSuggestionFields($result['field_sources'])
-            : [];
+        $result = $this->sanitizeSuggestionResult($result);
 
         // Strict mode may return no consensus; for UX suggestions we still provide conservative hints.
         if (!empty($result['consensus_values'])) {
@@ -3880,7 +3873,7 @@ USER;
         }
 
         $fallback = [];
-        foreach ($preparedMatches as $match) {
+        foreach ($result['top_matches'] as $match) {
             $boat = is_array($match['boat'] ?? null) ? $match['boat'] : [];
             foreach (self::SUGGESTION_TARGET_FIELDS as $field) {
                 $value = $boat[$field] ?? null;
@@ -3906,7 +3899,7 @@ USER;
             ['No strict consensus found; showing conservative top-match suggestions.']
         )));
 
-        return $result;
+        return $this->sanitizeSuggestionResult($result);
     }
 
     private function mergeLocalArchiveSuggestions(array $result, string $query): array
@@ -3946,7 +3939,7 @@ USER;
         }
         $result['warnings'] = array_values(array_unique(array_filter($result['warnings'])));
 
-        return $result;
+        return $this->sanitizeSuggestionResult($result);
     }
 
     private function buildLocalArchiveSuggestions(string $query): array
@@ -3998,7 +3991,7 @@ USER;
             foreach ($boats as $boat) {
                 $flat = $boat->toArray();
                 foreach ($numericFields as $field) {
-                    $num = $this->extractSuggestionNumeric($flat[$field] ?? null);
+                    $num = $this->normalizeSuggestionValue($field, $flat[$field] ?? null);
                     if ($num !== null) {
                         $values[$field][] = $num;
                     }
@@ -4056,21 +4049,27 @@ USER;
 
             $result['top_matches'] = $boats->take(3)->map(function (Yacht $boat) {
                 $flat = $boat->toArray();
-                return [
+                $match = [
                     'score' => 50,
                     'boat' => array_filter([
                         'id' => $boat->id,
-                        'manufacturer' => $boat->manufacturer,
-                        'model' => $boat->model,
-                        'year' => $boat->year,
-                        'loa' => $flat['loa'] ?? null,
-                        'beam' => $flat['beam'] ?? null,
-                        'draft' => $flat['draft'] ?? null,
-                        'price' => $boat->price,
+                        'manufacturer' => $this->normalizeSuggestionValue('manufacturer', $boat->manufacturer),
+                        'model' => $this->normalizeSuggestionValue('model', $boat->model),
+                        'boat_type' => $this->normalizeSuggestionValue('boat_type', $boat->boat_type),
+                        'year' => $this->normalizeSuggestionValue('year', $boat->year),
+                        'loa' => $this->normalizeSuggestionValue('loa', $flat['loa'] ?? null),
+                        'beam' => $this->normalizeSuggestionValue('beam', $flat['beam'] ?? null),
+                        'draft' => $this->normalizeSuggestionValue('draft', $flat['draft'] ?? null),
+                        'fuel' => $this->normalizeSuggestionValue('fuel', $flat['fuel'] ?? null),
+                        'engine_manufacturer' => $this->normalizeSuggestionValue('engine_manufacturer', $flat['engine_manufacturer'] ?? null),
+                        'horse_power' => $this->normalizeSuggestionValue('horse_power', $flat['horse_power'] ?? null),
+                        'price' => $this->normalizeSuggestionValue('price', $boat->price),
                         'source_feed_url' => 'local_archive',
                     ], fn($val) => $val !== null && $val !== ''),
                 ];
-            })->values()->toArray();
+
+                return $this->sanitizeSuggestionTopMatch($match);
+            })->filter()->values()->toArray();
         } catch (\Throwable $e) {
             Log::warning('[AI Suggestions] Local archive fallback failed: ' . $e->getMessage());
         }
@@ -4092,6 +4091,143 @@ USER;
             $filtered[$field] = $value;
         }
         return $filtered;
+    }
+
+    private function sanitizeSuggestionResult(array $result): array
+    {
+        $consensus = [];
+        foreach ($this->filterSuggestionFields(is_array($result['consensus_values'] ?? null) ? $result['consensus_values'] : []) as $field => $value) {
+            $normalizedValue = $this->normalizeSuggestionValue($field, $value);
+            if ($normalizedValue === null || $normalizedValue === '') {
+                continue;
+            }
+
+            $consensus[$field] = $normalizedValue;
+        }
+
+        $allowedFields = array_keys($consensus);
+        $result['consensus_values'] = $consensus;
+        $result['field_confidence'] = $this->sanitizeSuggestionConfidenceMap(
+            is_array($result['field_confidence'] ?? null) ? $result['field_confidence'] : [],
+            $allowedFields
+        );
+        $result['field_sources'] = $this->sanitizeSuggestionSourceMap(
+            is_array($result['field_sources'] ?? null) ? $result['field_sources'] : [],
+            $allowedFields
+        );
+
+        $matches = [];
+        foreach (is_array($result['top_matches'] ?? null) ? $result['top_matches'] : [] as $match) {
+            $sanitized = $this->sanitizeSuggestionTopMatch($match);
+            if ($sanitized !== null) {
+                $matches[] = $sanitized;
+            }
+        }
+        $result['top_matches'] = array_values(array_slice($matches, 0, 5));
+        $result['warnings'] = array_values(array_unique(array_filter(
+            is_array($result['warnings'] ?? null) ? $result['warnings'] : []
+        )));
+
+        return $result;
+    }
+
+    private function sanitizeSuggestionConfidenceMap(array $values, array $allowedFields): array
+    {
+        $filtered = [];
+        foreach ($allowedFields as $field) {
+            $confidence = $values[$field] ?? null;
+            if (!is_numeric($confidence)) {
+                continue;
+            }
+
+            $normalized = max(0.0, min(1.0, (float) $confidence));
+            if ($normalized <= 0.0) {
+                continue;
+            }
+
+            $filtered[$field] = round($normalized, 2);
+        }
+
+        return $filtered;
+    }
+
+    private function sanitizeSuggestionSourceMap(array $values, array $allowedFields): array
+    {
+        $filtered = [];
+        foreach ($allowedFields as $field) {
+            $source = $values[$field] ?? null;
+            if (!is_scalar($source)) {
+                continue;
+            }
+
+            $normalized = trim((string) $source);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $filtered[$field] = $normalized;
+        }
+
+        return $filtered;
+    }
+
+    private function sanitizeSuggestionTopMatch(mixed $match): ?array
+    {
+        if (!is_array($match)) {
+            return null;
+        }
+
+        $boat = is_array($match['boat'] ?? null) ? $match['boat'] : [];
+        $sanitizedBoat = [];
+
+        $fields = array_merge(['manufacturer', 'model', 'boat_type'], self::SUGGESTION_TARGET_FIELDS);
+        foreach ($fields as $field) {
+            if (!array_key_exists($field, $boat)) {
+                continue;
+            }
+
+            $normalized = $this->normalizeSuggestionValue($field, $boat[$field]);
+            if ($normalized === null || $normalized === '') {
+                continue;
+            }
+
+            $sanitizedBoat[$field] = $normalized;
+        }
+
+        foreach (['boat_ref', 'source_feed_url', 'synced_at_utc', 'id'] as $infoField) {
+            if (!array_key_exists($infoField, $boat) || !is_scalar($boat[$infoField])) {
+                continue;
+            }
+
+            $value = trim((string) $boat[$infoField]);
+            if ($value === '') {
+                continue;
+            }
+
+            $sanitizedBoat[$infoField] = $value;
+        }
+
+        if (!$this->hasRenderableSuggestionBoatData($sanitizedBoat)) {
+            return null;
+        }
+
+        $score = is_numeric($match['score'] ?? null) ? (int) round((float) $match['score']) : 0;
+
+        return [
+            'score' => max(0, min(100, $score)),
+            'boat' => $sanitizedBoat,
+        ];
+    }
+
+    private function hasRenderableSuggestionBoatData(array $boat): bool
+    {
+        foreach (array_merge(['manufacturer', 'model', 'boat_type'], self::SUGGESTION_TARGET_FIELDS) as $field) {
+            if (array_key_exists($field, $boat)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function extractSuggestionFieldsFromMetadata(array $metadata): array
@@ -4251,7 +4387,7 @@ USER;
         }
 
         if (in_array($field, ['year', 'engine_quantity', 'horse_power', 'price', 'loa', 'beam', 'draft'], true)) {
-            $numeric = $this->extractSuggestionNumeric($value);
+            $numeric = $this->normalizeSuggestionNumericField($field, $value);
             if ($numeric === null) {
                 return null;
             }
@@ -4277,6 +4413,64 @@ USER;
         }
 
         return $text;
+    }
+
+    private function normalizeSuggestionNumericField(string $field, mixed $value): ?float
+    {
+        $numeric = $this->extractSuggestionNumeric($value);
+        if ($numeric === null) {
+            return null;
+        }
+
+        return match ($field) {
+            'year' => $this->normalizeSuggestionYear($numeric),
+            'engine_quantity' => $this->normalizeSuggestionRange($numeric, 1, 8, false),
+            'horse_power' => $this->normalizeSuggestionRange($numeric, 1, 5000, false),
+            'price' => $this->normalizeSuggestionRange($numeric, 1, 100000000, true),
+            'loa' => $this->normalizeSuggestionDimension($numeric, 2.0, 120.0, 100.0, 5000.0),
+            'beam' => $this->normalizeSuggestionDimension($numeric, 0.5, 30.0, 100.0, 2000.0),
+            'draft' => $this->normalizeSuggestionDimension($numeric, 0.1, 10.0, 20.0, 500.0),
+            default => $numeric,
+        };
+    }
+
+    private function normalizeSuggestionYear(float $value): ?float
+    {
+        $year = (int) round($value);
+        $maxYear = (int) now()->addYear()->year;
+
+        if ($year < 1900 || $year > $maxYear) {
+            return null;
+        }
+
+        return (float) $year;
+    }
+
+    private function normalizeSuggestionRange(float $value, float $min, float $max, bool $roundToTwoDecimals): ?float
+    {
+        if ($value < $min || $value > $max) {
+            return null;
+        }
+
+        return $roundToTwoDecimals ? round($value, 2) : (float) round($value);
+    }
+
+    private function normalizeSuggestionDimension(
+        float $value,
+        float $min,
+        float $max,
+        float $centimeterThreshold,
+        float $centimeterMax
+    ): ?float {
+        if ($value > $centimeterThreshold && $value <= $centimeterMax) {
+            $value = $value / 100;
+        }
+
+        if ($value < $min || $value > $max) {
+            return null;
+        }
+
+        return round($value, 2);
     }
 
     private function extractSuggestionNumeric(mixed $value): ?float
@@ -4382,9 +4576,14 @@ USER;
 
         $model = 'gemini-1.5-flash';
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        $historicalFeedbackHint = $this->buildHistoricalFeedbackHint();
         
         $parts = [];
-        $parts[] = ['text' => $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text')];
+        $prompt = $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text');
+        if ($historicalFeedbackHint !== '') {
+            $prompt .= "\n\n" . $historicalFeedbackHint;
+        }
+        $parts[] = ['text' => $prompt];
         foreach ($visionImages as $img) {
             $parts[] = [
                 'inline_data' => [
@@ -4401,6 +4600,20 @@ USER;
             'timeout' => 50,
             'image_count' => count($visionImages)
         ];
+    }
+
+    private function buildHistoricalFeedbackHint(): string
+    {
+        try {
+            return app(\App\Services\BoatFieldFeedbackService::class)
+                ->buildOptionalEquipmentPromptHint(self::OPTIONAL_EQUIPMENT_FIELDS);
+        } catch (\Throwable $error) {
+            Log::warning('[AI Pipeline] Failed to build historical correction hint', [
+                'error' => $error->getMessage(),
+            ]);
+
+            return '';
+        }
     }
 
     private function getOpenAiEnrichmentPrompt(string $hintText): string
