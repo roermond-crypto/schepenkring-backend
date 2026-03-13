@@ -29,6 +29,7 @@ class YachtshiftImportController extends Controller
         $totalImported = 0;
         $totalUpdated = 0;
         $totalErrors = 0;
+        $totalSkipped = 0;
         $results = [];
 
         foreach ($validated['urls'] as $url) {
@@ -42,14 +43,16 @@ class YachtshiftImportController extends Controller
             $totalImported += $result['imported'];
             $totalUpdated += $result['updated'];
             $totalErrors += $result['errors'];
+            $totalSkipped += $result['skipped'] ?? 0;
         }
 
         return response()->json([
             'success' => true,
-            'message' => "Successfully processed feeds. Imported: {$totalImported}, Updated: {$totalUpdated}, Errors: {$totalErrors}",
+            'message' => "Successfully processed feeds. Imported: {$totalImported}, Updated: {$totalUpdated}, Errors: {$totalErrors}, Skipped: {$totalSkipped}",
             'imported' => $totalImported,
             'updated' => $totalUpdated,
             'errors' => $totalErrors,
+            'skipped' => $totalSkipped,
             'details' => $results
         ]);
     }

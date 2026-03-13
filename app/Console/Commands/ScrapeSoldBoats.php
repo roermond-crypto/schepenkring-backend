@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Yacht;
 use App\Models\Location;
+use App\Services\BoatImportValidationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -37,12 +38,14 @@ class ScrapeSoldBoats extends Command
     protected $description = 'Scrape sold boats archive from schepenkring.nl and store in the yachts table';
 
     private array $locationMap = [];
+    private BoatImportValidationService $validator;
 
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(BoatImportValidationService $validator)
     {
+        $this->validator = $validator;
         $this->info('Starting sold boats scraper...');
         
         $startPage = (int) $this->option('page');
@@ -51,7 +54,9 @@ class ScrapeSoldBoats extends Command
         
         $this->loadLocations();
         
-        $boatsScraped = 0;
+        $boatsProcessed = 0;
+        $boatsImported = 0;
+        $boatsSkipped = 0;
         $currentPage = $startPage;
 
         while ($currentPage <= $maxPages) {
@@ -82,13 +87,17 @@ class ScrapeSoldBoats extends Command
                 }
 
                 foreach ($boatLinks as $boatUrl) {
-                    if ($limit && $boatsScraped >= $limit) {
+                    if ($limit && $boatsProcessed >= $limit) {
                         $this->info("Reached limit of {$limit} boats.");
                         return 0;
                     }
 
-                    $this->scrapeBoat($boatUrl);
-                    $boatsScraped++;
+                    if ($this->scrapeBoat($boatUrl)) {
+                        $boatsImported++;
+                    } else {
+                        $boatsSkipped++;
+                    }
+                    $boatsProcessed++;
                 }
 
                 $currentPage++;
@@ -102,7 +111,7 @@ class ScrapeSoldBoats extends Command
             }
         }
 
-        $this->info("Scraping completed. Total boats processed: {$boatsScraped}");
+        $this->info("Scraping completed. Processed: {$boatsProcessed}, Imported/Updated: {$boatsImported}, Skipped: {$boatsSkipped}");
         return 0;
     }
 
@@ -119,7 +128,7 @@ class ScrapeSoldBoats extends Command
         }
     }
 
-    private function scrapeBoat(string $url)
+    private function scrapeBoat(string $url): bool
     {
         $this->comment("Scraping boat: {$url}");
 
@@ -136,14 +145,15 @@ class ScrapeSoldBoats extends Command
             $response = Http::timeout(20)->retry(2, 300)->get($url);
             if ($response->failed()) {
                 $this->error("Failed to fetch boat page: {$url}");
-                return;
+                return false;
             }
 
             $crawler = new Crawler($response->body());
             
-            $title = $crawler->filter('h1.vibp_topbar_title.notranslate')->count() > 0 
-                ? trim($crawler->filter('h1.vibp_topbar_title.notranslate')->text()) 
-                : 'Unknown Boat';
+            $sourceTitle = $crawler->filter('h1.vibp_topbar_title.notranslate')->count() > 0
+                ? trim($crawler->filter('h1.vibp_topbar_title.notranslate')->text())
+                : null;
+            $title = $sourceTitle ?: 'Unknown Boat';
 
             $specs = [];
             $crawler->filter('.vibp_spec_row')->each(function (Crawler $row) use (&$specs) {
@@ -192,6 +202,32 @@ class ScrapeSoldBoats extends Command
                 }
             }
 
+            $description = strip_tags($descriptionHtml);
+            $validation = $this->validator->validate([
+                'title' => $sourceTitle,
+                'manufacturer' => $specs['Merk'] ?? null,
+                'model' => $specs['Type'] ?? null,
+                'boat_category' => $specs['Categorie'] ?? null,
+                'year' => $specs['Bouwjaar'] ?? null,
+                'loa' => $this->parseDimensionValue($specs['Lengte'] ?? null),
+                'beam' => $this->parseDimensionValue($specs['Breedte'] ?? null),
+                'draft' => $this->parseDimensionValue($specs['Diepgang'] ?? null),
+                'location' => $locationName,
+                'description' => $description,
+                'cabins' => $specs['Hutten'] ?? $specs['Cabins'] ?? null,
+                'berths' => $specs['Slaapplaatsen'] ?? $specs['Berths'] ?? null,
+            ]);
+
+            if (!$validation['valid']) {
+                $this->warn("Skipped invalid sold boat {$sourceIdentifier}: " . implode('; ', $validation['issues']));
+                Log::warning("Sold boat scraper skipped invalid row", [
+                    'url' => $url,
+                    'source_identifier' => $sourceIdentifier,
+                    'issues' => $validation['issues'],
+                ]);
+                return false;
+            }
+
             // Create Yacht record
             $yacht = $existingYacht ?: new Yacht();
             $yacht->boat_name = $title;
@@ -199,7 +235,7 @@ class ScrapeSoldBoats extends Command
             $yacht->source = 'schepenkring_sold_archive';
             $yacht->external_url = $url;
             $yacht->source_identifier = $sourceIdentifier;
-            $yacht->short_description_nl = strip_tags($descriptionHtml);
+            $yacht->short_description_nl = $description;
             
             // Basic spec mapping that we can infer
             if (isset($specs['Bouwjaar'])) $yacht->year = (int) $specs['Bouwjaar'];
@@ -257,16 +293,22 @@ class ScrapeSoldBoats extends Command
             $subData = [];
             if (isset($specs['Lengte'])) {
                 // Parse "14.00 m" -> 14.00
-                $val = floatval(str_replace(',', '.', preg_replace('/[^0-9,.]/', '', $specs['Lengte'])));
-                $subData['loa'] = $val;
+                $val = $this->parseDimensionValue($specs['Lengte']);
+                if ($val !== null) {
+                    $subData['loa'] = $val;
+                }
             }
             if (isset($specs['Breedte'])) {
-                $val = floatval(str_replace(',', '.', preg_replace('/[^0-9,.]/', '', $specs['Breedte'])));
-                $subData['beam'] = $val;
+                $val = $this->parseDimensionValue($specs['Breedte']);
+                if ($val !== null) {
+                    $subData['beam'] = $val;
+                }
             }
             if (isset($specs['Diepgang'])) {
-                $val = floatval(str_replace(',', '.', preg_replace('/[^0-9,.]/', '', $specs['Diepgang'])));
-                $subData['draft'] = $val;
+                $val = $this->parseDimensionValue($specs['Diepgang']);
+                if ($val !== null) {
+                    $subData['draft'] = $val;
+                }
             }
             
             // Engine details
@@ -278,11 +320,44 @@ class ScrapeSoldBoats extends Command
             $yacht->saveSubTables(array_merge($subData, $engineData));
 
             $this->info("Successfully saved boat: {$title}");
+            return true;
 
         } catch (\Exception $e) {
             $this->error("Error scraping boat {$url}: " . $e->getMessage());
             Log::error("Scraper error for {$url}: " . $e->getMessage());
+            return false;
         }
+    }
+
+    private function parseDimensionValue(?string $value): ?float
+    {
+        $raw = trim((string) $value);
+        $normalized = preg_replace('/[^0-9,.\-]/', '', $raw);
+        if ($normalized === null || $normalized === '' || $normalized === '-' || $normalized === '.' || $normalized === ',') {
+            return null;
+        }
+
+        if (str_contains($normalized, ',') && str_contains($normalized, '.')) {
+            if (strrpos($normalized, ',') > strrpos($normalized, '.')) {
+                $normalized = str_replace('.', '', $normalized);
+                $normalized = str_replace(',', '.', $normalized);
+            } else {
+                $normalized = str_replace(',', '', $normalized);
+            }
+        } elseif (str_contains($normalized, ',')) {
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        if (!is_numeric($normalized)) {
+            return null;
+        }
+
+        $numeric = (float) $normalized;
+        if (preg_match('/\bcm\b/i', $raw) === 1) {
+            return round($numeric / 100, 2);
+        }
+
+        return $numeric;
     }
 
     private function clearYachtImages(Yacht $yacht): void

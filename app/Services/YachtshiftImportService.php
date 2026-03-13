@@ -13,6 +13,10 @@ use Exception;
 
 class YachtshiftImportService
 {
+    public function __construct(private BoatImportValidationService $validator)
+    {
+    }
+
     /**
      * Imports boats directly from a Yachtshift XML feed into the Yachts table as current stock.
      * 
@@ -35,6 +39,7 @@ class YachtshiftImportService
         $imported = 0;
         $updated = 0;
         $errors = 0;
+        $skipped = 0;
 
         try {
             $xmlPath = tempnam(sys_get_temp_dir(), 'yachtshift_import_');
@@ -43,7 +48,7 @@ class YachtshiftImportService
             $xmlData = @file_get_contents($url);
             if (!$xmlData) {
                 Log::error("YachtshiftImportService: Failed to fetch data from URL: {$url}");
-                return ['success' => false, 'message' => "Failed to fetch data from URL", 'imported' => 0, 'updated' => 0, 'errors' => 1];
+                return ['success' => false, 'message' => "Failed to fetch data from URL", 'imported' => 0, 'updated' => 0, 'errors' => 1, 'skipped' => 0];
             }
             
             file_put_contents($xmlPath, $xmlData);
@@ -51,7 +56,7 @@ class YachtshiftImportService
             $reader = new \XMLReader();
             if (!$reader->open($xmlPath)) {
                 Log::error("YachtshiftImportService: Failed to read XML file.");
-                return ['success' => false, 'message' => "Failed to read XML file", 'imported' => 0, 'updated' => 0, 'errors' => 1];
+                return ['success' => false, 'message' => "Failed to read XML file", 'imported' => 0, 'updated' => 0, 'errors' => 1, 'skipped' => 0];
             }
             
             while ($reader->read()) {
@@ -167,7 +172,8 @@ class YachtshiftImportService
 
                     $manufacturer = $features ? trim((string) $features->manufacturer) : null;
                     $modelName = $features ? trim((string) $features->model) : null;
-                    $boatName = $getFeature(null, 'boat_name');
+                    $sourceBoatName = $getFeature(null, 'boat_name');
+                    $boatName = $sourceBoatName;
                     if (empty($boatName)) {
                         $boatName = trim("{$manufacturer} {$modelName}");
                     }
@@ -186,6 +192,32 @@ class YachtshiftImportService
                         : null;
 
                     $priceEur = $features ? (float) $features->asking_price : null;
+
+                    $validation = $this->validator->validate([
+                        'id' => $ref,
+                        'manufacturer' => $manufacturer,
+                        'model' => $modelName,
+                        'boat_name' => $sourceBoatName ?: trim("{$manufacturer} {$modelName}"),
+                        'boat_type' => $features ? trim((string) $features->boat_type) : null,
+                        'boat_category' => $features ? trim((string) ($features->boat_category ?? '')) : null,
+                        'year' => $year,
+                        'loa' => $getDimension('loa'),
+                        'beam' => $getDimension('beam'),
+                        'draft' => $getDimension('draft'),
+                        'location' => $vesselLying,
+                        'description' => $descNl,
+                        'cabins' => $getFeature('accommodation', 'cabins'),
+                        'berths' => $getFeature('accommodation', 'berths'),
+                    ]);
+
+                    if (!$validation['valid']) {
+                        $skipped++;
+                        Log::warning('Skipped invalid YachtShift import row', [
+                            'ref' => $ref,
+                            'issues' => $validation['issues'],
+                        ]);
+                        continue;
+                    }
 
                     DB::beginTransaction();
                     try {
@@ -282,13 +314,14 @@ class YachtshiftImportService
                 unlink($xmlPath);
             }
 
-            Log::info("Yachtshift stock import complete! Imported: {$imported}, Updated: {$updated}, Errors: {$errors}");
+            Log::info("Yachtshift stock import complete! Imported: {$imported}, Updated: {$updated}, Errors: {$errors}, Skipped: {$skipped}");
             
             return [
                 'success' => true, 
                 'imported' => $imported, 
                 'updated' => $updated, 
                 'errors' => $errors,
+                'skipped' => $skipped,
                 'message' => 'Import successful'
             ];
 
@@ -299,7 +332,8 @@ class YachtshiftImportService
                 'message' => $e->getMessage(),
                 'imported' => $imported,
                 'updated' => $updated,
-                'errors' => $errors + 1
+                'errors' => $errors + 1,
+                'skipped' => $skipped,
             ];
         }
     }
