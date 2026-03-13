@@ -63,16 +63,12 @@ class ConversationMessageController extends Controller
             $request->user()?->locale ?? $conversation->contact?->language_preferred
         );
 
-        $message = Message::create([
-            'conversation_id' => $conversationId,
-            'sender_type' => 'employee',
-            'employee_id' => $request->user()->id,
+        $message = $service->addMessage($conversation, [
             'text' => $validated['body'],
-            'body' => $validated['body'],
             'language' => $resolvedLanguage['language'],
             'client_message_id' => $validated['client_message_id'],
             'delivery_state' => 'sent',
-        ]);
+        ], $request, $request->user());
 
         $service->syncLanguageContext($conversation, $resolvedLanguage, $request->user(), 'employee', true);
 

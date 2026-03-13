@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\BoatAuctionController as AdminBoatAuctionController;
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
 use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\Api\ChecklistTemplateController;
 use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
 use App\Http\Controllers\Api\ChatMessageController;
+use App\Http\Controllers\Api\ChatTranslationController;
 use App\Http\Controllers\Api\ChatWidgetController;
 use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
@@ -87,19 +89,7 @@ Route::prefix('public/conversations/{conversationId}')->group(function () {
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
 });
 
-// ── Image Pipeline ──────────
-Route::prefix('yachts/{yachtId}/images')->group(function () {
-    Route::post('/upload', [ImagePipelineController::class, 'upload']);
-    Route::get('/', [ImagePipelineController::class, 'index']);
-    Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
-    Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
-    Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
-    Route::post('/reorder', [ImagePipelineController::class, 'reorder']);
-    Route::post('/auto-classify', [ImagePipelineController::class, 'autoClassify']);
-    Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
-});
 Route::get('yachts/{yachtId}/fields/{fieldName}/history', [\App\Http\Controllers\Api\YachtFieldHistoryController::class, 'show']);
-Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
 Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
 
 // AI pipeline
@@ -120,11 +110,15 @@ Route::prefix('auth')->group(function () {
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
+    Route::post('chat/translate', [ChatTranslationController::class, 'translatePublic']);
 
     Route::post('bids/register', [BidWidgetController::class, 'register']);
     Route::post('bids/verify', [BidWidgetController::class, 'verify']);
     Route::get('bids/{yachtId}/state', [BidWidgetController::class, 'state']);
-    Route::get('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::match(['get', 'post'], 'bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::get('boats/{yachtId}/auction', [BidWidgetController::class, 'auction']);
+    Route::get('boats/{yachtId}/bids', [BidWidgetController::class, 'bids']);
+    Route::post('boats/{yachtId}/bid', [BidWidgetController::class, 'place'])->middleware('bid.session');
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
 });
 
@@ -260,6 +254,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
 
     // Chat inbox (staff & authenticated users)
+    Route::post('chat/translate', [ChatTranslationController::class, 'translate']);
     Route::get('chat/conversations', [ChatConversationController::class, 'index']);
     Route::get('chat/conversations/{id}', [ChatConversationController::class, 'show']);
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
@@ -366,6 +361,11 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin.errors'])->group(function () {
     Route::get('users', [AdminUserController::class, 'index']);
     Route::get('users/{id}', [AdminUserController::class, 'show']);
+});
+
+Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
+    Route::post('boats/{yachtId}/auction/start', [AdminBoatAuctionController::class, 'start']);
+    Route::post('boats/{yachtId}/auction/end', [AdminBoatAuctionController::class, 'end']);
 });
 
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {

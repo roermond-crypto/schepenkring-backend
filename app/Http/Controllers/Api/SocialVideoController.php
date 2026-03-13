@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\LocationAccessService;
 use App\Services\VideoAutomationService;
 use App\Services\VideoSchedulerService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,10 +25,7 @@ class SocialVideoController extends Controller
 
     public function generate(Request $request): JsonResponse
     {
-        $user = $request->user();
-        if (! $user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
+        $user = $this->requireUser($request);
 
         $validated = $request->validate([
             'yacht_id' => ['required', 'integer', 'exists:yachts,id'],
@@ -74,6 +72,8 @@ class SocialVideoController extends Controller
 
     public function schedule(Request $request): JsonResponse
     {
+        $user = $this->requireUser($request);
+
         $validated = $request->validate([
             'start_date' => ['required', 'date'],
             'cadence' => ['required', 'in:daily'],
@@ -86,6 +86,21 @@ class SocialVideoController extends Controller
             'yext_account_id' => ['nullable', 'string'],
             'yext_entity_id' => ['nullable', 'string'],
         ]);
+
+        $videos = Video::query()
+            ->with('yacht.owner')
+            ->whereIn('id', $validated['video_ids'])
+            ->get()
+            ->keyBy('id');
+
+        foreach ($validated['video_ids'] as $videoId) {
+            $video = $videos->get((int) $videoId);
+            if (! $video) {
+                abort(404, 'Video not found.');
+            }
+
+            $this->authorizeVideoAccess($user, $video);
+        }
 
         $scheduled = app(VideoSchedulerService::class)->scheduleVideos(
             $validated['video_ids'],
@@ -105,7 +120,10 @@ class SocialVideoController extends Controller
 
     public function listVideos(Request $request): JsonResponse
     {
+        $user = $this->requireUser($request);
         $query = Video::query()->with('posts');
+
+        $this->applyVisibleVideoScope($query, $user);
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -122,7 +140,10 @@ class SocialVideoController extends Controller
 
     public function listPosts(Request $request): JsonResponse
     {
+        $user = $this->requireUser($request);
         $query = VideoPost::query()->with('video.yacht');
+
+        $this->applyVisiblePostScope($query, $user);
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -143,7 +164,8 @@ class SocialVideoController extends Controller
 
     public function reschedule(Request $request, int $id): JsonResponse
     {
-        $post = VideoPost::findOrFail($id);
+        $user = $this->requireUser($request);
+        $post = $this->findAuthorizedPost($user, $id);
 
         $validated = $request->validate([
             'scheduled_at' => ['required', 'date'],
@@ -161,9 +183,10 @@ class SocialVideoController extends Controller
         ]);
     }
 
-    public function retry(int $id): JsonResponse
+    public function retry(Request $request, int $id): JsonResponse
     {
-        $post = VideoPost::findOrFail($id);
+        $user = $this->requireUser($request);
+        $post = $this->findAuthorizedPost($user, $id);
 
         $post->update([
             'status' => 'scheduled',
@@ -176,9 +199,10 @@ class SocialVideoController extends Controller
         ]);
     }
 
-    public function regenerate(int $id): JsonResponse
+    public function regenerate(Request $request, int $id): JsonResponse
     {
-        $video = Video::findOrFail($id);
+        $user = $this->requireUser($request);
+        $video = $this->findAuthorizedVideo($user, $id);
 
         $video->update([
             'status' => 'queued',
@@ -191,6 +215,108 @@ class SocialVideoController extends Controller
             'message' => 'Video regeneration queued',
             'video' => $video,
         ], 202);
+    }
+
+    private function requireUser(Request $request): User
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            abort(401, 'Unauthorized');
+        }
+
+        return $user;
+    }
+
+    private function findAuthorizedVideo(User $user, int $videoId): Video
+    {
+        $video = Video::query()
+            ->with('yacht.owner')
+            ->findOrFail($videoId);
+
+        $this->authorizeVideoAccess($user, $video);
+
+        return $video;
+    }
+
+    private function findAuthorizedPost(User $user, int $postId): VideoPost
+    {
+        $post = VideoPost::query()
+            ->with('video.yacht.owner')
+            ->findOrFail($postId);
+
+        $this->authorizePostAccess($user, $post);
+
+        return $post;
+    }
+
+    private function authorizeVideoAccess(User $user, Video $video): void
+    {
+        $yacht = $video->yacht;
+        if (! $yacht) {
+            abort(404, 'Yacht not found.');
+        }
+
+        $this->authorizeYachtAccess($user, $yacht);
+    }
+
+    private function authorizePostAccess(User $user, VideoPost $post): void
+    {
+        $video = $post->video;
+        if (! $video) {
+            abort(404, 'Video not found.');
+        }
+
+        $this->authorizeVideoAccess($user, $video);
+    }
+
+    private function applyVisibleVideoScope(Builder $query, User $user): Builder
+    {
+        if ($user->isAdmin()) {
+            return $query;
+        }
+
+        return $query->whereHas('yacht', function (Builder $builder) use ($user) {
+            $this->applyVisibleYachtScope($builder, $user);
+        });
+    }
+
+    private function applyVisiblePostScope(Builder $query, User $user): Builder
+    {
+        if ($user->isAdmin()) {
+            return $query;
+        }
+
+        return $query->whereHas('video.yacht', function (Builder $builder) use ($user) {
+            $this->applyVisibleYachtScope($builder, $user);
+        });
+    }
+
+    private function applyVisibleYachtScope(Builder $query, User $user): Builder
+    {
+        if ($user->isAdmin()) {
+            return $query;
+        }
+
+        if ($user->isClient()) {
+            return $query->where('user_id', $user->id);
+        }
+
+        if ($user->isEmployee()) {
+            $locationIds = $this->locationAccess->accessibleLocationIds($user);
+            if ($locationIds === []) {
+                return $query->whereRaw('1 = 0');
+            }
+
+            return $query->where(function (Builder $builder) use ($locationIds) {
+                $builder->whereIn('ref_harbor_id', $locationIds)
+                    ->orWhereHas('owner', function (Builder $ownerQuery) use ($locationIds) {
+                        $ownerQuery->whereIn('client_location_id', $locationIds);
+                    });
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
     }
 
     private function authorizeYachtAccess(User $user, Yacht $yacht): void

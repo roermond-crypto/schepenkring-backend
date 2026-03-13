@@ -19,7 +19,7 @@ class ChatConversationController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $query = Conversation::with('contact')
+        $query = Conversation::with(['contact', 'lead'])
             ->orderByDesc('last_message_at')
             ->orderByDesc('updated_at');
 
@@ -55,7 +55,7 @@ class ChatConversationController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $conversation = Conversation::with(['contact', 'messages' => function ($query) {
+        $conversation = Conversation::with(['contact', 'lead', 'messages' => function ($query) {
             $query->orderBy('created_at', 'asc')->limit(200);
         }])->findOrFail($id);
 
