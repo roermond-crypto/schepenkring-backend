@@ -79,6 +79,26 @@ test('contract generate endpoint can continue into signhost and return a sign ur
         ->assertJsonPath('sign_request.signhost_transaction_id', 'txn-generic-123')
         ->assertJsonPath('sign_request.status', 'SENT');
 
+    Http::assertSent(function ($request) {
+        if ($request->method() !== 'POST' || $request->url() !== 'https://api.signhost.com/api/transaction') {
+            return false;
+        }
+
+        $data = $request->data();
+
+        return $request->hasHeader('Authorization', 'APIKey signhost-user-token')
+            && $request->hasHeader('Application', 'APPKey signhost-app-key')
+            && ! $request->hasHeader('X-Auth-Client-Id')
+            && ! $request->hasHeader('X-Auth-Client-Token')
+            && $data['Seal'] === false
+            && $data['Reference'] === 'deal-99-contract'
+            && $data['Signers'][0]['Email'] === 'buyer@example.test'
+            && $data['Signers'][0]['SendSignRequest'] === true
+            && $data['Signers'][0]['SignRequestMessage'] === 'Please review and sign this document.'
+            && $data['Signers'][0]['Verifications'][0]['Type'] === 'Scribble'
+            && $data['Signers'][0]['Verifications'][0]['ScribbleName'] === 'Buyer One';
+    });
+
     $signRequest = SignRequest::query()->first();
 
     expect($signRequest)->not->toBeNull();
@@ -153,6 +173,26 @@ test('deal contract generate endpoint can continue into signhost and return a si
         ->assertJsonPath('sign_request.signhost_transaction_id', 'txn-123')
         ->assertJsonPath('sign_request.status', 'SENT')
         ->assertJsonPath('transaction.signing_url_buyer', 'https://signhost.app/sign/buyer-link');
+
+    Http::assertSent(function ($request) {
+        if ($request->method() !== 'POST' || $request->url() !== 'https://api.signhost.com/api/transaction') {
+            return false;
+        }
+
+        $data = $request->data();
+
+        return $request->hasHeader('Authorization', 'APIKey signhost-user-token')
+            && $request->hasHeader('Application', 'APPKey signhost-app-key')
+            && ! $request->hasHeader('X-Auth-Client-Id')
+            && ! $request->hasHeader('X-Auth-Client-Token')
+            && $data['Seal'] === false
+            && $data['Reference'] === 'deal-42-contract'
+            && $data['Signers'][0]['Email'] === 'buyer@example.test'
+            && $data['Signers'][0]['SendSignRequest'] === true
+            && $data['Signers'][0]['SignRequestMessage'] === 'Please review and sign this document.'
+            && $data['Signers'][0]['Verifications'][0]['Type'] === 'Scribble'
+            && $data['Signers'][0]['Verifications'][0]['ScribbleName'] === 'Buyer One';
+    });
 
     $signRequest = SignRequest::query()->first();
 

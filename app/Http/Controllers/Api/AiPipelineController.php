@@ -22,55 +22,244 @@ class AiPipelineController extends Controller
      * Flat Step 2 schema keys returned by the extraction pipeline.
      */
     private const STEP2_SCHEMA_FIELDS = [
-        'boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category', 'new_or_used',
-        'year', 'price', 'min_bid_amount', 'vessel_lying', 'location_city', 'status',
-        'loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast',
-        'passenger_capacity', 'minimum_height', 'variable_depth', 'max_draft', 'min_draft',
-        'designer', 'builder', 'where', 'hull_colour', 'hull_construction', 'hull_number',
-        'hull_type', 'super_structure_colour', 'super_structure_construction',
-        'deck_colour', 'deck_construction', 'windows', 'cockpit_type', 'control_type', 'flybridge',
-        'engine_manufacturer', 'engine_model', 'engine_type', 'horse_power', 'hours', 'fuel',
-        'engine_quantity', 'engine_year', 'cruising_speed', 'max_speed', 'drive_type', 'propulsion',
-        'tankage', 'gallons_per_hour', 'litres_per_hour', 'engine_location', 'gearbox', 'cylinders',
-        'propeller_type', 'starting_type', 'cooling_system', 'engine_serial_number', 'reversing_clutch',
-        'transmission', 'motorization_summary', 'fuel_tanks_amount', 'fuel_tank_total_capacity',
-        'fuel_tank_material', 'range_km', 'stern_thruster', 'bow_thruster',
-        'cabins', 'berths', 'toilet', 'shower', 'bath', 'heating', 'air_conditioning',
-        'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
-        'interior_type', 'saloon', 'headroom', 'separate_dining_area', 'engine_room',
-        'spaces_inside', 'upholstery_color', 'matrasses', 'cushions', 'curtains',
-        'berths_fixed', 'berths_extra', 'berths_crew',
-        'compass', 'gps', 'radar', 'autopilot', 'vhf', 'plotter', 'ais', 'fishfinder',
-        'depth_instrument', 'wind_instrument', 'speed_instrument', 'navigation_lights',
-        'log_speed', 'windvane_steering', 'charts_guides', 'rudder_position_indicator',
-        'turn_indicator', 'ssb_receiver', 'shortwave_radio', 'short_band_transmitter',
-        'weatherfax_navtex', 'satellite_communication',
-        'life_raft', 'epirb', 'fire_extinguisher', 'bilge_pump', 'mob_system', 'life_jackets',
-        'radar_reflector', 'flares', 'life_buoy', 'bilge_pump_manual', 'bilge_pump_electric',
-        'watertight_door', 'gas_bottle_locker', 'self_draining_cockpit',
-        'battery', 'battery_charger', 'generator', 'inverter', 'shorepower', 'solar_panel',
-        'wind_generator', 'voltage', 'dynamo', 'accumonitor', 'voltmeter', 'shore_power_cable',
-        'consumption_monitor', 'control_panel', 'fuel_tank_gauge', 'tachometer',
-        'oil_pressure_gauge', 'temperature_gauge',
-        'anchor', 'anchor_winch', 'bimini', 'spray_hood', 'swimming_platform', 'swimming_ladder',
-        'teak_deck', 'cockpit_table', 'dinghy', 'trailer', 'television', 'oven', 'microwave',
-        'fridge', 'freezer', 'cooker', 'cd_player', 'dvd_player', 'satellite_reception',
-        'covers', 'fenders', 'cooking_fuel', 'hot_air', 'stove', 'central_heating',
-        'water_tank', 'water_tank_material', 'water_tank_gauge', 'water_maker',
-        'waste_water_tank', 'waste_water_tank_material', 'waste_water_tank_gauge',
-        'waste_water_tank_drainpump', 'deck_suction', 'water_system', 'hot_water',
-        'sea_water_pump', 'deck_wash_pump', 'deck_shower',
-        'anchor_connection', 'stern_anchor', 'spud_pole', 'cockpit_tent', 'outdoor_cushions',
-        'sea_rails', 'pushpit_pullpit', 'sail_lowering_system', 'crutch', 'dinghy_brand',
-        'outboard_engine', 'crane', 'davits', 'oars_paddles',
-        'spinnaker', 'gennaker', 'sailplan_type', 'number_of_masts', 'spars_material',
-        'bowsprit', 'standing_rig', 'sail_surface_area', 'stabilizer_sail', 'sail_amount',
-        'sail_material', 'sail_manufacturer', 'genoa', 'main_sail', 'furling_mainsail',
-        'tri_sail', 'storm_jib', 'mizzen', 'furling_mizzen', 'jib', 'roller_furling_foresail',
-        'genoa_reefing_system', 'flying_jib', 'halfwinder_bollejan', 'winches',
-        'electric_winches', 'manual_winches', 'hydraulic_winches', 'self_tailing_winches',
-        'reg_details', 'known_defects', 'last_serviced', 'owners_comment',
-        'short_description_en', 'short_description_nl', 'short_description_de',
+        'boat_name',
+        'manufacturer',
+        'model',
+        'boat_type',
+        'boat_category',
+        'new_or_used',
+        'year',
+        'price',
+        'min_bid_amount',
+        'vessel_lying',
+        'location_city',
+        'status',
+        'loa',
+        'lwl',
+        'beam',
+        'draft',
+        'air_draft',
+        'displacement',
+        'ballast',
+        'passenger_capacity',
+        'minimum_height',
+        'variable_depth',
+        'max_draft',
+        'min_draft',
+        'designer',
+        'builder',
+        'where',
+        'hull_colour',
+        'hull_construction',
+        'hull_number',
+        'hull_type',
+        'super_structure_colour',
+        'super_structure_construction',
+        'deck_colour',
+        'deck_construction',
+        'windows',
+        'cockpit_type',
+        'control_type',
+        'flybridge',
+        'engine_manufacturer',
+        'engine_model',
+        'engine_type',
+        'horse_power',
+        'hours',
+        'fuel',
+        'engine_quantity',
+        'engine_year',
+        'cruising_speed',
+        'max_speed',
+        'drive_type',
+        'propulsion',
+        'tankage',
+        'gallons_per_hour',
+        'litres_per_hour',
+        'engine_location',
+        'gearbox',
+        'cylinders',
+        'propeller_type',
+        'starting_type',
+        'cooling_system',
+        'engine_serial_number',
+        'reversing_clutch',
+        'transmission',
+        'motorization_summary',
+        'fuel_tanks_amount',
+        'fuel_tank_total_capacity',
+        'fuel_tank_material',
+        'range_km',
+        'stern_thruster',
+        'bow_thruster',
+        'cabins',
+        'berths',
+        'toilet',
+        'shower',
+        'bath',
+        'heating',
+        'air_conditioning',
+        'ce_category',
+        'ce_max_weight',
+        'ce_max_motor',
+        'cvo',
+        'cbb',
+        'interior_type',
+        'saloon',
+        'headroom',
+        'separate_dining_area',
+        'engine_room',
+        'spaces_inside',
+        'upholstery_color',
+        'matrasses',
+        'cushions',
+        'curtains',
+        'berths_fixed',
+        'berths_extra',
+        'berths_crew',
+        'compass',
+        'gps',
+        'radar',
+        'autopilot',
+        'vhf',
+        'plotter',
+        'ais',
+        'fishfinder',
+        'depth_instrument',
+        'wind_instrument',
+        'speed_instrument',
+        'navigation_lights',
+        'log_speed',
+        'windvane_steering',
+        'charts_guides',
+        'rudder_position_indicator',
+        'turn_indicator',
+        'ssb_receiver',
+        'shortwave_radio',
+        'short_band_transmitter',
+        'weatherfax_navtex',
+        'satellite_communication',
+        'life_raft',
+        'epirb',
+        'fire_extinguisher',
+        'bilge_pump',
+        'mob_system',
+        'life_jackets',
+        'radar_reflector',
+        'flares',
+        'life_buoy',
+        'bilge_pump_manual',
+        'bilge_pump_electric',
+        'watertight_door',
+        'gas_bottle_locker',
+        'self_draining_cockpit',
+        'battery',
+        'battery_charger',
+        'generator',
+        'inverter',
+        'shorepower',
+        'solar_panel',
+        'wind_generator',
+        'voltage',
+        'dynamo',
+        'accumonitor',
+        'voltmeter',
+        'shore_power_cable',
+        'consumption_monitor',
+        'control_panel',
+        'fuel_tank_gauge',
+        'tachometer',
+        'oil_pressure_gauge',
+        'temperature_gauge',
+        'anchor',
+        'anchor_winch',
+        'bimini',
+        'spray_hood',
+        'swimming_platform',
+        'swimming_ladder',
+        'teak_deck',
+        'cockpit_table',
+        'dinghy',
+        'trailer',
+        'television',
+        'oven',
+        'microwave',
+        'fridge',
+        'freezer',
+        'cooker',
+        'cd_player',
+        'dvd_player',
+        'satellite_reception',
+        'covers',
+        'fenders',
+        'cooking_fuel',
+        'hot_air',
+        'stove',
+        'central_heating',
+        'water_tank',
+        'water_tank_material',
+        'water_tank_gauge',
+        'water_maker',
+        'waste_water_tank',
+        'waste_water_tank_material',
+        'waste_water_tank_gauge',
+        'waste_water_tank_drainpump',
+        'deck_suction',
+        'water_system',
+        'hot_water',
+        'sea_water_pump',
+        'deck_wash_pump',
+        'deck_shower',
+        'anchor_connection',
+        'stern_anchor',
+        'spud_pole',
+        'cockpit_tent',
+        'outdoor_cushions',
+        'sea_rails',
+        'pushpit_pullpit',
+        'sail_lowering_system',
+        'crutch',
+        'dinghy_brand',
+        'outboard_engine',
+        'crane',
+        'davits',
+        'oars_paddles',
+        'spinnaker',
+        'gennaker',
+        'sailplan_type',
+        'number_of_masts',
+        'spars_material',
+        'bowsprit',
+        'standing_rig',
+        'sail_surface_area',
+        'stabilizer_sail',
+        'sail_amount',
+        'sail_material',
+        'sail_manufacturer',
+        'genoa',
+        'main_sail',
+        'furling_mainsail',
+        'tri_sail',
+        'storm_jib',
+        'mizzen',
+        'furling_mizzen',
+        'jib',
+        'roller_furling_foresail',
+        'genoa_reefing_system',
+        'flying_jib',
+        'halfwinder_bollejan',
+        'winches',
+        'electric_winches',
+        'manual_winches',
+        'hydraulic_winches',
+        'self_tailing_winches',
+        'reg_details',
+        'known_defects',
+        'last_serviced',
+        'owners_comment',
+        'short_description_en',
+        'short_description_nl',
+        'short_description_de',
     ];
 
     /**
@@ -87,15 +276,54 @@ class AiPipelineController extends Controller
      * Optional equipment fields that must be conservative yes/no/unknown only.
      */
     private const OPTIONAL_EQUIPMENT_FIELDS = [
-        'life_jackets', 'bimini', 'anchor', 'fishfinder', 'bow_thruster', 'stern_thruster',
-        'trailer', 'heating', 'toilet', 'fridge', 'freezer', 'ais', 'life_raft',
-        'fire_extinguisher', 'bilge_pump', 'solar_panel', 'swimming_platform',
-        'swimming_ladder', 'teak_deck', 'cockpit_table', 'dinghy', 'television',
-        'oven', 'microwave', 'spinnaker', 'gennaker', 'epirb', 'mob_system',
-        'radar_reflector', 'flares', 'wind_generator', 'shorepower', 'inverter',
-        'battery_charger', 'depth_instrument', 'wind_instrument', 'speed_instrument',
-        'navigation_lights', 'radar', 'autopilot', 'gps', 'vhf', 'plotter', 'compass',
-        'water_tank', 'waste_water_tank', 'bath', 'shower'
+        'life_jackets',
+        'bimini',
+        'anchor',
+        'fishfinder',
+        'bow_thruster',
+        'stern_thruster',
+        'trailer',
+        'heating',
+        'toilet',
+        'fridge',
+        'freezer',
+        'ais',
+        'life_raft',
+        'fire_extinguisher',
+        'bilge_pump',
+        'solar_panel',
+        'swimming_platform',
+        'swimming_ladder',
+        'teak_deck',
+        'cockpit_table',
+        'dinghy',
+        'television',
+        'oven',
+        'microwave',
+        'spinnaker',
+        'gennaker',
+        'epirb',
+        'mob_system',
+        'radar_reflector',
+        'flares',
+        'wind_generator',
+        'shorepower',
+        'inverter',
+        'battery_charger',
+        'depth_instrument',
+        'wind_instrument',
+        'speed_instrument',
+        'navigation_lights',
+        'radar',
+        'autopilot',
+        'gps',
+        'vhf',
+        'plotter',
+        'compass',
+        'water_tank',
+        'waste_water_tank',
+        'bath',
+        'shower'
     ];
 
     /**
@@ -137,8 +365,7 @@ class AiPipelineController extends Controller
         Request $request,
         PineconeMatcherService $pineconeMatcher,
         AiCorrectionLoggingService $correctionLogging
-    ): JsonResponse
-    {
+    ): JsonResponse {
         set_time_limit(480); // 8 minutes
         ini_set('memory_limit', '1024M'); // 1GB for processing base64 images
 
@@ -201,107 +428,379 @@ class AiPipelineController extends Controller
         if (isset($stage1Result['error'])) {
             Log::warning('[AI Pipeline] Stage 1 (Gemini) failed, proceeding to fallbacks. Error: ' . $stage1Result['error']);
             $warnings[] = 'Primary vision extraction failed: ' . $stage1Result['error'];
-            
+
             // Expanded schema keys
             $schemaKeys = [
                 // Core
-                'boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category', 'new_or_used',
-                'year', 'price', 'loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement',
-                'ballast', 'hull_colour', 'hull_construction', 'hull_type', 'hull_number',
-                'designer', 'builder', 'where', 'deck_colour', 'deck_construction',
-                'super_structure_colour', 'super_structure_construction', 'cockpit_type',
-                'control_type', 'flybridge', 'engine_manufacturer', 'engine_model', 'engine_type',
-                'horse_power', 'hours', 'fuel', 'engine_quantity', 'engine_year', 'cruising_speed',
-                'max_speed', 'drive_type', 'propulsion', 'cabins', 'berths', 'toilet', 'shower',
-                'bath', 'heating', 'air_conditioning', 'ce_category', 'passenger_capacity',
-                'compass', 'gps', 'radar', 'autopilot', 'vhf', 'plotter', 'depth_instrument',
-                'wind_instrument', 'speed_instrument', 'navigation_lights', 'life_raft', 'epirb',
-                'fire_extinguisher', 'bilge_pump', 'mob_system', 'life_jackets', 'radar_reflector',
-                'flares', 'battery', 'battery_charger', 'generator', 'inverter', 'shorepower',
-                'solar_panel', 'wind_generator', 'voltage', 'anchor', 'anchor_winch', 'bimini',
-                'spray_hood', 'swimming_platform', 'swimming_ladder', 'teak_deck', 'cockpit_table',
-                'dinghy', 'covers', 'spinnaker', 'fenders', 'television', 'cd_player', 'dvd_player',
-                'satellite_reception', 'oven', 'microwave', 'fridge', 'freezer', 'cooker',
-                'owners_comment', 'reg_details', 'known_defects', 'last_serviced', 
-                'short_description_en', 'short_description_nl', 'short_description_de', 'short_description_fr',
-                'year', 'price', 'min_bid_amount', 'vessel_lying', 'location_city', 'status',
-                
+                'boat_name',
+                'manufacturer',
+                'model',
+                'boat_type',
+                'boat_category',
+                'new_or_used',
+                'year',
+                'price',
+                'loa',
+                'lwl',
+                'beam',
+                'draft',
+                'air_draft',
+                'displacement',
+                'ballast',
+                'hull_colour',
+                'hull_construction',
+                'hull_type',
+                'hull_number',
+                'designer',
+                'builder',
+                'where',
+                'deck_colour',
+                'deck_construction',
+                'super_structure_colour',
+                'super_structure_construction',
+                'cockpit_type',
+                'control_type',
+                'flybridge',
+                'engine_manufacturer',
+                'engine_model',
+                'engine_type',
+                'horse_power',
+                'hours',
+                'fuel',
+                'engine_quantity',
+                'engine_year',
+                'cruising_speed',
+                'max_speed',
+                'drive_type',
+                'propulsion',
+                'cabins',
+                'berths',
+                'toilet',
+                'shower',
+                'bath',
+                'heating',
+                'air_conditioning',
+                'ce_category',
+                'passenger_capacity',
+                'compass',
+                'gps',
+                'radar',
+                'autopilot',
+                'vhf',
+                'plotter',
+                'depth_instrument',
+                'wind_instrument',
+                'speed_instrument',
+                'navigation_lights',
+                'life_raft',
+                'epirb',
+                'fire_extinguisher',
+                'bilge_pump',
+                'mob_system',
+                'life_jackets',
+                'radar_reflector',
+                'flares',
+                'battery',
+                'battery_charger',
+                'generator',
+                'inverter',
+                'shorepower',
+                'solar_panel',
+                'wind_generator',
+                'voltage',
+                'anchor',
+                'anchor_winch',
+                'bimini',
+                'spray_hood',
+                'swimming_platform',
+                'swimming_ladder',
+                'teak_deck',
+                'cockpit_table',
+                'dinghy',
+                'covers',
+                'spinnaker',
+                'fenders',
+                'television',
+                'cd_player',
+                'dvd_player',
+                'satellite_reception',
+                'oven',
+                'microwave',
+                'fridge',
+                'freezer',
+                'cooker',
+                'owners_comment',
+                'reg_details',
+                'known_defects',
+                'last_serviced',
+                'short_description_en',
+                'short_description_nl',
+                'short_description_de',
+                'short_description_fr',
+                'year',
+                'price',
+                'min_bid_amount',
+                'vessel_lying',
+                'location_city',
+                'status',
+
                 // Dimensions
-                'loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast', 
-                'passenger_capacity', 'minimum_height', 'variable_depth', 'max_draft', 'min_draft',
-                
+                'loa',
+                'lwl',
+                'beam',
+                'draft',
+                'air_draft',
+                'displacement',
+                'ballast',
+                'passenger_capacity',
+                'minimum_height',
+                'variable_depth',
+                'max_draft',
+                'min_draft',
+
                 // Construction
-                'designer', 'builder', 'where', 'hull_colour', 'hull_construction', 'hull_number', 
-                'hull_type', 'super_structure_colour', 'super_structure_construction', 
-                'deck_colour', 'deck_construction', 'windows', 'cockpit_type', 'control_type', 'flybridge',
-                
+                'designer',
+                'builder',
+                'where',
+                'hull_colour',
+                'hull_construction',
+                'hull_number',
+                'hull_type',
+                'super_structure_colour',
+                'super_structure_construction',
+                'deck_colour',
+                'deck_construction',
+                'windows',
+                'cockpit_type',
+                'control_type',
+                'flybridge',
+
                 // Engines
-                'engine_manufacturer', 'engine_model', 'engine_type', 'horse_power', 'hours', 'fuel', 
-                'engine_quantity', 'engine_year', 'cruising_speed', 'max_speed', 'drive_type', 'propulsion',
-                'tankage', 'gallons_per_hour', 'litres_per_hour', 'engine_location', 'gearbox', 'cylinders',
-                'propeller_type', 'starting_type', 'cooling_system', 'engine_serial_number', 'reversing_clutch',
-                'transmission', 'motorization_summary', 'fuel_tanks_amount', 'fuel_tank_total_capacity', 
-                'fuel_tank_material', 'range_km', 'stern_thruster', 'bow_thruster',
-                
+                'engine_manufacturer',
+                'engine_model',
+                'engine_type',
+                'horse_power',
+                'hours',
+                'fuel',
+                'engine_quantity',
+                'engine_year',
+                'cruising_speed',
+                'max_speed',
+                'drive_type',
+                'propulsion',
+                'tankage',
+                'gallons_per_hour',
+                'litres_per_hour',
+                'engine_location',
+                'gearbox',
+                'cylinders',
+                'propeller_type',
+                'starting_type',
+                'cooling_system',
+                'engine_serial_number',
+                'reversing_clutch',
+                'transmission',
+                'motorization_summary',
+                'fuel_tanks_amount',
+                'fuel_tank_total_capacity',
+                'fuel_tank_material',
+                'range_km',
+                'stern_thruster',
+                'bow_thruster',
+
                 // Accommodation
-                'cabins', 'berths', 'toilet', 'shower', 'bath', 'heating', 'air_conditioning', 
-                'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
-                'interior_type', 'saloon', 'headroom', 'separate_dining_area', 'engine_room', 
-                'spaces_inside', 'upholstery_color', 'matrasses', 'cushions', 'curtains', 
-                'berths_fixed', 'berths_extra', 'berths_crew',
-                
+                'cabins',
+                'berths',
+                'toilet',
+                'shower',
+                'bath',
+                'heating',
+                'air_conditioning',
+                'ce_category',
+                'ce_max_weight',
+                'ce_max_motor',
+                'cvo',
+                'cbb',
+                'interior_type',
+                'saloon',
+                'headroom',
+                'separate_dining_area',
+                'engine_room',
+                'spaces_inside',
+                'upholstery_color',
+                'matrasses',
+                'cushions',
+                'curtains',
+                'berths_fixed',
+                'berths_extra',
+                'berths_crew',
+
                 // Navigation
-                'compass', 'gps', 'radar', 'autopilot', 'vhf', 'plotter', 'ais', 'fishfinder',
-                'depth_instrument', 'wind_instrument', 'speed_instrument', 'navigation_lights',
-                'log_speed', 'windvane_steering', 'charts_guides', 'rudder_position_indicator', 
-                'turn_indicator', 'ssb_receiver', 'shortwave_radio', 'short_band_transmitter',
-                'weatherfax_navtex', 'satellite_communication',
-                
+                'compass',
+                'gps',
+                'radar',
+                'autopilot',
+                'vhf',
+                'plotter',
+                'ais',
+                'fishfinder',
+                'depth_instrument',
+                'wind_instrument',
+                'speed_instrument',
+                'navigation_lights',
+                'log_speed',
+                'windvane_steering',
+                'charts_guides',
+                'rudder_position_indicator',
+                'turn_indicator',
+                'ssb_receiver',
+                'shortwave_radio',
+                'short_band_transmitter',
+                'weatherfax_navtex',
+                'satellite_communication',
+
                 // Safety
-                'life_raft', 'epirb', 'fire_extinguisher', 'bilge_pump', 'mob_system', 'life_jackets', 
-                'radar_reflector', 'flares', 'life_buoy', 'bilge_pump_manual', 'bilge_pump_electric',
-                'watertight_door', 'gas_bottle_locker', 'self_draining_cockpit',
-                
+                'life_raft',
+                'epirb',
+                'fire_extinguisher',
+                'bilge_pump',
+                'mob_system',
+                'life_jackets',
+                'radar_reflector',
+                'flares',
+                'life_buoy',
+                'bilge_pump_manual',
+                'bilge_pump_electric',
+                'watertight_door',
+                'gas_bottle_locker',
+                'self_draining_cockpit',
+
                 // Electrical
-                'battery', 'battery_charger', 'generator', 'inverter', 'shorepower', 'solar_panel', 
-                'wind_generator', 'voltage', 'dynamo', 'accumonitor', 'voltmeter', 'shore_power_cable',
-                'consumption_monitor', 'control_panel', 'fuel_tank_gauge', 'tachometer', 
-                'oil_pressure_gauge', 'temperature_gauge',
-                
+                'battery',
+                'battery_charger',
+                'generator',
+                'inverter',
+                'shorepower',
+                'solar_panel',
+                'wind_generator',
+                'voltage',
+                'dynamo',
+                'accumonitor',
+                'voltmeter',
+                'shore_power_cable',
+                'consumption_monitor',
+                'control_panel',
+                'fuel_tank_gauge',
+                'tachometer',
+                'oil_pressure_gauge',
+                'temperature_gauge',
+
                 // Deck & Comfort
-                'anchor', 'anchor_winch', 'bimini', 'spray_hood', 'swimming_platform', 'swimming_ladder',
-                'teak_deck', 'cockpit_table', 'dinghy', 'trailer', 'television', 'oven', 'microwave', 
-                'fridge', 'freezer', 'cooker', 'cd_player', 'dvd_player', 'satellite_reception', 
-                'covers', 'fenders', 'cooking_fuel', 'hot_air', 'stove', 'central_heating',
-                'water_tank', 'water_tank_material', 'water_tank_gauge', 'water_maker',
-                'waste_water_tank', 'waste_water_tank_material', 'waste_water_tank_gauge',
-                'waste_water_tank_drainpump', 'deck_suction', 'water_system', 'hot_water',
-                'sea_water_pump', 'deck_wash_pump', 'deck_shower',
-                'anchor_connection', 'stern_anchor', 'spud_pole', 'cockpit_tent', 'outdoor_cushions',
-                'sea_rails', 'pushpit_pullpit', 'sail_lowering_system', 'crutch', 'dinghy_brand',
-                'outboard_engine', 'crane', 'davits', 'oars_paddles',
-                
+                'anchor',
+                'anchor_winch',
+                'bimini',
+                'spray_hood',
+                'swimming_platform',
+                'swimming_ladder',
+                'teak_deck',
+                'cockpit_table',
+                'dinghy',
+                'trailer',
+                'television',
+                'oven',
+                'microwave',
+                'fridge',
+                'freezer',
+                'cooker',
+                'cd_player',
+                'dvd_player',
+                'satellite_reception',
+                'covers',
+                'fenders',
+                'cooking_fuel',
+                'hot_air',
+                'stove',
+                'central_heating',
+                'water_tank',
+                'water_tank_material',
+                'water_tank_gauge',
+                'water_maker',
+                'waste_water_tank',
+                'waste_water_tank_material',
+                'waste_water_tank_gauge',
+                'waste_water_tank_drainpump',
+                'deck_suction',
+                'water_system',
+                'hot_water',
+                'sea_water_pump',
+                'deck_wash_pump',
+                'deck_shower',
+                'anchor_connection',
+                'stern_anchor',
+                'spud_pole',
+                'cockpit_tent',
+                'outdoor_cushions',
+                'sea_rails',
+                'pushpit_pullpit',
+                'sail_lowering_system',
+                'crutch',
+                'dinghy_brand',
+                'outboard_engine',
+                'crane',
+                'davits',
+                'oars_paddles',
+
                 // Rigging
-                'spinnaker', 'gennaker', 'sailplan_type', 'number_of_masts', 'spars_material', 
-                'bowsprit', 'standing_rig', 'sail_surface_area', 'stabilizer_sail', 'sail_amount',
-                'sail_material', 'sail_manufacturer', 'genoa', 'main_sail', 'furling_mainsail',
-                'tri_sail', 'storm_jib', 'mizzen', 'furling_mizzen', 'jib', 'roller_furling_foresail',
-                'genoa_reefing_system', 'flying_jib', 'halfwinder_bollejan', 'winches',
-                'electric_winches', 'manual_winches', 'hydraulic_winches', 'self_tailing_winches',
-                
+                'spinnaker',
+                'gennaker',
+                'sailplan_type',
+                'number_of_masts',
+                'spars_material',
+                'bowsprit',
+                'standing_rig',
+                'sail_surface_area',
+                'stabilizer_sail',
+                'sail_amount',
+                'sail_material',
+                'sail_manufacturer',
+                'genoa',
+                'main_sail',
+                'furling_mainsail',
+                'tri_sail',
+                'storm_jib',
+                'mizzen',
+                'furling_mizzen',
+                'jib',
+                'roller_furling_foresail',
+                'genoa_reefing_system',
+                'flying_jib',
+                'halfwinder_bollejan',
+                'winches',
+                'electric_winches',
+                'manual_winches',
+                'hydraulic_winches',
+                'self_tailing_winches',
+
                 // Registry & Details
-                'reg_details', 'known_defects', 'last_serviced', 'owners_comment',
-                'short_description_en', 'short_description_nl', 'short_description_de'
+                'reg_details',
+                'known_defects',
+                'last_serviced',
+                'owners_comment',
+                'short_description_en',
+                'short_description_nl',
+                'short_description_de'
             ];
-            
+
             foreach ($schemaKeys as $key) {
                 if (!isset($formValues[$key])) {
                     $formValues[$key] = null;
                 }
             }
-            
+
             if (!isset($formValues['short_description_en']) || $formValues['short_description_en'] === null) {
                 $formValues['short_description_en'] = $hintText;
+            }
+        }
         // ─── PARALLEL EXECUTION TRACKS ────────────────────────────────
         // We run independent stages in parallel to hit the 60s target.
         // Track 1: Gemini Vision (Images + Hint)
@@ -357,13 +856,13 @@ class AiPipelineController extends Controller
             'top_matches' => [],
             'warnings' => [],
         ];
-        
+
         // 1. Process Gemini Vision
         $visionResult = $responses['gemini_vision'] ?? null;
         if ($visionResult && $visionResult->successful()) {
             $stagesRun[] = 'gemini_vision';
             $visionImagesUsed = count($visionResult->json()['candidates'][0]['content']['parts'] ?? []) - 1; // Correcting count
-             // Note: parts[0] is text prompt, the rest are images
+            // Note: parts[0] is text prompt, the rest are images
             $extracted = $visionResult->json()['candidates'][0]['content']['parts'][0]['text'] ?? null;
             if ($extracted) {
                 $extracted = $this->cleanGeminiJson($extracted);
@@ -502,10 +1001,9 @@ class AiPipelineController extends Controller
                 'needs_confirmation' => $needsConfirmation,
                 'validation_notes'   => 'Optimized flow: ' . $fastPathReason,
             ];
-
         } else {
             // ─── SLOW PATH: Full enrichment + validation pipeline ─────────
-            
+
             // Try Gemini DB enrichment
             $geminiEnriched = $this->runEnrichment($formValues, $fieldConfidence, $apiKey);
             if (!empty($geminiEnriched)) {
@@ -593,7 +1091,7 @@ class AiPipelineController extends Controller
                 $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
             }
         }
- // end slow path
+        // end slow path
 
         Log::info('[AI Pipeline] Pipeline complete', [
             'stages'              => $stagesRun,
@@ -832,7 +1330,11 @@ HINT];
                 }
 
                 if ($response->status() === 429 && $attempt < $maxRetries) {
-                    $waitSeconds = match ($attempt) { 1 => 5, 2 => 10, default => 15 };
+                    $waitSeconds = match ($attempt) {
+                        1 => 5,
+                        2 => 10,
+                        default => 15
+                    };
                     Log::warning("[AI Pipeline] Gemini 429 rate limit, retrying in {$waitSeconds}s (attempt {$attempt}/{$maxRetries})");
                     sleep($waitSeconds);
                     continue;
@@ -865,7 +1367,6 @@ HINT];
                 'extracted' => $extracted,
                 'image_count' => $imageCount,
             ];
-
         } catch (\Exception $e) {
             Log::error("[AI Pipeline] Gemini Stage 1 exception: " . $e->getMessage());
             return ['error' => 'Extraction failed: ' . $e->getMessage()];
@@ -894,10 +1395,10 @@ HINT];
             if (!empty($currentValues['manufacturer'])) {
                 $query->where(function ($q) use ($currentValues) {
                     $q->where('manufacturer', 'LIKE', '%' . $currentValues['manufacturer'] . '%')
-                      ->orWhere('boat_name', 'LIKE', '%' . $currentValues['manufacturer'] . '%')
-                      ->orWhereHas('construction', function ($q2) use ($currentValues) {
-                          $q2->where('builder', 'LIKE', '%' . $currentValues['manufacturer'] . '%');
-                      });
+                        ->orWhere('boat_name', 'LIKE', '%' . $currentValues['manufacturer'] . '%')
+                        ->orWhereHas('construction', function ($q2) use ($currentValues) {
+                            $q2->where('builder', 'LIKE', '%' . $currentValues['manufacturer'] . '%');
+                        });
                 });
             } elseif (!empty($currentValues['boat_type'])) {
                 $query->where('boat_type', $currentValues['boat_type']);
@@ -1021,7 +1522,6 @@ PROMPT;
             }
 
             return $enriched;
-
         } catch (\Exception $e) {
             Log::error('[AI Pipeline] Database Enrichment exception: ' . $e->getMessage());
             return null;
@@ -1035,11 +1535,11 @@ PROMPT;
     {
         try {
             // Check if we have ANY context at all to work with
-            $hasAnyContext = !empty($currentValues['manufacturer']) 
-                          || !empty($currentValues['model'])
-                          || !empty($currentValues['boat_name'])
-                          || !empty($currentValues['boat_type'])
-                          || !empty($currentValues['short_description_en']);
+            $hasAnyContext = !empty($currentValues['manufacturer'])
+                || !empty($currentValues['model'])
+                || !empty($currentValues['boat_name'])
+                || !empty($currentValues['boat_type'])
+                || !empty($currentValues['short_description_en']);
             if (!$hasAnyContext) {
                 Log::info('[AI Pipeline] Not enough data for OpenAI enrichment');
                 return null;
@@ -1116,7 +1616,6 @@ PROMPT;
             }
 
             return $enriched;
-
         } catch (\Exception $e) {
             Log::error('[AI Pipeline] OpenAI Enrichment exception: ' . $e->getMessage());
             return null;
@@ -1134,39 +1633,177 @@ PROMPT;
 
         // ── Known Boat Manufacturers ──────────────────────────────────
         $manufacturers = [
-            'Jeanneau', 'Beneteau', 'Bavaria', 'Hanse', 'Hallberg-Rassy', 'Dehler',
-            'Dufour', 'Lagoon', 'Fountaine Pajot', 'Leopard', 'Catana', 'Nautitech',
-            'Sunseeker', 'Princess', 'Fairline', 'Azimut', 'Ferretti', 'Riva',
-            'Pershing', 'Itama', 'Absolute', 'Cranchi', 'Sessa', 'Fiart',
-            'Contest', 'Oyster', 'Swan', 'Baltic', 'Wauquiez', 'Moody',
-            'Westerly', 'Southerly', 'Rustler', 'Malo', 'Najad', 'HR',
-            'Solemar', 'Zodiac', 'Brig', 'Ribeye', 'Williams', 'Highfield',
-            'Boston Whaler', 'Grady-White', 'Robalo', 'Sea Ray', 'Chaparral',
-            'Monterey', 'Four Winns', 'Regal', 'Cobalt', 'Chris-Craft',
-            'Nimbus', 'Axopar', 'XO Boats', 'Parker', 'Quicksilver',
-            'Mercury', 'Yamaha', 'Honda Marine', 'Suzuki Marine', 'Evinrude',
-            'Volvo Penta', 'MAN', 'Cummins', 'Caterpillar', 'Yanmar',
-            'Perkins', 'Steyr', 'Nanni', 'Beta Marine', 'Vetus',
-            'Grand Soleil', 'X-Yachts', 'J Boats', 'Bali', 'Excess',
-            'Privilege', 'Outremer', 'Neel', 'Corsair', 'Dragonfly',
-            'Benetti', 'Sanlorenzo', 'Mangusta', 'Maiora', 'Aicon',
-            'Galeon', 'Greenline', 'Sealine', 'Prestige', 'Jeanneau',
-            'Fjord', 'Windy', 'Goldfish', 'Saxdor', 'Rand', 'Pardo',
-            'De Antonio', 'Invictus', 'Capelli', 'Nuova Jolly', 'Joker Boat',
-            'Lomac', 'Scanner', 'Ranieri', 'Salpa', 'BWA',
-            'Linssen', 'Pedro', 'Aquanaut', 'Valk', 'Boarncruiser',
-            'Vripack', 'Jongert', 'Royal Huisman', 'Feadship', 'Heesen',
-            'Amels', 'Oceanco', 'Lurssen', 'Blohm Voss',
-            'Nordhavn', 'Fleming', 'Grand Banks', 'Kadey-Krogen', 'Selene',
-            'Riviera', 'Maritimo', 'Palm Beach', 'Hinckley', 'Sabre',
-            'Back Cove', 'MJM', 'Regulator', 'Yellowfin', 'Contender',
-            'Bertram', 'Viking', 'Cabo', 'Hatteras', 'Luhrs',
-            'Tiara', 'Pursuit', 'Scout', 'Sportsman', 'Tidewater',
-            'Wellcraft', 'Trophy', 'Starcraft', 'Crownline', 'Glastron',
-            'Bayliner', 'Maxum', 'Larson', 'Rinker', 'Formula',
-            'Glacier Bay', 'World Cat', 'Pro-Kat', 'Twin Vee',
-            'SeaVee', 'Mag Bay', 'HCB', 'Invincible', 'Freeman',
-            'Sealine', 'Hardy', 'Duchy', 'Orkney', 'Quicksilver',
+            'Jeanneau',
+            'Beneteau',
+            'Bavaria',
+            'Hanse',
+            'Hallberg-Rassy',
+            'Dehler',
+            'Dufour',
+            'Lagoon',
+            'Fountaine Pajot',
+            'Leopard',
+            'Catana',
+            'Nautitech',
+            'Sunseeker',
+            'Princess',
+            'Fairline',
+            'Azimut',
+            'Ferretti',
+            'Riva',
+            'Pershing',
+            'Itama',
+            'Absolute',
+            'Cranchi',
+            'Sessa',
+            'Fiart',
+            'Contest',
+            'Oyster',
+            'Swan',
+            'Baltic',
+            'Wauquiez',
+            'Moody',
+            'Westerly',
+            'Southerly',
+            'Rustler',
+            'Malo',
+            'Najad',
+            'HR',
+            'Solemar',
+            'Zodiac',
+            'Brig',
+            'Ribeye',
+            'Williams',
+            'Highfield',
+            'Boston Whaler',
+            'Grady-White',
+            'Robalo',
+            'Sea Ray',
+            'Chaparral',
+            'Monterey',
+            'Four Winns',
+            'Regal',
+            'Cobalt',
+            'Chris-Craft',
+            'Nimbus',
+            'Axopar',
+            'XO Boats',
+            'Parker',
+            'Quicksilver',
+            'Mercury',
+            'Yamaha',
+            'Honda Marine',
+            'Suzuki Marine',
+            'Evinrude',
+            'Volvo Penta',
+            'MAN',
+            'Cummins',
+            'Caterpillar',
+            'Yanmar',
+            'Perkins',
+            'Steyr',
+            'Nanni',
+            'Beta Marine',
+            'Vetus',
+            'Grand Soleil',
+            'X-Yachts',
+            'J Boats',
+            'Bali',
+            'Excess',
+            'Privilege',
+            'Outremer',
+            'Neel',
+            'Corsair',
+            'Dragonfly',
+            'Benetti',
+            'Sanlorenzo',
+            'Mangusta',
+            'Maiora',
+            'Aicon',
+            'Galeon',
+            'Greenline',
+            'Sealine',
+            'Prestige',
+            'Jeanneau',
+            'Fjord',
+            'Windy',
+            'Goldfish',
+            'Saxdor',
+            'Rand',
+            'Pardo',
+            'De Antonio',
+            'Invictus',
+            'Capelli',
+            'Nuova Jolly',
+            'Joker Boat',
+            'Lomac',
+            'Scanner',
+            'Ranieri',
+            'Salpa',
+            'BWA',
+            'Linssen',
+            'Pedro',
+            'Aquanaut',
+            'Valk',
+            'Boarncruiser',
+            'Vripack',
+            'Jongert',
+            'Royal Huisman',
+            'Feadship',
+            'Heesen',
+            'Amels',
+            'Oceanco',
+            'Lurssen',
+            'Blohm Voss',
+            'Nordhavn',
+            'Fleming',
+            'Grand Banks',
+            'Kadey-Krogen',
+            'Selene',
+            'Riviera',
+            'Maritimo',
+            'Palm Beach',
+            'Hinckley',
+            'Sabre',
+            'Back Cove',
+            'MJM',
+            'Regulator',
+            'Yellowfin',
+            'Contender',
+            'Bertram',
+            'Viking',
+            'Cabo',
+            'Hatteras',
+            'Luhrs',
+            'Tiara',
+            'Pursuit',
+            'Scout',
+            'Sportsman',
+            'Tidewater',
+            'Wellcraft',
+            'Trophy',
+            'Starcraft',
+            'Crownline',
+            'Glastron',
+            'Bayliner',
+            'Maxum',
+            'Larson',
+            'Rinker',
+            'Formula',
+            'Glacier Bay',
+            'World Cat',
+            'Pro-Kat',
+            'Twin Vee',
+            'SeaVee',
+            'Mag Bay',
+            'HCB',
+            'Invincible',
+            'Freeman',
+            'Sealine',
+            'Hardy',
+            'Duchy',
+            'Orkney',
+            'Quicksilver',
         ];
 
         // Try matching manufacturer + model from text
@@ -1277,7 +1914,7 @@ PROMPT;
             $motorMakers = ['sunseeker', 'princess', 'fairline', 'azimut', 'ferretti', 'riva', 'pershing', 'absolute', 'cranchi', 'sessa', 'sea ray', 'axopar'];
             $catMakers = ['lagoon', 'fountaine pajot', 'leopard', 'catana', 'nautitech', 'bali', 'excess'];
             $ribMakers = ['solemar', 'zodiac', 'brig', 'ribeye', 'williams', 'highfield', 'capelli', 'nuova jolly', 'joker boat', 'lomac', 'scanner'];
-            
+
             $mfrLower = strtolower($result['manufacturer']);
             if (in_array($mfrLower, $sailMakers)) $result['boat_type'] = 'sailboat';
             elseif (in_array($mfrLower, $motorMakers)) $result['boat_type'] = 'motorboat';
@@ -1324,11 +1961,13 @@ PROMPT;
         }
 
         // ── Hull Material ────────────────────────────────────────────
-        $hullMaterials = ['GRP' => ['grp', 'fiberglass', 'fibreglass', 'polyester', 'glasvezel'],
-                          'steel' => ['steel', 'staal'],
-                          'aluminum' => ['aluminum', 'aluminium', 'alu'],
-                          'wood' => ['wood', 'wooden', 'hout', 'houten', 'mahogany', 'teak hull'],
-                          'composite' => ['composite', 'carbon', 'kevlar', 'epoxy']];
+        $hullMaterials = [
+            'GRP' => ['grp', 'fiberglass', 'fibreglass', 'polyester', 'glasvezel'],
+            'steel' => ['steel', 'staal'],
+            'aluminum' => ['aluminum', 'aluminium', 'alu'],
+            'wood' => ['wood', 'wooden', 'hout', 'houten', 'mahogany', 'teak hull'],
+            'composite' => ['composite', 'carbon', 'kevlar', 'epoxy']
+        ];
         foreach ($hullMaterials as $mat => $kws) {
             foreach ($kws as $kw) {
                 if (stripos($lower, $kw) !== false) {
@@ -1411,9 +2050,25 @@ PROMPT;
         }
 
         // ── Known Engine Manufacturers ───────────────────────────────
-        $engineMfrs = ['Volvo Penta', 'Yanmar', 'Mercury', 'Suzuki', 'Yamaha', 'Honda',
-                       'Caterpillar', 'CAT', 'MAN', 'Cummins', 'Perkins', 'Nanni',
-                       'Beta Marine', 'Vetus', 'Steyr', 'Evinrude', 'Tohatsu'];
+        $engineMfrs = [
+            'Volvo Penta',
+            'Yanmar',
+            'Mercury',
+            'Suzuki',
+            'Yamaha',
+            'Honda',
+            'Caterpillar',
+            'CAT',
+            'MAN',
+            'Cummins',
+            'Perkins',
+            'Nanni',
+            'Beta Marine',
+            'Vetus',
+            'Steyr',
+            'Evinrude',
+            'Tohatsu'
+        ];
         foreach ($engineMfrs as $eng) {
             if (stripos($text, $eng) !== false) {
                 $result['engine_manufacturer'] = $eng;
@@ -2125,7 +2780,6 @@ SCHEMA;
             ]);
 
             return $result;
-
         } catch (\Exception $e) {
             Log::error('[AI Pipeline] Pinecone cross-validation exception: ' . $e->getMessage());
             return $result;
@@ -2362,7 +3016,6 @@ CONTEXT,
                 'adjusted_confidence' => $validated['adjusted_confidence'] ?? [],
                 'notes'               => $validated['notes'] ?? '',
             ];
-
         } catch (\Exception $e) {
             Log::error('[AI Pipeline] ChatGPT validation exception: ' . $e->getMessage());
             $result['notes'] = 'chatgpt_validation_failed';
@@ -3220,7 +3873,6 @@ USER;
                     'example_descriptions' => count($exampleDescriptions),
                 ],
             ]);
-
         } catch (\Exception $e) {
             Log::error('[AI Description RAG] Exception: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
@@ -3233,35 +3885,151 @@ USER;
     private function organizeSpecsForDescription(array $specs): array
     {
         $sections = [
-            'General' => ['boat_name', 'manufacturer', 'model', 'boat_type', 'boat_category',
-                          'year', 'new_or_used', 'price', 'vessel_lying', 'location_city',
-                          'ce_category', 'where'],
-            'Dimensions' => ['loa', 'lwl', 'beam', 'draft', 'air_draft', 'displacement', 'ballast',
-                            'max_draft', 'min_draft', 'variable_depth', 'minimum_height', 'passenger_capacity'],
-            'Engine & Propulsion' => ['engine_manufacturer', 'engine_model', 'engine_quantity', 'horse_power',
-                                     'engine_type', 'engine_year', 'hours', 'fuel', 'tankage', 'drive_type',
-                                     'propulsion', 'max_speed', 'cruising_speed', 'gallons_per_hour',
-                                     'litres_per_hour', 'bow_thruster', 'stern_thruster'],
-            'Accommodation' => ['cabins', 'berths', 'heads', 'toilet', 'shower', 'passenger_capacity',
-                               'bath', 'heating', 'air_conditioning', 'interior_type', 'headroom',
-                               'engine_room', 'hot_water'],
-            'Navigation & Electronics' => ['autopilot', 'gps', 'plotter', 'radar', 'vhf', 'ais',
-                                          'compass', 'fishfinder', 'depth_instrument', 'speed_instrument',
-                                          'wind_instrument', 'navigation_lights'],
-            'Deck & Outdoor Living' => ['bimini', 'spray_hood', 'swimming_platform', 'swimming_ladder',
-                                'teak_deck', 'anchor', 'anchor_winch', 'cockpit_table', 'dinghy',
-                                'trailer', 'covers', 'fenders'],
-            'Kitchen & Comfort' => ['oven', 'microwave', 'fridge', 'freezer', 'cooker', 'television',
-                                   'cd_player', 'dvd_player', 'shorepower', 'solar_panel', 'wind_generator',
-                                   'generator', 'inverter', 'satellite_reception', 'water_tank', 'water_maker'],
-            'Safety' => ['life_raft', 'fire_extinguisher', 'epirb', 'life_jackets', 'safety_harness',
-                        'bilge_pump', 'mob_system', 'radar_reflector', 'flares'],
-            'Sails & Rigging' => ['main_sail', 'genoa', 'jib', 'spinnaker', 'gennaker',
-                                 'sailplan_type', 'number_of_masts', 'standing_rig', 'sail_surface_area'],
-            'Construction' => ['hull_type', 'hull_construction', 'hull_colour', 'hull_number',
-                              'super_structure_colour', 'super_structure_construction',
-                              'deck_colour', 'deck_construction', 'designer', 'builder', 'cockpit_type',
-                              'control_type', 'flybridge'],
+            'General' => [
+                'boat_name',
+                'manufacturer',
+                'model',
+                'boat_type',
+                'boat_category',
+                'year',
+                'new_or_used',
+                'price',
+                'vessel_lying',
+                'location_city',
+                'ce_category',
+                'where'
+            ],
+            'Dimensions' => [
+                'loa',
+                'lwl',
+                'beam',
+                'draft',
+                'air_draft',
+                'displacement',
+                'ballast',
+                'max_draft',
+                'min_draft',
+                'variable_depth',
+                'minimum_height',
+                'passenger_capacity'
+            ],
+            'Engine & Propulsion' => [
+                'engine_manufacturer',
+                'engine_model',
+                'engine_quantity',
+                'horse_power',
+                'engine_type',
+                'engine_year',
+                'hours',
+                'fuel',
+                'tankage',
+                'drive_type',
+                'propulsion',
+                'max_speed',
+                'cruising_speed',
+                'gallons_per_hour',
+                'litres_per_hour',
+                'bow_thruster',
+                'stern_thruster'
+            ],
+            'Accommodation' => [
+                'cabins',
+                'berths',
+                'heads',
+                'toilet',
+                'shower',
+                'passenger_capacity',
+                'bath',
+                'heating',
+                'air_conditioning',
+                'interior_type',
+                'headroom',
+                'engine_room',
+                'hot_water'
+            ],
+            'Navigation & Electronics' => [
+                'autopilot',
+                'gps',
+                'plotter',
+                'radar',
+                'vhf',
+                'ais',
+                'compass',
+                'fishfinder',
+                'depth_instrument',
+                'speed_instrument',
+                'wind_instrument',
+                'navigation_lights'
+            ],
+            'Deck & Outdoor Living' => [
+                'bimini',
+                'spray_hood',
+                'swimming_platform',
+                'swimming_ladder',
+                'teak_deck',
+                'anchor',
+                'anchor_winch',
+                'cockpit_table',
+                'dinghy',
+                'trailer',
+                'covers',
+                'fenders'
+            ],
+            'Kitchen & Comfort' => [
+                'oven',
+                'microwave',
+                'fridge',
+                'freezer',
+                'cooker',
+                'television',
+                'cd_player',
+                'dvd_player',
+                'shorepower',
+                'solar_panel',
+                'wind_generator',
+                'generator',
+                'inverter',
+                'satellite_reception',
+                'water_tank',
+                'water_maker'
+            ],
+            'Safety' => [
+                'life_raft',
+                'fire_extinguisher',
+                'epirb',
+                'life_jackets',
+                'safety_harness',
+                'bilge_pump',
+                'mob_system',
+                'radar_reflector',
+                'flares'
+            ],
+            'Sails & Rigging' => [
+                'main_sail',
+                'genoa',
+                'jib',
+                'spinnaker',
+                'gennaker',
+                'sailplan_type',
+                'number_of_masts',
+                'standing_rig',
+                'sail_surface_area'
+            ],
+            'Construction' => [
+                'hull_type',
+                'hull_construction',
+                'hull_colour',
+                'hull_number',
+                'super_structure_colour',
+                'super_structure_construction',
+                'deck_colour',
+                'deck_construction',
+                'designer',
+                'builder',
+                'cockpit_type',
+                'control_type',
+                'flybridge'
+            ],
             'Remarks' => ['owners_comment', 'known_defects', 'reg_details', 'last_serviced'],
         ];
 
@@ -3304,11 +4072,24 @@ USER;
     private function buildDescriptionInputData(Yacht $yacht, array $overrides): array
     {
         $skipFields = [
-            'id', 'user_id', 'images', 'created_at', 'updated_at', 'deleted_at',
-            'location_lat', 'location_lng', 'pinecone_indexed_at', 'ai_extraction_id',
+            'id',
+            'user_id',
+            'images',
+            'created_at',
+            'updated_at',
+            'deleted_at',
+            'location_lat',
+            'location_lng',
+            'pinecone_indexed_at',
+            'ai_extraction_id',
         ];
         $allowedFields = array_flip(array_merge(self::STEP2_SCHEMA_FIELDS, [
-            'external_url', 'print_url', 'advertise_as', 'source', 'source_identifier', 'vessel_id',
+            'external_url',
+            'print_url',
+            'advertise_as',
+            'source',
+            'source_identifier',
+            'vessel_id',
         ]));
 
         $data = collect($yacht->toArray())
@@ -3385,15 +4166,55 @@ USER;
         }
 
         $optionalFeatureFields = [
-            'life_jackets', 'bimini', 'anchor', 'fishfinder', 'bow_thruster', 'stern_thruster',
-            'trailer', 'heating', 'toilet', 'fridge', 'freezer', 'ais', 'life_raft',
-            'fire_extinguisher', 'bilge_pump', 'solar_panel', 'swimming_platform',
-            'swimming_ladder', 'teak_deck', 'cockpit_table', 'dinghy', 'television',
-            'oven', 'microwave', 'spinnaker', 'gennaker', 'epirb', 'mob_system',
-            'radar_reflector', 'flares', 'wind_generator', 'shorepower', 'generator',
-            'inverter', 'battery_charger', 'depth_instrument', 'wind_instrument',
-            'speed_instrument', 'navigation_lights', 'radar', 'autopilot', 'gps',
-            'vhf', 'plotter', 'compass', 'water_tank', 'bath', 'shower', 'spray_hood',
+            'life_jackets',
+            'bimini',
+            'anchor',
+            'fishfinder',
+            'bow_thruster',
+            'stern_thruster',
+            'trailer',
+            'heating',
+            'toilet',
+            'fridge',
+            'freezer',
+            'ais',
+            'life_raft',
+            'fire_extinguisher',
+            'bilge_pump',
+            'solar_panel',
+            'swimming_platform',
+            'swimming_ladder',
+            'teak_deck',
+            'cockpit_table',
+            'dinghy',
+            'television',
+            'oven',
+            'microwave',
+            'spinnaker',
+            'gennaker',
+            'epirb',
+            'mob_system',
+            'radar_reflector',
+            'flares',
+            'wind_generator',
+            'shorepower',
+            'generator',
+            'inverter',
+            'battery_charger',
+            'depth_instrument',
+            'wind_instrument',
+            'speed_instrument',
+            'navigation_lights',
+            'radar',
+            'autopilot',
+            'gps',
+            'vhf',
+            'plotter',
+            'compass',
+            'water_tank',
+            'bath',
+            'shower',
+            'spray_hood',
         ];
 
         if (in_array($field, $optionalFeatureFields, true)) {
@@ -3530,12 +4351,14 @@ USER;
     {
         $remarks = [];
 
-        foreach ([
-            'owners_comment' => 'Owner / broker remarks',
-            'known_defects' => 'Known defects or transparency notes',
-            'reg_details' => 'Registration details',
-            'last_serviced' => 'Last serviced',
-        ] as $field => $label) {
+        foreach (
+            [
+                'owners_comment' => 'Owner / broker remarks',
+                'known_defects' => 'Known defects or transparency notes',
+                'reg_details' => 'Registration details',
+                'last_serviced' => 'Last serviced',
+            ] as $field => $label
+        ) {
             $formattedValue = $this->formatDescriptionSpecValue($field, $specs[$field] ?? null);
             if ($formattedValue !== null) {
                 $remarks[] = "- {$label}: {$formattedValue}";
@@ -3813,10 +4636,25 @@ USER;
     private function extractEnabledDescriptionFeatures(array $specs): array
     {
         $features = [
-            'bow_thruster', 'stern_thruster', 'heating', 'air_conditioning', 'generator',
-            'inverter', 'autopilot', 'gps', 'radar', 'plotter', 'vhf', 'ais',
-            'bimini', 'spray_hood', 'teak_deck', 'swimming_platform',
-            'swimming_ladder', 'anchor_winch', 'cockpit_table',
+            'bow_thruster',
+            'stern_thruster',
+            'heating',
+            'air_conditioning',
+            'generator',
+            'inverter',
+            'autopilot',
+            'gps',
+            'radar',
+            'plotter',
+            'vhf',
+            'ais',
+            'bimini',
+            'spray_hood',
+            'teak_deck',
+            'swimming_platform',
+            'swimming_ladder',
+            'anchor_winch',
+            'cockpit_table',
         ];
 
         return array_values(array_filter($features, fn(string $field) => $this->normalizeAffirmativeValue($specs[$field] ?? null) === true));
@@ -3843,11 +4681,13 @@ USER;
         $title = $this->buildBoatTitleFromSpecs($yacht->toArray());
         $examples = [];
 
-        foreach ([
-            'short_description_nl' => 'nl',
-            'short_description_en' => 'en',
-            'short_description_de' => 'de',
-        ] as $field => $lang) {
+        foreach (
+            [
+                'short_description_nl' => 'nl',
+                'short_description_en' => 'en',
+                'short_description_de' => 'de',
+            ] as $field => $lang
+        ) {
             $text = trim(strip_tags((string) $yacht->{$field}));
             if (mb_strlen($text) < 120) {
                 continue;
@@ -3933,7 +4773,7 @@ USER;
         ]);
 
         $query = $request->input('query');
-        
+
         $partialValues = [
             'manufacturer' => $query,
             'model' => $query,
@@ -4652,7 +5492,7 @@ USER;
     {
         $visionImages = [];
         $maxVisionImages = 5; // Reduced for speed in parallel track
-        
+
         // 1. Get images from DB if yacht_id provided
         if ($request->has('yacht_id')) {
             $yacht = \App\Models\Yacht::find($request->yacht_id);
@@ -4727,7 +5567,7 @@ USER;
     private function getOpenAiEnrichmentPrompt(string $hintText): string
     {
         return "You are a marine data expert. Extract boat specifications from the following text into JSON format. " .
-               "FIELDS TO EXTRACT: manufacturer, model, boat_type, year, price, loa, beam, draft, cabins, berths, fuel, engine_manufacturer, hull_construction.\n\nTEXT: " . $hintText;
+            "FIELDS TO EXTRACT: manufacturer, model, boat_type, year, price, loa, beam, draft, cabins, berths, fuel, engine_manufacturer, hull_construction.\n\nTEXT: " . $hintText;
     }
 
     private function mergeConsensusValue(string $field, $value, float $confidence, string $source, array &$formValues, array &$fieldConfidence, array &$fieldSources, array &$needsConfirmation): void
