@@ -166,6 +166,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
     Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']);
 
+    // Yacht drafts
+    Route::post('yacht-drafts', [YachtDraftController::class, 'store']);
+    Route::get('yacht-drafts/{draftId}', [YachtDraftController::class, 'show']);
+    Route::patch('yacht-drafts/{draftId}', [YachtDraftController::class, 'update']);
+    Route::post('yacht-drafts/{draftId}/attach-yacht', [YachtDraftController::class, 'attachYacht']);
+    Route::post('yacht-drafts/{draftId}/commit', [YachtDraftController::class, 'commit']);
+
+    // Yacht task automation (manual trigger)
+    Route::post('yachts/{id}/trigger-automation', function (Illuminate\Http\Request $request, $id) {
+        $yacht = \App\Models\Yacht::findOrFail($id);
+        $service = app(\App\Services\BoatTaskAutomationService::class);
+        $tasks = $service->fireForYacht($yacht, $request->user());
+        return response()->json([
+            'message' => count($tasks) . ' task(s) created',
+            'tasks' => $tasks,
+        ]);
+    });
+
     // Yacht documents
     Route::prefix('yachts/{yachtId}/documents')->group(function () {
         Route::get('/', [BoatDocumentController::class, 'index']);

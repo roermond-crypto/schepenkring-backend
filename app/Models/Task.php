@@ -53,7 +53,7 @@ class Task extends Model
 
     public function yacht(): BelongsTo
     {
-        return $this->belongsTo(Boat::class, 'yacht_id');
+        return $this->belongsTo(Yacht::class, 'yacht_id');
     }
 
     public function column(): BelongsTo

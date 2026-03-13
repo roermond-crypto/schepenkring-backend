@@ -69,6 +69,22 @@ class AiCorrectionLoggingService
                 continue;
             }
 
+            $meta = [
+                'scope' => $context['scope'] ?? 'full_form_save',
+            ];
+
+            if (array_key_exists($field, $context['ai_proposed_values'] ?? [])) {
+                $meta['ai_proposed_value'] = $context['ai_proposed_values'][$field];
+            }
+
+            if (array_key_exists($field, $context['ai_field_sources'] ?? [])) {
+                $meta['ai_field_source'] = $context['ai_field_sources'][$field];
+            }
+
+            if (!empty($context['model_version'])) {
+                $meta['model_version'] = $context['model_version'];
+            }
+
             $this->logFieldChange([
                 'yacht_id' => $yachtId,
                 'field_name' => $field,
@@ -82,9 +98,7 @@ class AiCorrectionLoggingService
                 'model_name' => $context['model_name'] ?? null,
                 'reason' => $context['field_reasons'][$field] ?? ($context['reason'] ?? null),
                 'correction_label' => $context['field_correction_labels'][$field] ?? ($context['correction_label'] ?? null),
-                'meta' => [
-                    'scope' => $context['scope'] ?? 'full_form_save',
-                ],
+                'meta' => $meta,
             ]);
 
             $count++;
@@ -125,4 +139,3 @@ class AiCorrectionLoggingService
         return $encoded === false ? (string) $value : $encoded;
     }
 }
-

@@ -142,7 +142,7 @@ class TaskAccessService
                 return true;
             }
 
-            return $task->user_id === $user->id;
+            return $task->assigned_to === $user->id || $task->user_id === $user->id;
         }
 
         if ($user->isClient()) {

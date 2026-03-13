@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 
 use App\Models\Yacht;
+use App\Models\YachtAiExtraction;
+use App\Models\YachtImage;
 use App\Services\AiCorrectionLoggingService;
 use App\Services\PineconeMatcherService;
 use Illuminate\Http\Request;
@@ -14,6 +16,8 @@ use Illuminate\Support\Facades\Log;
 
 class AiPipelineController extends Controller
 {
+    private const CACHE_POLICY_VERSION = 2;
+
     /**
      * Flat Step 2 schema keys returned by the extraction pipeline.
      */
@@ -379,6 +383,20 @@ class AiPipelineController extends Controller
         }
 
         $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
+        $hintText = trim((string) $request->input('hint_text', ''));
+        $hintText = $hintText !== '' ? $hintText : null;
+        $requestSignature = $this->buildInputSignature($request, $hintText, $speedMode);
+        $cachedExtraction = $this->findCachedExtraction(
+            $request->integer('yacht_id') ?: null,
+            $hintText,
+            $speedMode,
+            $requestSignature
+        );
+
+        if ($cachedExtraction) {
+            return $this->buildCachedExtractionResponse($cachedExtraction, $requestSignature);
+        }
+
         $stagesRun = [];
         $formValues = $this->buildEmptyFormValues();
         $fieldConfidence = [];
@@ -388,7 +406,6 @@ class AiPipelineController extends Controller
         $visionImagesUsed = 0;
 
         // ─── STAGE 0: Local Text Parsing (always runs, no API) ────────
-        $hintText = $request->input('hint_text');
         if (!empty($hintText)) {
             $localParsed = $this->runLocalTextParse($hintText);
             if (!empty($localParsed)) {
@@ -918,25 +935,40 @@ class AiPipelineController extends Controller
         // ─── FAST PATH & HIGH-CONFIDENCE SKIP ────────────────────────
         $pineconeFieldCount = count($feedResult['consensus_values'] ?? []);
         $pineconeMatchCount = count($feedResult['top_matches'] ?? []);
+        $databaseTopScore = (int) ($databaseResult['top_matches'][0]['score'] ?? 0);
+        $feedTopScore = (int) ($feedResult['top_matches'][0]['score'] ?? 0);
+        $strongCatalogMatch = max($databaseTopScore, $feedTopScore) >= 92;
         $hasAllRequired = empty($missingRequired);
         $highConfidence = $overallConfidence >= 0.90; // Higher threshold for auto-skip
         $visionRan = in_array('gemini_vision', $stagesRun, true);
-        $filledFieldCount = count(array_filter($formValues, fn($v) => $v !== null && $v !== '' && $v !== 'unknown'));
+        $filledFieldCount = $this->countFilledFields($formValues);
+        $fastPathReason = $speedMode === 'fast'
+            ? 'Fast mode requested.'
+            : ($strongCatalogMatch
+                ? 'Strong catalog match allowed skipping slow validation.'
+                : 'High confidence or Pinecone match allowed skipping slow validation.');
 
         // Decision logic: skip slow stages ONLY if:
         //   1. Vision actually ran successfully (if it failed, we NEED enrichment to compensate)
-        //   2. Speed mode is 'fast', OR high confidence + all required + pinecone match
+        //   2. Only explicit fast mode may bypass enrichment stages.
         // When vision fails, always run the full slow path — matching old project behavior.
         $useFastPath = $visionRan && (
             $speedMode === 'fast'
-            || ($speedMode !== 'deep' && $hasAllRequired && $highConfidence && $pineconeMatchCount >= 1 && $filledFieldCount >= 20)
+            && $hasAllRequired
+            && $filledFieldCount >= 18
+            && (
+                ($highConfidence && $pineconeMatchCount >= 1)
+                || $strongCatalogMatch
+            )
         );
 
         if ($useFastPath) {
             Log::info('[AI Pipeline] OPTIMIZATION: Skipping slow validation stages', [
                 'speed_mode' => $speedMode,
                 'overall_confidence' => $overallConfidence,
-                'pinecone_fields' => $pineconeFieldCount
+                'pinecone_fields' => $pineconeFieldCount,
+                'database_top_score' => $databaseTopScore,
+                'feed_top_score' => $feedTopScore,
             ]);
             $stagesRun[] = 'confidence_optimization_skip';
 
@@ -960,12 +992,14 @@ class AiPipelineController extends Controller
 
             $pineconeResult = ['similar_boats' => [], 'anomalies' => [], 'anomaly_fields' => []];
             $removedFields = [];
+            $needsConfirmation = $this->collectNeedsConfirmationFields($formValues, $fieldConfidence, $needsConfirmation);
+
             $mergeResult = [
                 'form_values'        => $formValues,
                 'field_confidence'   => $fieldConfidence,
                 'removed_fields'     => [],
-                'needs_confirmation' => [],
-                'validation_notes'   => 'Optimized flow: High confidence or Pinecone match allowed skipping slow validation.',
+                'needs_confirmation' => $needsConfirmation,
+                'validation_notes'   => 'Optimized flow: ' . $fastPathReason,
             ];
         } else {
             // ─── SLOW PATH: Full enrichment + validation pipeline ─────────
@@ -986,9 +1020,17 @@ class AiPipelineController extends Controller
                 }
             }
 
+            $missingRequiredAfterGemini = $this->findMissingRequired($formValues);
+
             // Try OpenAI World Knowledge for remaining
             $openAiKeyEnv = config('services.openai.key');
-            if (!empty($openAiKeyEnv)) {
+            $shouldRunOpenAiWorldKnowledge = !empty($openAiKeyEnv)
+                && (
+                    $speedMode !== 'fast'
+                    || !in_array('openai_enrich_parallel', $stagesRun, true)
+                    || !empty($missingRequiredAfterGemini)
+                );
+            if ($shouldRunOpenAiWorldKnowledge) {
                 $openaiEnriched = $this->runOpenAiEnrichment($formValues, $fieldConfidence, $openAiKeyEnv, []);
                 if (!empty($openaiEnriched)) {
                     $stagesRun[] = 'openai_world_knowledge_enrichment';
@@ -1005,23 +1047,49 @@ class AiPipelineController extends Controller
                 }
             }
 
-            // Cross-Validation
-            $pineconeResult = $this->runPineconeCrossValidation($formValues, $fieldConfidence);
-            if (!empty($pineconeResult['similar_boats'])) $stagesRun[] = 'pinecone_cross_validation';
+            $postEnrichmentOverallConfidence = $this->computeOverallConfidence($fieldConfidence);
+            $postEnrichmentMissingRequired = $this->findMissingRequired($formValues);
+            $postEnrichmentFilledFieldCount = $this->countFilledFields($formValues);
+            $canSkipDeepValidation = $speedMode !== 'deep'
+                && empty($postEnrichmentMissingRequired)
+                && $postEnrichmentOverallConfidence >= 0.80
+                && $postEnrichmentFilledFieldCount >= 18
+                && ($strongCatalogMatch || ($pineconeMatchCount >= 1 && $databaseTopScore >= 85));
 
-            // ChatGPT Validation
-            $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $databaseResult, $request);
-            if (!empty($validationResult['confirmed_fields']) || !empty($validationResult['removed_fields'])) {
-                $stagesRun[] = 'chatgpt_validation';
+            if ($canSkipDeepValidation) {
+                $stagesRun[] = 'post_enrichment_validation_skip';
+                $pineconeResult = ['similar_boats' => [], 'anomalies' => [], 'anomaly_fields' => []];
+                $removedFields = [];
+                $needsConfirmation = $this->collectNeedsConfirmationFields($formValues, $fieldConfidence, $needsConfirmation);
+                $mergeResult = [
+                    'form_values'        => $formValues,
+                    'field_confidence'   => $fieldConfidence,
+                    'removed_fields'     => [],
+                    'needs_confirmation' => $needsConfirmation,
+                    'validation_notes'   => 'Optimized flow: skipped deep validation after enrichment because catalog evidence was already strong.',
+                ];
+                $overallConfidence = $postEnrichmentOverallConfidence;
+            } else {
+                // Cross-Validation
+                $pineconeResult = $this->runPineconeCrossValidation($formValues, $fieldConfidence);
+                if (!empty($pineconeResult['similar_boats'])) {
+                    $stagesRun[] = 'pinecone_cross_validation';
+                }
+
+                // ChatGPT Validation
+                $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $databaseResult, $request);
+                if (!empty($validationResult['confirmed_fields']) || !empty($validationResult['removed_fields'])) {
+                    $stagesRun[] = 'chatgpt_validation';
+                }
+
+                // Merge
+                $mergeResult = $this->mergeWithConfidence($formValues, $fieldConfidence, $validationResult, $pineconeResult);
+                $formValues = $mergeResult['form_values'];
+                $fieldConfidence = $mergeResult['field_confidence'];
+                $removedFields = $mergeResult['removed_fields'];
+                $needsConfirmation = array_values(array_unique(array_merge($needsConfirmation, $mergeResult['needs_confirmation'])));
+                $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
             }
-
-            // Merge
-            $mergeResult = $this->mergeWithConfidence($formValues, $fieldConfidence, $validationResult, $pineconeResult);
-            $formValues      = $mergeResult['form_values'];
-            $fieldConfidence  = $mergeResult['field_confidence'];
-            $removedFields    = $mergeResult['removed_fields'];
-            $needsConfirmation = array_values(array_unique(array_merge($needsConfirmation, $mergeResult['needs_confirmation'])));
-            $overallConfidence = $this->computeOverallConfidence($fieldConfidence);
         }
         // end slow path
 
@@ -1055,9 +1123,14 @@ class AiPipelineController extends Controller
             'similar_boats_count'     => count($pineconeResult['similar_boats']),
             'feed_matches_count'      => count($feedResult['top_matches'] ?? []),
             'database_matches_count'  => count($databaseResult['top_matches'] ?? []),
+            'filled_fields_count'     => $this->countFilledFields($formValues),
+            'empty_fields_count'      => $this->countEmptyFields($formValues),
             'speed_mode'              => $speedMode,
             'vision_images_used'      => $visionImagesUsed,
             'model_name'              => 'gemini-2.5-flash',
+            'cache_hit'               => false,
+            'cache_policy_version'    => self::CACHE_POLICY_VERSION,
+            'input_signature'         => $requestSignature,
         ];
 
         try {
@@ -1080,6 +1153,8 @@ class AiPipelineController extends Controller
                     'stages_run' => $stagesRun,
                     'warnings' => $warnings,
                     'speed_mode' => $speedMode,
+                    'cache_policy_version' => self::CACHE_POLICY_VERSION,
+                    'input_signature' => $requestSignature,
                 ],
                 'extracted_at' => now(),
             ]);
@@ -3055,6 +3130,172 @@ CONTEXT,
         ];
     }
 
+    private function buildInputSignature(Request $request, ?string $hintText, string $speedMode): ?string
+    {
+        $payload = [
+            'speed_mode' => $speedMode,
+            'hint_text' => $hintText,
+        ];
+
+        $yachtId = $request->integer('yacht_id');
+        if ($yachtId) {
+            $images = YachtImage::query()
+                ->where('yacht_id', $yachtId)
+                ->whereIn('status', ['approved', 'ready_for_review', 'processing', 'uploaded'])
+                ->orderBy('sort_order')
+                ->get([
+                    'id',
+                    'status',
+                    'sort_order',
+                    'updated_at',
+                    'thumb_url',
+                    'optimized_master_url',
+                    'url',
+                    'original_kept_url',
+                    'original_temp_url',
+                ]);
+
+            if ($images->isEmpty()) {
+                return null;
+            }
+
+            $payload['yacht_id'] = $yachtId;
+            $payload['images'] = $images->map(function (YachtImage $image) {
+                return [
+                    'id' => (int) $image->id,
+                    'status' => (string) $image->status,
+                    'sort_order' => (int) $image->sort_order,
+                    'updated_at' => $image->updated_at?->toISOString(),
+                    'asset' => (string) ($image->thumb_url
+                        ?: $image->optimized_master_url
+                        ?: $image->url
+                        ?: $image->original_kept_url
+                        ?: $image->original_temp_url
+                        ?: ''),
+                ];
+            })->all();
+        } elseif ($request->hasFile('images')) {
+            $files = [];
+            foreach ($request->file('images') as $image) {
+                $files[] = [
+                    'name' => $image->getClientOriginalName(),
+                    'size' => $image->getSize(),
+                    'mime_type' => $image->getMimeType(),
+                    'hash' => md5_file($image->getRealPath()),
+                ];
+            }
+
+            if (empty($files)) {
+                return null;
+            }
+
+            $payload['images'] = $files;
+        } else {
+            return null;
+        }
+
+        return hash(
+            'sha256',
+            json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: ''
+        );
+    }
+
+    private function findCachedExtraction(
+        ?int $yachtId,
+        ?string $hintText,
+        string $speedMode,
+        ?string $requestSignature
+    ): ?YachtAiExtraction {
+        if (!$yachtId || !$requestSignature) {
+            return null;
+        }
+
+        return YachtAiExtraction::query()
+            ->where('yacht_id', $yachtId)
+            ->where('status', 'completed')
+            ->where('hint_text', $hintText)
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->first(function (YachtAiExtraction $extraction) use ($speedMode, $requestSignature) {
+                $meta = is_array($extraction->meta_json) ? $extraction->meta_json : [];
+                $cachePolicyVersion = (int) ($meta['cache_policy_version'] ?? 0);
+
+                if ($cachePolicyVersion !== self::CACHE_POLICY_VERSION) {
+                    return false;
+                }
+
+                return ($meta['speed_mode'] ?? 'balanced') === $speedMode
+                    && ($meta['input_signature'] ?? null) === $requestSignature;
+            });
+    }
+
+    private function buildCachedExtractionResponse(
+        YachtAiExtraction $cachedExtraction,
+        ?string $requestSignature
+    ): JsonResponse {
+        $rawOutput = is_array($cachedExtraction->raw_output_json) ? $cachedExtraction->raw_output_json : [];
+        $step2FormValues = $rawOutput['step2_form_values'] ?? $cachedExtraction->normalized_fields_json ?? [];
+        $meta = is_array($rawOutput['meta'] ?? null) ? $rawOutput['meta'] : [];
+
+        $meta['ai_session_id'] = $cachedExtraction->session_id;
+        $meta['cache_hit'] = true;
+        $meta['cached_at'] = $cachedExtraction->extracted_at?->toISOString();
+        $meta['input_signature'] = $requestSignature;
+        $meta['cache_policy_version'] = self::CACHE_POLICY_VERSION;
+        $meta['filled_fields_count'] = $meta['filled_fields_count'] ?? $this->countFilledFields($step2FormValues);
+        $meta['empty_fields_count'] = $meta['empty_fields_count'] ?? $this->countEmptyFields($step2FormValues);
+        $meta['stages_run'] = array_values(array_unique(array_merge(
+            $meta['stages_run'] ?? [],
+            ['cached_response']
+        )));
+
+        return response()->json([
+            'success' => true,
+            'step2_form_values' => $step2FormValues,
+            'meta' => $meta,
+        ]);
+    }
+
+    private function collectNeedsConfirmationFields(
+        array $formValues,
+        array $fieldConfidence,
+        array $needsConfirmation = []
+    ): array {
+        foreach ($formValues as $field => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            $confidence = (float) ($fieldConfidence[$field] ?? 0.5);
+            if ($confidence < 0.85) {
+                $needsConfirmation[] = $field;
+            }
+        }
+
+        return array_values(array_unique($needsConfirmation));
+    }
+
+    private function countFilledFields(array $formValues): int
+    {
+        return count(array_filter($formValues, static function ($value) {
+            if ($value === null || $value === '') {
+                return false;
+            }
+
+            if (is_string($value) && strtolower(trim($value)) === 'unknown') {
+                return false;
+            }
+
+            return true;
+        }));
+    }
+
+    private function countEmptyFields(array $formValues): int
+    {
+        return count(self::STEP2_SCHEMA_FIELDS) - $this->countFilledFields($formValues);
+    }
+
     private function buildEmptyFormValues(): array
     {
         return array_fill_keys(self::STEP2_SCHEMA_FIELDS, null);
@@ -4541,6 +4782,7 @@ USER;
         $result = $pineconeMatcher->matchAndBuildConsensus($partialValues, $query);
         $result = $this->prepareAssistantSuggestions($result);
         $result = $this->mergeLocalArchiveSuggestions($result, $query);
+        $result = $this->sanitizeSuggestionResult($result);
 
         return response()->json($result);
     }
@@ -4571,15 +4813,7 @@ USER;
         }
 
         $result['top_matches'] = $preparedMatches;
-        $result['consensus_values'] = is_array($result['consensus_values'] ?? null)
-            ? $this->filterSuggestionFields($result['consensus_values'])
-            : [];
-        $result['field_confidence'] = is_array($result['field_confidence'] ?? null)
-            ? $this->filterSuggestionFields($result['field_confidence'])
-            : [];
-        $result['field_sources'] = is_array($result['field_sources'] ?? null)
-            ? $this->filterSuggestionFields($result['field_sources'])
-            : [];
+        $result = $this->sanitizeSuggestionResult($result);
 
         // Strict mode may return no consensus; for UX suggestions we still provide conservative hints.
         if (!empty($result['consensus_values'])) {
@@ -4587,7 +4821,7 @@ USER;
         }
 
         $fallback = [];
-        foreach ($preparedMatches as $match) {
+        foreach ($result['top_matches'] as $match) {
             $boat = is_array($match['boat'] ?? null) ? $match['boat'] : [];
             foreach (self::SUGGESTION_TARGET_FIELDS as $field) {
                 $value = $boat[$field] ?? null;
@@ -4613,7 +4847,7 @@ USER;
             ['No strict consensus found; showing conservative top-match suggestions.']
         )));
 
-        return $result;
+        return $this->sanitizeSuggestionResult($result);
     }
 
     private function mergeLocalArchiveSuggestions(array $result, string $query): array
@@ -4653,7 +4887,7 @@ USER;
         }
         $result['warnings'] = array_values(array_unique(array_filter($result['warnings'])));
 
-        return $result;
+        return $this->sanitizeSuggestionResult($result);
     }
 
     private function buildLocalArchiveSuggestions(string $query): array
@@ -4705,7 +4939,7 @@ USER;
             foreach ($boats as $boat) {
                 $flat = $boat->toArray();
                 foreach ($numericFields as $field) {
-                    $num = $this->extractSuggestionNumeric($flat[$field] ?? null);
+                    $num = $this->normalizeSuggestionValue($field, $flat[$field] ?? null);
                     if ($num !== null) {
                         $values[$field][] = $num;
                     }
@@ -4763,21 +4997,27 @@ USER;
 
             $result['top_matches'] = $boats->take(3)->map(function (Yacht $boat) {
                 $flat = $boat->toArray();
-                return [
+                $match = [
                     'score' => 50,
                     'boat' => array_filter([
                         'id' => $boat->id,
-                        'manufacturer' => $boat->manufacturer,
-                        'model' => $boat->model,
-                        'year' => $boat->year,
-                        'loa' => $flat['loa'] ?? null,
-                        'beam' => $flat['beam'] ?? null,
-                        'draft' => $flat['draft'] ?? null,
-                        'price' => $boat->price,
+                        'manufacturer' => $this->normalizeSuggestionValue('manufacturer', $boat->manufacturer),
+                        'model' => $this->normalizeSuggestionValue('model', $boat->model),
+                        'boat_type' => $this->normalizeSuggestionValue('boat_type', $boat->boat_type),
+                        'year' => $this->normalizeSuggestionValue('year', $boat->year),
+                        'loa' => $this->normalizeSuggestionValue('loa', $flat['loa'] ?? null),
+                        'beam' => $this->normalizeSuggestionValue('beam', $flat['beam'] ?? null),
+                        'draft' => $this->normalizeSuggestionValue('draft', $flat['draft'] ?? null),
+                        'fuel' => $this->normalizeSuggestionValue('fuel', $flat['fuel'] ?? null),
+                        'engine_manufacturer' => $this->normalizeSuggestionValue('engine_manufacturer', $flat['engine_manufacturer'] ?? null),
+                        'horse_power' => $this->normalizeSuggestionValue('horse_power', $flat['horse_power'] ?? null),
+                        'price' => $this->normalizeSuggestionValue('price', $boat->price),
                         'source_feed_url' => 'local_archive',
                     ], fn($val) => $val !== null && $val !== ''),
                 ];
-            })->values()->toArray();
+
+                return $this->sanitizeSuggestionTopMatch($match);
+            })->filter()->values()->toArray();
         } catch (\Throwable $e) {
             Log::warning('[AI Suggestions] Local archive fallback failed: ' . $e->getMessage());
         }
@@ -4799,6 +5039,143 @@ USER;
             $filtered[$field] = $value;
         }
         return $filtered;
+    }
+
+    private function sanitizeSuggestionResult(array $result): array
+    {
+        $consensus = [];
+        foreach ($this->filterSuggestionFields(is_array($result['consensus_values'] ?? null) ? $result['consensus_values'] : []) as $field => $value) {
+            $normalizedValue = $this->normalizeSuggestionValue($field, $value);
+            if ($normalizedValue === null || $normalizedValue === '') {
+                continue;
+            }
+
+            $consensus[$field] = $normalizedValue;
+        }
+
+        $allowedFields = array_keys($consensus);
+        $result['consensus_values'] = $consensus;
+        $result['field_confidence'] = $this->sanitizeSuggestionConfidenceMap(
+            is_array($result['field_confidence'] ?? null) ? $result['field_confidence'] : [],
+            $allowedFields
+        );
+        $result['field_sources'] = $this->sanitizeSuggestionSourceMap(
+            is_array($result['field_sources'] ?? null) ? $result['field_sources'] : [],
+            $allowedFields
+        );
+
+        $matches = [];
+        foreach (is_array($result['top_matches'] ?? null) ? $result['top_matches'] : [] as $match) {
+            $sanitized = $this->sanitizeSuggestionTopMatch($match);
+            if ($sanitized !== null) {
+                $matches[] = $sanitized;
+            }
+        }
+        $result['top_matches'] = array_values(array_slice($matches, 0, 5));
+        $result['warnings'] = array_values(array_unique(array_filter(
+            is_array($result['warnings'] ?? null) ? $result['warnings'] : []
+        )));
+
+        return $result;
+    }
+
+    private function sanitizeSuggestionConfidenceMap(array $values, array $allowedFields): array
+    {
+        $filtered = [];
+        foreach ($allowedFields as $field) {
+            $confidence = $values[$field] ?? null;
+            if (!is_numeric($confidence)) {
+                continue;
+            }
+
+            $normalized = max(0.0, min(1.0, (float) $confidence));
+            if ($normalized <= 0.0) {
+                continue;
+            }
+
+            $filtered[$field] = round($normalized, 2);
+        }
+
+        return $filtered;
+    }
+
+    private function sanitizeSuggestionSourceMap(array $values, array $allowedFields): array
+    {
+        $filtered = [];
+        foreach ($allowedFields as $field) {
+            $source = $values[$field] ?? null;
+            if (!is_scalar($source)) {
+                continue;
+            }
+
+            $normalized = trim((string) $source);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $filtered[$field] = $normalized;
+        }
+
+        return $filtered;
+    }
+
+    private function sanitizeSuggestionTopMatch(mixed $match): ?array
+    {
+        if (!is_array($match)) {
+            return null;
+        }
+
+        $boat = is_array($match['boat'] ?? null) ? $match['boat'] : [];
+        $sanitizedBoat = [];
+
+        $fields = array_merge(['manufacturer', 'model', 'boat_type'], self::SUGGESTION_TARGET_FIELDS);
+        foreach ($fields as $field) {
+            if (!array_key_exists($field, $boat)) {
+                continue;
+            }
+
+            $normalized = $this->normalizeSuggestionValue($field, $boat[$field]);
+            if ($normalized === null || $normalized === '') {
+                continue;
+            }
+
+            $sanitizedBoat[$field] = $normalized;
+        }
+
+        foreach (['boat_ref', 'source_feed_url', 'synced_at_utc', 'id'] as $infoField) {
+            if (!array_key_exists($infoField, $boat) || !is_scalar($boat[$infoField])) {
+                continue;
+            }
+
+            $value = trim((string) $boat[$infoField]);
+            if ($value === '') {
+                continue;
+            }
+
+            $sanitizedBoat[$infoField] = $value;
+        }
+
+        if (!$this->hasRenderableSuggestionBoatData($sanitizedBoat)) {
+            return null;
+        }
+
+        $score = is_numeric($match['score'] ?? null) ? (int) round((float) $match['score']) : 0;
+
+        return [
+            'score' => max(0, min(100, $score)),
+            'boat' => $sanitizedBoat,
+        ];
+    }
+
+    private function hasRenderableSuggestionBoatData(array $boat): bool
+    {
+        foreach (array_merge(['manufacturer', 'model', 'boat_type'], self::SUGGESTION_TARGET_FIELDS) as $field) {
+            if (array_key_exists($field, $boat)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function extractSuggestionFieldsFromMetadata(array $metadata): array
@@ -4958,7 +5335,7 @@ USER;
         }
 
         if (in_array($field, ['year', 'engine_quantity', 'horse_power', 'price', 'loa', 'beam', 'draft'], true)) {
-            $numeric = $this->extractSuggestionNumeric($value);
+            $numeric = $this->normalizeSuggestionNumericField($field, $value);
             if ($numeric === null) {
                 return null;
             }
@@ -4984,6 +5361,64 @@ USER;
         }
 
         return $text;
+    }
+
+    private function normalizeSuggestionNumericField(string $field, mixed $value): ?float
+    {
+        $numeric = $this->extractSuggestionNumeric($value);
+        if ($numeric === null) {
+            return null;
+        }
+
+        return match ($field) {
+            'year' => $this->normalizeSuggestionYear($numeric),
+            'engine_quantity' => $this->normalizeSuggestionRange($numeric, 1, 8, false),
+            'horse_power' => $this->normalizeSuggestionRange($numeric, 1, 5000, false),
+            'price' => $this->normalizeSuggestionRange($numeric, 1, 100000000, true),
+            'loa' => $this->normalizeSuggestionDimension($numeric, 2.0, 120.0, 100.0, 5000.0),
+            'beam' => $this->normalizeSuggestionDimension($numeric, 0.5, 30.0, 100.0, 2000.0),
+            'draft' => $this->normalizeSuggestionDimension($numeric, 0.1, 10.0, 20.0, 500.0),
+            default => $numeric,
+        };
+    }
+
+    private function normalizeSuggestionYear(float $value): ?float
+    {
+        $year = (int) round($value);
+        $maxYear = (int) now()->addYear()->year;
+
+        if ($year < 1900 || $year > $maxYear) {
+            return null;
+        }
+
+        return (float) $year;
+    }
+
+    private function normalizeSuggestionRange(float $value, float $min, float $max, bool $roundToTwoDecimals): ?float
+    {
+        if ($value < $min || $value > $max) {
+            return null;
+        }
+
+        return $roundToTwoDecimals ? round($value, 2) : (float) round($value);
+    }
+
+    private function normalizeSuggestionDimension(
+        float $value,
+        float $min,
+        float $max,
+        float $centimeterThreshold,
+        float $centimeterMax
+    ): ?float {
+        if ($value > $centimeterThreshold && $value <= $centimeterMax) {
+            $value = $value / 100;
+        }
+
+        if ($value < $min || $value > $max) {
+            return null;
+        }
+
+        return round($value, 2);
     }
 
     private function extractSuggestionNumeric(mixed $value): ?float
@@ -5089,9 +5524,14 @@ USER;
 
         $model = 'gemini-1.5-flash';
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
-
+        $historicalFeedbackHint = $this->buildHistoricalFeedbackHint();
+        
         $parts = [];
-        $parts[] = ['text' => $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text')];
+        $prompt = $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text');
+        if ($historicalFeedbackHint !== '') {
+            $prompt .= "\n\n" . $historicalFeedbackHint;
+        }
+        $parts[] = ['text' => $prompt];
         foreach ($visionImages as $img) {
             $parts[] = [
                 'inline_data' => [
@@ -5108,6 +5548,20 @@ USER;
             'timeout' => 50,
             'image_count' => count($visionImages)
         ];
+    }
+
+    private function buildHistoricalFeedbackHint(): string
+    {
+        try {
+            return app(\App\Services\BoatFieldFeedbackService::class)
+                ->buildOptionalEquipmentPromptHint(self::OPTIONAL_EQUIPMENT_FIELDS);
+        } catch (\Throwable $error) {
+            Log::warning('[AI Pipeline] Failed to build historical correction hint', [
+                'error' => $error->getMessage(),
+            ]);
+
+            return '';
+        }
     }
 
     private function getOpenAiEnrichmentPrompt(string $hintText): string
