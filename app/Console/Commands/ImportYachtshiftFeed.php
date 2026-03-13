@@ -49,8 +49,8 @@ class ImportYachtshiftFeed extends Command
             if ($result['success'] ?? false) {
                 $this->info("Import from {$feedUrl} completed successfully!");
                 $this->table(
-                    ['Imported', 'Updated', 'Errors'],
-                    [[$result['imported'], $result['updated'], $result['errors']]]
+                    ['Imported', 'Updated', 'Errors', 'Skipped'],
+                    [[$result['imported'], $result['updated'], $result['errors'], $result['skipped'] ?? 0]]
                 );
             } else {
                 $this->error("Import from {$feedUrl} failed: " . ($result['message'] ?? 'Unknown error'));
