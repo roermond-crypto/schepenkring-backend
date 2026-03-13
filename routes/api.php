@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
 use App\Http\Controllers\Api\FaqController;
+use App\Http\Controllers\Api\FaqKnowledgeController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
@@ -215,6 +216,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Social Media / Video Automation
     // ================== SOCIAL VIDEO AUTOMATION ==================
+    Route::post('/social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
     Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
@@ -229,6 +231,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Copilot
     Route::post('copilot/resolve', [CopilotController::class, 'resolve']);
     Route::post('copilot/track', [CopilotController::class, 'track']);
+    Route::post('copilot/feedback', [CopilotController::class, 'feedback']);
     Route::get('copilot/audit', [CopilotAuditController::class, 'index']);
     Route::get('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'show']);
     Route::put('copilot/voice-settings', [CopilotVoiceSettingsController::class, 'update']);
@@ -267,10 +270,17 @@ Route::middleware('auth:sanctum')->group(function () {
     // Location FAQ training
     Route::get('faqs', [FaqController::class, 'index']);
     Route::post('faqs', [FaqController::class, 'store']);
+    Route::get('faqs/knowledge/documents', [FaqKnowledgeController::class, 'documents']);
+    Route::post('faqs/knowledge/documents', [FaqKnowledgeController::class, 'upload']);
+    Route::get('faqs/knowledge/items', [FaqKnowledgeController::class, 'items']);
+    Route::patch('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'review']);
+    Route::delete('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'destroy']);
+    Route::get('faqs/knowledge/analytics', [FaqKnowledgeController::class, 'analytics']);
     Route::put('faqs/{faq}', [FaqController::class, 'update']);
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
     // Social video automation (NauticSecure parity)
+    Route::post('social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('social/videos', [SocialVideoController::class, 'listVideos']);
     Route::get('social/posts', [SocialVideoController::class, 'listPosts']);

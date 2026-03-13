@@ -10,6 +10,7 @@ use App\Repositories\SignRequestRepository;
 use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -40,8 +41,12 @@ class GenerateContractAction
         $entityId = (int) $data['entity_id'];
         $title = $data['title'] ?? 'Contract';
 
-        $content = $this->buildPdf($entityType, $entityId, $title);
-        $fileName = Str::slug($entityType)."_{$entityId}_".now()->format('Ymd_His').'.pdf';
+        [$content, $fileName, $documentMetadata] = $this->resolveContractPdf(
+            $data['pdf'] ?? null,
+            $entityType,
+            $entityId,
+            $title
+        );
         $path = "contracts/{$fileName}";
 
         Storage::disk('public')->put($path, $content);
@@ -53,7 +58,7 @@ class GenerateContractAction
             'entity_id' => $entityId,
             'provider' => 'signhost',
             'status' => 'DRAFT',
-            'metadata' => array_merge($data['metadata'] ?? [], [
+            'metadata' => array_merge($data['metadata'] ?? [], $documentMetadata, [
                 'contract_pdf_path' => $path,
                 'contract_sha256' => $sha256,
             ]),
@@ -75,6 +80,42 @@ class GenerateContractAction
         ]);
 
         return $request->load('documents');
+    }
+
+    /**
+     * @return array{0:string,1:string,2:array<string,mixed>}
+     */
+    private function resolveContractPdf(mixed $pdf, string $entityType, int $entityId, string $title): array
+    {
+        $timestamp = now()->format('Ymd_His');
+
+        if ($pdf instanceof UploadedFile) {
+            $content = file_get_contents($pdf->getRealPath());
+            if ($content === false) {
+                throw new \RuntimeException('Failed to read uploaded contract PDF');
+            }
+
+            $originalName = $pdf->getClientOriginalName();
+            $baseName = Str::slug(pathinfo($originalName, PATHINFO_FILENAME)) ?: 'uploaded-contract';
+            $fileName = Str::slug($entityType)."_{$entityId}_{$timestamp}_{$baseName}.pdf";
+
+            return [
+                $content,
+                $fileName,
+                [
+                    'contract_source' => 'upload',
+                    'contract_original_filename' => $originalName,
+                ],
+            ];
+        }
+
+        return [
+            $this->buildPdf($entityType, $entityId, $title),
+            Str::slug($entityType)."_{$entityId}_{$timestamp}.pdf",
+            [
+                'contract_source' => 'generated',
+            ],
+        ];
     }
 
     private function buildPdf(string $entityType, int $entityId, string $title): string

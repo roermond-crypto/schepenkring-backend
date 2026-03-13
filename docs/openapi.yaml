@@ -597,7 +597,7 @@ paths:
   /api/contracts/generate:
     post:
       summary: Generate contract PDF
-      description: Creates a draft signing request and stores the generated contract PDF.
+      description: Creates a draft signing request and stores the generated contract PDF. If `send_to_signhost` and recipients are supplied, it also creates the Signhost transaction and returns the signer deeplink.
       requestBody:
         required: true
         content:
@@ -609,8 +609,17 @@ paths:
               entity_id: 123
               location_id: 2
               title: "Purchase Agreement"
+              send_to_signhost: true
+              recipients:
+                - email: "buyer@example.com"
+                  name: "Buyer User"
+                  role: "buyer"
+              reference: "deal-123"
               metadata:
                 template_id: "deal-standard"
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SignhostGenerateContractRequest'
       responses:
         '200':
           description: Contract generated
@@ -627,25 +636,33 @@ paths:
                   contract_sha256:
                     type: string
                     nullable: true
+                  sign_url:
+                    type: string
+                    nullable: true
                   sign_request:
                     $ref: '#/components/schemas/SignRequest'
               example:
-                message: "Contract generated"
+                message: "Contract generated and Signhost request created"
                 contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
                 contract_sha256: "f1c2d3e4f5"
+                sign_url: "https://signhost.app/sign/abc"
                 sign_request:
                   id: 77
                   location_id: 2
                   entity_type: "Deal"
                   entity_id: 123
                   provider: "signhost"
-                  status: "DRAFT"
-                  signhost_transaction_id: null
-                  sign_url: null
-                  requested_by_user_id: null
+                  status: "SENT"
+                  signhost_transaction_id: "sh_123456"
+                  sign_url: "https://signhost.app/sign/abc"
+                  requested_by_user_id: 5
                   metadata:
                     contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
                     contract_sha256: "f1c2d3e4f5"
+                    reference: "deal-123"
+                    sign_urls:
+                      - role: "buyer"
+                        url: "https://signhost.app/sign/abc"
                   documents:
                     - id: 900
                       sign_request_id: 77
@@ -874,6 +891,7 @@ paths:
   /api/deals/{dealId}/contract/generate:
     post:
       summary: Generate deal contract PDF (compat)
+      description: Generates the PDF contract for a deal. If `send_to_signhost` and recipients are supplied, it also creates the Signhost transaction and returns the signer deeplink data.
       parameters:
         - in: path
           name: dealId
@@ -892,11 +910,42 @@ paths:
                   type: integer
                 title:
                   type: string
+                send_to_signhost:
+                  type: boolean
+                recipients:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      email:
+                        type: string
+                        nullable: true
+                      name:
+                        type: string
+                        nullable: true
+                      user_id:
+                        type: integer
+                        nullable: true
+                      role:
+                        type: string
+                        nullable: true
+                reference:
+                  type: string
+                  nullable: true
                 metadata:
                   type: object
             example:
               location_id: 2
               title: "Purchase Agreement"
+              send_to_signhost: true
+              recipients:
+                - email: "buyer@example.com"
+                  name: "Buyer User"
+                  role: "buyer"
+              reference: "deal-123"
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SignhostGenerateContractRequest'
       responses:
         '200':
           description: Contract generated
@@ -913,10 +962,34 @@ paths:
                   contract_sha256:
                     type: string
                     nullable: true
+                  sign_url:
+                    type: string
+                    nullable: true
+                  sign_request:
+                    $ref: '#/components/schemas/SignRequest'
+                  transaction:
+                    type: object
               example:
-                message: "Contract generated"
+                message: "Contract generated and Signhost request created"
                 contract_pdf_path: "contracts/deal_123_20260305_120000.pdf"
                 contract_sha256: "f1c2d3e4f5"
+                sign_url: "https://signhost.app/sign/buyer"
+                sign_request:
+                  id: 77
+                  location_id: 2
+                  entity_type: "Deal"
+                  entity_id: 123
+                  provider: "signhost"
+                  status: "SENT"
+                  signhost_transaction_id: "sh_123456"
+                  sign_url: "https://signhost.app/sign/buyer"
+                transaction:
+                  id: 77
+                  deal_id: 123
+                  signhost_transaction_id: "sh_123456"
+                  status: "signing"
+                  signing_url_buyer: "https://signhost.app/sign/buyer"
+                  signing_url_seller: null
 
   /api/deals/{dealId}/signhost/create:
     post:
@@ -4269,6 +4342,43 @@ components:
           nullable: true
         metadata:
           type: object
+          nullable: true
+        pdf:
+          type: string
+          format: binary
+          nullable: true
+        send_to_signhost:
+          type: boolean
+          nullable: true
+        recipients:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              email:
+                type: string
+                nullable: true
+              name:
+                type: string
+                nullable: true
+              user_id:
+                type: integer
+                nullable: true
+              role:
+                type: string
+                nullable: true
+        reference:
+          type: string
+          nullable: true
+        password:
+          type: string
+          nullable: true
+        otp_code:
+          type: string
+          nullable: true
+        idempotency_key:
+          type: string
           nullable: true
 
     SignhostRequestCreateRequest:

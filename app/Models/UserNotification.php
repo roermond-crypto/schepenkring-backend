@@ -31,6 +31,11 @@ class UserNotification extends Model
         return $this->belongsTo(Notification::class);
     }
 
+    public function scopeUnread($query)
+    {
+        return $query->where('read', false);
+    }
+
     public function markAsRead(): void
     {
         $this->update([

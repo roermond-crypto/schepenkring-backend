@@ -25,16 +25,12 @@ class SignhostService
     {
         $payloadSigners = [];
         foreach ($signers as $signer) {
-            $payloadSigners[] = [
-                'Email' => $signer['email'],
-                'ScribbleName' => $signer['name'],
-                'SendSignRequest' => $signer['send'] ?? true,
-            ];
+            $payloadSigners[] = $this->buildSignerPayload($signer);
         }
 
         $create = $this->request('post', 'transaction', [
+            'Seal' => false,
             'Signers' => $payloadSigners,
-            'SendEmailNotifications' => true,
             'Reference' => $reference,
         ]);
 
@@ -153,7 +149,7 @@ class SignhostService
             throw new \RuntimeException("Signhost API error ({$path}): " . ($body ?: 'Empty response'));
         }
 
-        return $response->json();
+        return $response->json() ?? [];
     }
 
     private function requestRaw(string $method, string $path, array $options = []): array
@@ -174,9 +170,33 @@ class SignhostService
 
     private function headers(): array
     {
+        if ($this->appKey === '' || $this->userToken === '') {
+            throw new \RuntimeException('Signhost credentials are missing. Configure SIGNHOST_APP_KEY and SIGNHOST_USER_TOKEN.');
+        }
+
         return [
-            'X-Auth-Client-Id' => $this->appKey,
-            'X-Auth-Client-Token' => $this->userToken,
+            'Authorization' => 'APIKey '.$this->userToken,
+            'Application' => 'APPKey '.$this->appKey,
         ];
+    }
+
+    /**
+     * @param array{email:string,name:string,send?:bool,message?:string} $signer
+     */
+    private function buildSignerPayload(array $signer): array
+    {
+        $sendSignRequest = $signer['send'] ?? true;
+
+        return array_filter([
+            'Email' => $signer['email'],
+            'SendSignRequest' => $sendSignRequest,
+            'SignRequestMessage' => $sendSignRequest
+                ? ($signer['message'] ?? 'Please review and sign this document.')
+                : null,
+            'Verifications' => [[
+                'Type' => 'Scribble',
+                'ScribbleName' => $signer['name'],
+            ]],
+        ], static fn ($value) => $value !== null);
     }
 }
