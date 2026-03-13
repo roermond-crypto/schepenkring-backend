@@ -68,6 +68,8 @@ return [
 
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
+        'translation_model' => env('OPENAI_TRANSLATION_MODEL', 'gpt-4o-mini'),
+        'translation_timeout' => env('OPENAI_TRANSLATION_TIMEOUT', 30),
     ],
 
     'pinecone' => [

@@ -3,22 +3,16 @@
 namespace App\Actions\Bids;
 
 use App\Models\Yacht;
-use App\Services\BidRulesService;
+use App\Services\AuctionService;
 
 class GetBidStateAction
 {
-    public function __construct(private BidRulesService $rules)
+    public function __construct(private AuctionService $auctions)
     {
     }
 
-    public function execute(Yacht $yacht): array
+    public function execute(Yacht $yacht, ?int $locationId = null): array
     {
-        return [
-            'yacht_id' => $yacht->id,
-            'allow_bidding' => (bool) $yacht->allow_bidding,
-            'current_bid' => $yacht->current_bid !== null ? (float) $yacht->current_bid : null,
-            'minimum_next_bid' => $this->rules->minimumNextBid($yacht),
-            'min_increment' => $this->rules->minIncrement(),
-        ];
+        return $this->auctions->publicState($yacht, $locationId);
     }
 }

@@ -11,8 +11,10 @@ use App\Http\Requests\Api\Bids\BidderRegisterRequest;
 use App\Http\Requests\Api\Bids\BidderVerifyRequest;
 use App\Http\Requests\Api\Bids\BidPlaceRequest;
 use App\Models\Yacht;
+use App\Services\AuctionService;
 use App\Services\BidRulesService;
 use App\Services\IdempotencyService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 
 class BidWidgetController extends Controller
@@ -79,20 +81,45 @@ class BidWidgetController extends Controller
         ]);
     }
 
-    public function state(int $yachtId, GetBidStateAction $action)
+    public function state(Request $request, int $yachtId, GetBidStateAction $action)
     {
-        $yacht = Yacht::find($yachtId);
+        return $this->stateResponse($request, $yachtId, $action);
+    }
+
+    public function auction(Request $request, int $yachtId, GetBidStateAction $action)
+    {
+        return $this->stateResponse($request, $yachtId, $action);
+    }
+
+    public function bids(Request $request, int $yachtId, AuctionService $auctions)
+    {
+        $request->validate([
+            'location_id' => ['nullable', 'integer'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        $yacht = Yacht::with('owner')->find($yachtId);
         if (! $yacht) {
             return response()->json(['message' => 'Listing not found.'], 404);
         }
 
-        return response()->json($action->execute($yacht));
+        return response()->json([
+            'boat_id' => $yacht->id,
+            'yacht_id' => $yacht->id,
+            'bids' => $auctions->publicBids(
+                $yacht,
+                $request->integer('location_id') ?: null,
+                $request->integer('limit', 20)
+            ),
+        ]);
     }
 
     public function place(
         int $yachtId,
         BidPlaceRequest $request,
         PlaceBidAction $action,
+        GetBidStateAction $state,
+        AuctionService $auctions,
         BidRulesService $rules,
         IdempotencyService $idempotency
     ) {
@@ -132,13 +159,15 @@ class BidWidgetController extends Controller
         }
 
         $amount = (float) $request->validated()['amount'];
-        $bid = $action->execute($bidder, $yacht, $amount, $request);
+        $locationId = $request->integer('location_id') ?: null;
+        $bid = $action->execute($bidder, $yacht, $amount, $request, $locationId);
 
         $yacht->refresh();
         $response = response()->json([
-            'bid' => $bid,
+            'bid' => $auctions->publicBid($bid),
             'current_bid' => $yacht->current_bid !== null ? (float) $yacht->current_bid : null,
             'minimum_next_bid' => $rules->minimumNextBid($yacht),
+            'auction' => $state->execute($yacht, $locationId),
         ], 201);
 
         if ($idempotencyResult && ! empty($idempotencyResult['record'])) {
@@ -146,5 +175,19 @@ class BidWidgetController extends Controller
         }
 
         return $response;
+    }
+
+    private function stateResponse(Request $request, int $yachtId, GetBidStateAction $action)
+    {
+        $request->validate([
+            'location_id' => ['nullable', 'integer'],
+        ]);
+
+        $yacht = Yacht::with('owner')->find($yachtId);
+        if (! $yacht) {
+            return response()->json(['message' => 'Listing not found.'], 404);
+        }
+
+        return response()->json($action->execute($yacht, $request->integer('location_id') ?: null));
     }
 }

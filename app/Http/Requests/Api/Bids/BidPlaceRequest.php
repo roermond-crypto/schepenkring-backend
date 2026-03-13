@@ -10,6 +10,7 @@ class BidPlaceRequest extends ApiRequest
     {
         return [
             'amount' => ['required', 'numeric', 'min:0'],
+            'location_id' => ['nullable', 'integer'],
         ];
     }
 }

@@ -173,6 +173,7 @@ class YachtController extends Controller
 
             $coreFields = [
                 'boat_name', 'price', 'status', 'year', 'main_image', 'min_bid_amount',
+                'auction_mode', 'auction_start', 'auction_end', 'auction_duration_minutes', 'auction_extension_seconds',
                 'external_url', 'print_url', 'owners_comment', 'reg_details',
                 'known_defects', 'last_serviced',
                 'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
@@ -184,7 +185,7 @@ class YachtController extends Controller
                 'remote_control', 'rudder', 'drift_restriction',
                 'drift_restriction_controls', 'trimflaps', 'stabilizer',
             ];
-            $booleanFields = ['allow_bidding'];
+            $booleanFields = ['allow_bidding', 'auction_enabled'];
             $trackableFields = $this->buildTrackableFields($coreFields, $booleanFields);
             $submittedFields = $this->extractSubmittedTrackableFields($request, $trackableFields);
             $beforeSnapshot = $this->captureBeforeSnapshot($yacht, $submittedFields, $isUpdate);
@@ -206,6 +207,15 @@ class YachtController extends Controller
                 } elseif (! $isUpdate) {
                     $yacht->{$field} = false;
                 }
+            }
+
+            if ($request->has('auction_mode')) {
+                $auctionMode = strtolower(trim((string) $request->input('auction_mode')));
+                $yacht->auction_mode = in_array($auctionMode, ['bids', 'live'], true) ? $auctionMode : null;
+            }
+
+            if ($request->has('auction_enabled') && $yacht->auction_enabled && in_array($yacht->auction_mode, ['bids', 'live'], true)) {
+                $yacht->allow_bidding = true;
             }
 
             if ($request->hasFile('main_image')) {
