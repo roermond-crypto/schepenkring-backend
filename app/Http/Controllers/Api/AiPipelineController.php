@@ -2886,7 +2886,7 @@ CONTEXT,
      *   2. Search Pinecone for top 5 similar boats → collect their descriptions
      *   3. Query local DB for same brand/model boats with descriptions
      *   4. Build rich GPT-4o prompt with specs + example descriptions
-     *   5. Generate NL/EN/DE marketplace-ready texts
+     *   5. Generate NL/EN/DE/FR marketplace-ready texts
      */
     public function generateDescription(Request $request): JsonResponse
     {
@@ -3016,14 +3016,20 @@ Your writing style:
 CRITICAL RULES:
 1. Tone: {$tone}
 2. Word count: Each language version MUST be between {$minWords} and {$maxWords} words. This is a HARD requirement.
-3. Languages: Generate in Dutch (nl), English (en), and German (de). Each should feel native, NOT a translation.
+3. Languages: Generate in Dutch (nl), English (en), German (de), and French (fr). Each should feel native, NOT a translation.
 4. The CURRENT BOAT structured profile is the source of truth. Similar boats and example listings are only writing guidance.
 5. NEVER transfer facts, dimensions, engine specs, layout, or equipment from the reference boats into the current boat.
 6. ONLY mention specifications, equipment, and features that are verified in the current boat data. NEVER invent or hallucinate.
 7. If data is incomplete, write a strong draft around the verified facts only. Omit unknown specs gracefully.
 8. Avoid generic filler like "well maintained" or "ideal for enjoyable cruising" unless the verified context supports it with concrete details.
 9. If remarks mention defects or condition notes, handle them professionally and honestly without making the text negative or awkward.
-10. Return ONLY a valid JSON object with keys "nl", "en", "de". No markdown, no explanation.
+10. Return ONLY a valid JSON object with keys "nl", "en", "de", "fr". No markdown, no explanation.
+11. Each language value must be an HTML snippet for a rich-text editor.
+12. Start each language version with one strong <h1> title for the boat.
+13. Use a structured hierarchy with <h2>, <h3>, and <h4> where it improves readability.
+14. Include one concise verified <ul> or <ol> list of highlights or equipment when the current boat data supports it.
+15. Write like a human broker preparing the listing manually in an editor: clear sections, short readable paragraphs, attractive hierarchy, no wall of text.
+16. Do not use tables. Only list confirmed features or specifications.
 
 PROMPT;
 
@@ -3044,7 +3050,12 @@ Requirements:
 - Use the reference boats and example listings only to calibrate quality, positioning, and structure.
 - Produce unique copy for this exact boat.
 - Keep the tone broker-like, confident, and commercially useful.
-- No bullets, no headings, no markdown in the final output.
+- Final output must be HTML inside the JSON values, not markdown.
+- Start with an <h1> heading using the boat name or the best available boat title.
+- Use <h2>, <h3>, and <h4> to create a clear visual hierarchy.
+- Include one short verified bullet list for highlights, equipment, or selling points if enough confirmed data exists.
+- Keep paragraphs short and readable for manual editing in the rich text editor.
+- Make the titles natural and useful, as if a broker wrote them manually in the editor.
 USER;
 
         Log::info('[AI Description RAG] Generating for ' . $boatTitle, [
@@ -3079,23 +3090,36 @@ USER;
                 return response()->json(['error' => 'Empty response from OpenAI'], 500);
             }
 
-            $extracted = json_decode($text, true);
+            $decoded = json_decode($text, true);
+            $extracted = is_array($decoded)
+                ? $this->normalizeGeneratedDescriptionPayload($decoded, $boatTitle)
+                : [];
 
-            if (!$extracted || (!isset($extracted['nl']) && !isset($extracted['en']))) {
+            $missingLanguages = array_values(array_diff(
+                ['nl', 'en', 'de', 'fr'],
+                array_keys(array_filter($extracted, static fn($value) => is_string($value) && trim($value) !== ''))
+            ));
+
+            if (empty($extracted) || !empty($missingLanguages)) {
                 Log::error('[AI Description RAG] Invalid JSON response', ['raw' => $text]);
-                return response()->json(['error' => 'Invalid AI response format'], 500);
+                return response()->json([
+                    'error' => 'Invalid AI response format',
+                    'missing_languages' => $missingLanguages,
+                ], 500);
             }
 
             Log::info('[AI Description RAG] Generated successfully for ' . $boatTitle, [
-                'nl_words' => str_word_count($extracted['nl'] ?? ''),
-                'en_words' => str_word_count($extracted['en'] ?? ''),
-                'de_words' => str_word_count($extracted['de'] ?? ''),
+                'nl_words' => $this->countGeneratedDescriptionWords($extracted['nl'] ?? ''),
+                'en_words' => $this->countGeneratedDescriptionWords($extracted['en'] ?? ''),
+                'de_words' => $this->countGeneratedDescriptionWords($extracted['de'] ?? ''),
+                'fr_words' => $this->countGeneratedDescriptionWords($extracted['fr'] ?? ''),
             ]);
 
             $yacht->forceFill([
                 'short_description_nl' => $extracted['nl'] ?? $yacht->short_description_nl,
                 'short_description_en' => $extracted['en'] ?? $yacht->short_description_en,
                 'short_description_de' => $extracted['de'] ?? $yacht->short_description_de,
+                'short_description_fr' => $extracted['fr'] ?? $yacht->short_description_fr,
             ])->save();
 
             return response()->json([
@@ -3117,6 +3141,153 @@ USER;
             Log::error('[AI Description RAG] Exception: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    private function normalizeGeneratedDescriptionPayload(array $payload, string $boatTitle): array
+    {
+        $normalized = [];
+
+        foreach (['nl', 'en', 'de', 'fr'] as $language) {
+            if (! is_string($payload[$language] ?? null)) {
+                continue;
+            }
+
+            $html = $this->normalizeGeneratedDescriptionHtml($payload[$language], $language, $boatTitle);
+            if ($html !== '') {
+                $normalized[$language] = $html;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeGeneratedDescriptionHtml(string $value, string $language, string $boatTitle): string
+    {
+        $text = trim(str_replace(["\r\n", "\r"], "\n", $value));
+        if ($text === '') {
+            return '';
+        }
+
+        $text = preg_replace('/```(?:html)?/i', '', $text) ?? $text;
+
+        if (! preg_match('/<\s*(h1|h2|h3|h4|p|ul|ol|li|strong|em|br)\b/i', $text)) {
+            $text = $this->convertGeneratedDescriptionTextToHtml($text, $language, $boatTitle);
+        } elseif (! preg_match('/<\s*h[2-4]\b/i', $text)) {
+            $plainText = trim(preg_replace('/\s+/', ' ', strip_tags(str_ireplace(['<br>', '<br/>', '<br />'], "\n", $text))) ?? '');
+            $text = $this->convertGeneratedDescriptionTextToHtml($plainText, $language, $boatTitle);
+        }
+
+        $text = preg_replace('#<(script|style)[^>]*>.*?</\1>#is', '', $text) ?? $text;
+        $text = strip_tags($text, '<h1><h2><h3><h4><p><ul><ol><li><strong><em><br>');
+        $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
+
+        if (! preg_match('/<\s*h1\b/i', $text)) {
+            $text = '<h1>' . $this->escapeDescriptionHtml($boatTitle) . "</h1>\n" . ltrim($text);
+        }
+
+        return trim($text);
+    }
+
+    private function convertGeneratedDescriptionTextToHtml(string $text, string $language, string $boatTitle): string
+    {
+        $normalized = trim(preg_replace('/\s+/', ' ', $text) ?? $text);
+        if ($normalized === '') {
+            return '';
+        }
+
+        $sentences = preg_split('/(?<=[.!?])\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (empty($sentences)) {
+            return '<h1>' . $this->escapeDescriptionHtml($boatTitle) . "</h1>\n" .
+                '<p>' . $this->escapeDescriptionHtml($normalized) . '</p>';
+        }
+
+        $lead = array_shift($sentences) ?? '';
+        $highlightCount = count($sentences) >= 5 ? 3 : (count($sentences) >= 3 ? 2 : 0);
+        $highlightSentences = $highlightCount > 0 ? array_slice($sentences, -$highlightCount) : [];
+        $bodySentences = $highlightCount > 0 ? array_slice($sentences, 0, -$highlightCount) : $sentences;
+
+        if (empty($bodySentences) && ! empty($highlightSentences)) {
+            $bodySentences = $highlightSentences;
+            $highlightSentences = [];
+        }
+
+        $splitIndex = max(1, (int) ceil(count($bodySentences) / 2));
+        $overviewParagraph = trim(implode(' ', array_map('trim', array_slice($bodySentences, 0, $splitIndex))));
+        $detailParagraph = trim(implode(' ', array_map('trim', array_slice($bodySentences, $splitIndex))));
+        $structure = $this->generatedDescriptionStructure($language);
+        $html = [
+            '<h1>' . $this->escapeDescriptionHtml($boatTitle) . '</h1>',
+        ];
+
+        if ($lead !== '') {
+            $html[] = '<p>' . $this->escapeDescriptionHtml(trim($lead)) . '</p>';
+        }
+
+        if ($overviewParagraph !== '') {
+            $html[] = '<h2>' . $this->escapeDescriptionHtml($structure['overview']) . '</h2>';
+            $html[] = '<p>' . $this->escapeDescriptionHtml($overviewParagraph) . '</p>';
+        }
+
+        if ($detailParagraph !== '') {
+            $html[] = '<h3>' . $this->escapeDescriptionHtml($structure['details']) . '</h3>';
+            $html[] = '<p>' . $this->escapeDescriptionHtml($detailParagraph) . '</p>';
+        }
+
+        if (! empty($highlightSentences)) {
+            $html[] = '<h4>' . $this->escapeDescriptionHtml($structure['highlights']) . '</h4>';
+            $html[] = '<ul>';
+            foreach ($highlightSentences as $sentence) {
+                $bullet = trim((string) $sentence);
+                if ($bullet === '') {
+                    continue;
+                }
+                $html[] = '<li>' . $this->escapeDescriptionHtml($bullet) . '</li>';
+            }
+            $html[] = '</ul>';
+        }
+
+        return implode("\n", $html);
+    }
+
+    private function generatedDescriptionStructure(string $language): array
+    {
+        return match ($language) {
+            'nl' => [
+                'overview' => 'Overzicht',
+                'details' => 'Comfort en indeling',
+                'highlights' => 'Verifieerde highlights',
+            ],
+            'de' => [
+                'overview' => 'Ueberblick',
+                'details' => 'Komfort und Aufteilung',
+                'highlights' => 'Verifizierte Highlights',
+            ],
+            'fr' => [
+                'overview' => "Vue d'ensemble",
+                'details' => 'Confort et agencement',
+                'highlights' => 'Points forts verifies',
+            ],
+            default => [
+                'overview' => 'Overview',
+                'details' => 'Comfort and layout',
+                'highlights' => 'Verified highlights',
+            ],
+        };
+    }
+
+    private function escapeDescriptionHtml(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    private function countGeneratedDescriptionWords(string $value): int
+    {
+        $text = trim(strip_tags($value));
+        if ($text === '') {
+            return 0;
+        }
+
+        return count(preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY) ?: []);
     }
 
     /**
@@ -3557,6 +3728,11 @@ USER;
                         $inner->whereNotNull('short_description_de')
                             ->where('short_description_de', '!=', '')
                             ->where('short_description_de', '!=', ' ');
+                    })
+                    ->orWhere(function ($inner) {
+                        $inner->whereNotNull('short_description_fr')
+                            ->where('short_description_fr', '!=', '')
+                            ->where('short_description_fr', '!=', ' ');
                     });
             });
 
@@ -3739,6 +3915,7 @@ USER;
             'short_description_nl' => 'nl',
             'short_description_en' => 'en',
             'short_description_de' => 'de',
+            'short_description_fr' => 'fr',
         ] as $field => $lang) {
             $text = trim(strip_tags((string) $yacht->{$field}));
             if (mb_strlen($text) < 120) {
