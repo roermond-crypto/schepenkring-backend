@@ -17,7 +17,7 @@ class LocationAccessService
         }
 
         if ($user->isEmployee()) {
-            return $user->locations()->pluck('locations.id')->all();
+            return $user->location_id ? [$user->location_id] : [];
         }
 
         if ($user->isClient() && $user->client_location_id) {

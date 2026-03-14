@@ -34,4 +34,13 @@ class ChatAccessService
 
         return $this->locations->sharesLocation($user, $conversation->location_id);
     }
+
+    public function canAccessLocation(User $user, ?int $locationId): bool
+    {
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        return $this->locations->sharesLocation($user, $locationId);
+    }
 }

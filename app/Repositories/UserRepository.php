@@ -4,11 +4,16 @@ namespace App\Repositories;
 
 use App\Enums\UserType;
 use App\Models\User;
+use App\Services\LocationAccessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 
 class UserRepository
 {
+    public function __construct(private LocationAccessService $locations)
+    {
+    }
+
     public function query(): Builder
     {
         return User::query()->with(['locations', 'clientLocation']);
@@ -80,7 +85,7 @@ class UserRepository
         }
 
         if ($actor->isEmployee()) {
-            $locationIds = $actor->locations()->pluck('locations.id')->all();
+            $locationIds = $this->locations->accessibleLocationIds($actor);
 
             if (count($locationIds) === 0) {
                 return $query->where('id', $actor->id);
@@ -107,7 +112,7 @@ class UserRepository
         }
 
         if ($actor->isEmployee()) {
-            $locationIds = $actor->locations()->pluck('locations.id')->all();
+            $locationIds = $this->locations->accessibleLocationIds($actor);
 
             if (count($locationIds) === 0) {
                 return $query->whereRaw('1 = 0');

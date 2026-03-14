@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
+use App\Models\Location;
 use App\Services\ChatAccessService;
 use App\Services\ChatContactService;
 use App\Services\ChatConversationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Validation\ValidationException;
 
 class ChatConversationController extends Controller
 {
@@ -19,14 +21,20 @@ class ChatConversationController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $query = Conversation::with(['contact', 'lead'])
+        $query = Conversation::with([
+            'contact',
+            'lead',
+            'location:id,name,code',
+            'assignedEmployee:id,name,email',
+        ])
             ->orderByDesc('last_message_at')
             ->orderByDesc('updated_at');
 
         $query = $access->scopeConversations($query, $user, $request->boolean('assigned_only'));
 
-        if ($request->filled('harbor_id')) {
-            $query->where('location_id', (int) $request->query('harbor_id'));
+        $locationId = $request->integer('location_id') ?: $request->integer('harbor_id');
+        if ($locationId) {
+            $query->where('location_id', $locationId);
         }
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
@@ -55,9 +63,17 @@ class ChatConversationController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $conversation = Conversation::with(['contact', 'lead', 'messages' => function ($query) {
-            $query->orderBy('created_at', 'asc')->limit(200);
-        }])->findOrFail($id);
+        $conversation = Conversation::with([
+            'contact',
+            'lead',
+            'location:id,name,code',
+            'assignedEmployee:id,name,email',
+            'messages' => function ($query) {
+                $query->with(['attachments', 'employee:id,name,email'])
+                    ->orderBy('created_at', 'asc')
+                    ->limit(200);
+            },
+        ])->findOrFail($id);
 
         if (!$access->canAccessConversation($user, $conversation)) {
             return response()->json(['message' => 'Forbidden'], 403);
@@ -82,6 +98,7 @@ class ChatConversationController extends Controller
             'contact.consent_service_messages' => 'nullable|boolean',
             'boat_id' => 'nullable|integer',
             'page_url' => 'nullable|string|max:2048',
+            'location_id' => 'nullable|integer|exists:locations,id',
             'harbor_id' => 'nullable|integer',
             'widget_harbor_id' => 'nullable|integer',
             'channel_origin' => 'nullable|string|max:50',
@@ -95,6 +112,10 @@ class ChatConversationController extends Controller
             'ref_code' => 'nullable|string|max:100',
             'reuse' => 'nullable|boolean',
         ]);
+
+        if (! empty($payload['location_id']) && empty($payload['harbor_id'])) {
+            $payload['harbor_id'] = (int) $payload['location_id'];
+        }
 
         if (!empty($payload['session_jwt'])) {
             try {
@@ -131,9 +152,14 @@ class ChatConversationController extends Controller
             'status' => 'nullable|string|in:open,pending,solved',
             'priority' => 'nullable|string|in:low,normal,high',
             'ai_mode' => 'nullable|string|in:auto,assist,off',
+            'location_id' => 'nullable|integer|exists:locations,id',
             'harbor_id' => 'nullable|integer',
             'assign_to' => 'nullable|integer',
         ]);
+
+        if (! empty($payload['location_id']) && empty($payload['harbor_id'])) {
+            $payload['harbor_id'] = (int) $payload['location_id'];
+        }
 
         if (isset($payload['status'])) {
             $conversation->status = $payload['status'];
@@ -145,7 +171,16 @@ class ChatConversationController extends Controller
             $conversation->ai_mode = $payload['ai_mode'];
         }
         if (isset($payload['harbor_id'])) {
-            $conversation->location_id = (int) $payload['harbor_id'];
+            $newLocationId = (int) $payload['harbor_id'];
+            if (! Location::query()->whereKey($newLocationId)->exists()) {
+                throw ValidationException::withMessages([
+                    'location_id' => 'The selected location is invalid.',
+                ]);
+            }
+            if (! $access->canAccessLocation($user, $newLocationId)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+            $conversation->location_id = $newLocationId;
         }
         if (isset($payload['assign_to'])) {
             $conversation->assigned_to = (int) $payload['assign_to'];
@@ -197,7 +232,9 @@ class ChatConversationController extends Controller
         }
 
         $conversation = Conversation::with(['messages' => function ($query) {
-            $query->orderBy('created_at', 'asc')->limit(100);
+            $query->with(['attachments', 'employee:id,name,email'])
+                ->orderBy('created_at', 'asc')
+                ->limit(100);
         }])->findOrFail($id);
 
         if (!$access->canAccessConversation($user, $conversation)) {

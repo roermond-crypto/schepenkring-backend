@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -27,19 +27,14 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $user = Auth::user();
+        $user = Auth::user()->load(['locations', 'clientLocation']);
 
         // Create a Sanctum token
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
             'token' => $token,
-            'user'  => [
-                'id'    => $user->id,
-                'name'  => $user->name ?? $user->first_name . ' ' . $user->last_name,
-                'email' => $user->email,
-                'role'  => $user->type?->value ?? $user->type ?? 'admin',
-            ],
+            'user'  => new UserResource($user),
         ]);
     }
 

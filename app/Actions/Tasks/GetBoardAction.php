@@ -10,6 +10,7 @@ use App\Repositories\BoardRepository;
 use App\Services\ActionSecurity;
 use App\Services\LocationAccessService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
 
 class GetBoardAction
 {
@@ -23,6 +24,12 @@ class GetBoardAction
     public function execute(User $actor, ?int $locationId = null): Board
     {
         $resolvedLocationId = $this->resolveLocationId($actor, $locationId);
+
+        if (($actor->isEmployee() || $actor->isClient()) && ! $resolvedLocationId) {
+            throw ValidationException::withMessages([
+                'location_id' => 'No location assigned for this user.',
+            ]);
+        }
 
         if ($actor->isEmployee() && $resolvedLocationId && ! $this->locationAccess->sharesLocation($actor, $resolvedLocationId)) {
             throw new AuthorizationException('Unauthorized');
@@ -71,7 +78,7 @@ class GetBoardAction
         }
 
         if ($actor->isEmployee()) {
-            return $actor->locations()->value('locations.id');
+            return $actor->location_id;
         }
 
         return null;
