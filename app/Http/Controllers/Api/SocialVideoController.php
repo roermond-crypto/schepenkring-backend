@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RenderMarketingVideo;
+use App\Jobs\SendBoatVideoWhatsappJob;
 use App\Models\Yacht;
 use App\Models\Video;
 use App\Models\VideoPost;
@@ -121,7 +122,7 @@ class SocialVideoController extends Controller
     public function listVideos(Request $request): JsonResponse
     {
         $user = $this->requireUser($request);
-        $query = Video::query()->with('posts');
+        $query = Video::query()->with(['posts', 'yacht.owner', 'yacht.videoSetting']);
 
         $this->applyVisibleVideoScope($query, $user);
 
@@ -136,6 +137,18 @@ class SocialVideoController extends Controller
         $videos = $query->orderBy('created_at', 'desc')->paginate(20);
 
         return response()->json($videos);
+    }
+
+    public function show(Request $request, int $id): JsonResponse
+    {
+        $user = $this->requireUser($request);
+        $video = Video::query()
+            ->with(['posts', 'yacht.owner', 'yacht.videoSetting'])
+            ->findOrFail($id);
+
+        $this->authorizeVideoAccess($user, $video);
+
+        return response()->json($video);
     }
 
     public function listPosts(Request $request): JsonResponse
@@ -214,6 +227,26 @@ class SocialVideoController extends Controller
         return response()->json([
             'message' => 'Video regeneration queued',
             'video' => $video,
+        ], 202);
+    }
+
+    public function notifyOwner(Request $request, int $id): JsonResponse
+    {
+        $user = $this->requireUser($request);
+        $video = $this->findAuthorizedVideo($user, $id);
+
+        if ($video->status !== 'ready' || ! $video->video_url) {
+            return response()->json([
+                'message' => 'Video must be ready before WhatsApp delivery can be queued.',
+            ], 422);
+        }
+
+        $force = (bool) $request->boolean('force', false);
+        SendBoatVideoWhatsappJob::dispatch($video->id, $force)->onQueue('whatsapp');
+
+        return response()->json([
+            'message' => 'Owner WhatsApp delivery queued',
+            'video' => $video->fresh(['posts', 'yacht.owner', 'yacht.videoSetting']),
         ], 202);
     }
 

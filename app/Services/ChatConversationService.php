@@ -135,6 +135,7 @@ class ChatConversationService
             'external_message_id' => $payload['external_message_id'] ?? null,
             'message_type' => $payload['message_type'] ?? 'text',
             'status' => $payload['status'] ?? null,
+            'ai_confidence' => $payload['ai_confidence'] ?? null,
             'metadata' => $metadata,
             'client_message_id' => $payload['client_message_id'] ?? null,
             'delivery_state' => $payload['delivery_state'] ?? 'sent',

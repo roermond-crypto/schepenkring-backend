@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Video;
 use App\Models\Yacht;
+use App\Jobs\SendBoatVideoWhatsappJob;
 use App\Services\FFmpegService;
 use App\Services\VideoCaptionService;
 use App\Services\VideoAutomationService;
@@ -30,6 +31,7 @@ class RenderMarketingVideo implements ShouldQueue
     {
         $this->videoId = $videoId;
         $this->onQueue('video-rendering');
+        $this->afterCommit();
     }
 
     public function handle(VideoAutomationService $automation): void
@@ -105,16 +107,20 @@ class RenderMarketingVideo implements ShouldQueue
 
             $this->cleanup($workDir);
 
-            if (config('video_automation.auto_schedule')) {
+            if ($this->shouldAutoSchedule($yacht)) {
                 $scheduler = app(VideoSchedulerService::class);
                 $scheduler->scheduleNextAvailable(
                     $video,
                     config('video_automation.schedule_time', '10:30'),
                     (bool) config('video_automation.skip_weekends', false),
-                    config('video_automation.default_publishers', []),
+                    $this->publishersFor($yacht),
                     config('services.yext.account_id'),
                     config('services.yext.entity_id')
                 );
+            }
+
+            if (config('video_automation.auto_notify_owner_whatsapp', true)) {
+                SendBoatVideoWhatsappJob::dispatch($video->id)->onQueue('whatsapp');
             }
 
             Log::info('Marketing video rendered', ['video_id' => $video->id, 'yacht_id' => $yacht->id]);
@@ -182,5 +188,31 @@ class RenderMarketingVideo implements ShouldQueue
             'status' => 'failed',
             'error_message' => $error,
         ]);
+    }
+
+    private function shouldAutoSchedule(Yacht $yacht): bool
+    {
+        $settings = $yacht->videoSetting()->first();
+
+        if ($settings) {
+            return (bool) $settings->auto_publish_social;
+        }
+
+        return (bool) config('video_automation.auto_schedule');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function publishersFor(Yacht $yacht): array
+    {
+        $settings = $yacht->videoSetting()->first();
+        $publishers = $settings?->platforms;
+
+        if (is_array($publishers) && $publishers !== []) {
+            return $publishers;
+        }
+
+        return config('video_automation.default_publishers', []);
     }
 }
