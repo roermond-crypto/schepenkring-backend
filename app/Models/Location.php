@@ -49,4 +49,14 @@ class Location extends Model
     {
         return $this->hasMany(Yacht::class);
     }
+
+    public function knowledgeQuestions(): HasMany
+    {
+        return $this->hasMany(KnowledgeBrainQuestion::class);
+    }
+
+    public function knowledgeSuggestions(): HasMany
+    {
+        return $this->hasMany(KnowledgeBrainSuggestion::class);
+    }
 }

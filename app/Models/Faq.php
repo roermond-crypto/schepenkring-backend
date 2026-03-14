@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Faq extends Model
 {
@@ -17,6 +18,11 @@ class Faq extends Model
         'question',
         'answer',
         'category',
+        'ai_score',
+        'last_reviewed_at',
+        'needs_update',
+        'ai_review_summary',
+        'ai_suggested_answer',
         'language',
         'department',
         'visibility',
@@ -47,8 +53,11 @@ class Faq extends Model
         'views' => 'integer',
         'helpful' => 'integer',
         'not_helpful' => 'integer',
+        'ai_score' => 'integer',
+        'needs_update' => 'boolean',
         'deprecated_at' => 'datetime',
         'last_indexed_at' => 'datetime',
+        'last_reviewed_at' => 'datetime',
     ];
 
     public function location(): BelongsTo
@@ -64,5 +73,15 @@ class Faq extends Model
     public function supersededBy(): BelongsTo
     {
         return $this->belongsTo(self::class, 'superseded_by_faq_id');
+    }
+
+    public function knowledgeQuestions(): HasMany
+    {
+        return $this->hasMany(KnowledgeBrainQuestion::class, 'matched_faq_id');
+    }
+
+    public function knowledgeSuggestions(): HasMany
+    {
+        return $this->hasMany(KnowledgeBrainSuggestion::class, 'faq_id');
     }
 }

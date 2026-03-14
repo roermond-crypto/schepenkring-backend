@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\FaqKnowledgeController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
+use App\Http\Controllers\Api\KnowledgeBrainController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
 use App\Http\Controllers\Api\SocialVideoController;
@@ -271,6 +272,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'review']);
     Route::delete('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'destroy']);
     Route::get('faqs/knowledge/analytics', [FaqKnowledgeController::class, 'analytics']);
+    Route::get('faqs/knowledge-brain', [KnowledgeBrainController::class, 'show']);
+    Route::get('faqs/knowledge-brain/questions', [KnowledgeBrainController::class, 'questions']);
+    Route::get('faqs/knowledge-brain/suggestions', [KnowledgeBrainController::class, 'suggestions']);
+    Route::post('faqs/knowledge-brain/refresh', [KnowledgeBrainController::class, 'refresh']);
+    Route::patch('faqs/knowledge-brain/suggestions/{suggestion}', [KnowledgeBrainController::class, 'review']);
     Route::put('faqs/{faq}', [FaqController::class, 'update']);
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
