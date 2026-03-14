@@ -31,10 +31,13 @@ class UserResource extends JsonResource
             ] : null;
         });
 
+        $resolvedLocation = $this->resolvedLocation();
+        $locationRole = $this->resolvedLocationRole();
+
         return [
             'id' => $this->id,
             'type' => $this->type?->value ?? $this->type,
-            'role' => $this->type?->value ?? $this->type,
+            'role' => $this->role,
             'status' => $this->status?->value ?? $this->status,
             'name' => $this->name,
             'first_name' => $this->first_name,
@@ -43,9 +46,19 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'avatar' => $this->avatar,
             'phone' => $this->phone,
+            'location_id' => $this->location_id,
+            'location_role' => $locationRole,
+            'location' => $resolvedLocation ? [
+                'id' => $resolvedLocation->id,
+                'name' => $resolvedLocation->name,
+                'code' => $resolvedLocation->code,
+                'role' => $locationRole,
+            ] : null,
             'client_location_id' => $this->client_location_id,
             'client_location' => $clientLocation,
             'locations' => $locations,
+            'has_location_assignment' => $this->location_id !== null,
+            'can_access_board' => $this->isAdmin() || ($this->isEmployee() && $this->location_id !== null),
             'timezone' => $this->timezone,
             'locale' => $this->locale,
             'address_line1' => $this->address_line1,

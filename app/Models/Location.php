@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\UserType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -34,6 +35,14 @@ class Location extends Model
     public function clients(): HasMany
     {
         return $this->hasMany(User::class, 'client_location_id');
+    }
+
+    public function employees(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class)
+            ->withPivot('role')
+            ->withTimestamps()
+            ->where('users.type', UserType::EMPLOYEE->value);
     }
 
     public function yachts(): HasMany
