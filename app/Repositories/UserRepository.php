@@ -124,6 +124,11 @@ class UserRepository
         return $query->where('id', $actor->id);
     }
 
+    public function findClientForActorOrFail(User $actor, int $id): User
+    {
+        return $this->queryClientsForUser($actor)->findOrFail($id);
+    }
+
     public function syncLocations(User $user, array $locations): void
     {
         $syncData = [];

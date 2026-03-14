@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
 use App\Http\Controllers\Api\Admin\CopilotSuggestionController;
 use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
 use App\Http\Controllers\Api\Admin\HarborController as AdminHarborController;
+use App\Http\Controllers\Api\Admin\InsightController as AdminInsightController;
 use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
@@ -33,6 +34,7 @@ use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
+use App\Http\Controllers\Api\EmployeeUserController;
 use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\FaqKnowledgeController;
 use App\Http\Controllers\Api\ImagePipelineController;
@@ -87,6 +89,7 @@ Route::prefix('auth')->group(function () {
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
     Route::post('messages', [PublicConversationMessageController::class, 'store']);
+    Route::post('ask', [PublicConversationMessageController::class, 'ask']);
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
 });
 
@@ -214,10 +217,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('/social/videos/{id}', [SocialVideoController::class, 'show']);
     Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
     Route::patch('/social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
     Route::post('/social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
     Route::post('/social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
+    Route::post('/social/videos/{id}/notify-owner', [SocialVideoController::class, 'notifyOwner']);
 
     // Audit logs
     Route::get('audit-logs', [AuditLogController::class, 'index']);
@@ -284,10 +289,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('social/videos/{id}', [SocialVideoController::class, 'show']);
     Route::get('social/posts', [SocialVideoController::class, 'listPosts']);
     Route::patch('social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
     Route::post('social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
     Route::post('social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
+    Route::post('social/videos/{id}/notify-owner', [SocialVideoController::class, 'notifyOwner']);
 
     // Signhost / contracts
     Route::post('contracts/generate', [SignhostController::class, 'generateContract']);
@@ -364,17 +371,27 @@ Route::middleware('auth:sanctum')->group(function () {
 // ──────────────────────────────────────────────────────────
 // Admin routes
 // ──────────────────────────────────────────────────────────
-Route::prefix('admin')->middleware(['auth:sanctum', 'admin.errors'])->group(function () {
-    Route::get('users', [AdminUserController::class, 'index']);
-    Route::get('users/{id}', [AdminUserController::class, 'show']);
-});
-
 Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
     Route::post('boats/{yachtId}/auction/start', [AdminBoatAuctionController::class, 'start']);
     Route::post('boats/{yachtId}/auction/end', [AdminBoatAuctionController::class, 'end']);
 });
 
+Route::prefix('employee')->middleware(['auth:sanctum', 'role:employee'])->group(function () {
+    Route::get('users', [EmployeeUserController::class, 'index']);
+    Route::get('users/{id}', [EmployeeUserController::class, 'show']);
+    Route::get('clients', [EmployeeUserController::class, 'index']);
+    Route::get('clients/{id}', [EmployeeUserController::class, 'show']);
+});
+
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::get('users', [AdminUserController::class, 'index']);
+    Route::get('users/{id}', [AdminUserController::class, 'show']);
+
+    Route::get('insights', [AdminInsightController::class, 'index']);
+    Route::get('insights/latest', [AdminInsightController::class, 'latest']);
+    Route::get('insights/{insight}', [AdminInsightController::class, 'show']);
+    Route::post('insights/generate', [AdminInsightController::class, 'generate']);
+
     // Harbors
     Route::get('harbors', [AdminHarborController::class, 'index']);
     Route::post('harbors', [AdminHarborController::class, 'store']);

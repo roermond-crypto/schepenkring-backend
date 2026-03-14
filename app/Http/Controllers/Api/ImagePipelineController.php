@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Services\LocationAccessService;
+use App\Services\VideoAutomationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,10 @@ class ImagePipelineController extends Controller
      */
     protected int $minApproved;
 
-    public function __construct(private readonly LocationAccessService $locationAccess)
+    public function __construct(
+        private readonly LocationAccessService $locationAccess,
+        private readonly VideoAutomationService $videoAutomation
+    )
     {
         $this->minApproved = (int) config('services.pipeline.min_approved_images', 1);
     }
@@ -96,6 +100,10 @@ class ImagePipelineController extends Controller
             } catch (\Throwable $e) {
                 Log::error("Image upload failed for yacht #{$yachtId}: " . $e->getMessage());
             }
+        }
+
+        if ($uploaded !== []) {
+            $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']));
         }
 
         return response()->json([
@@ -168,6 +176,8 @@ class ImagePipelineController extends Controller
         if (!$image->keep_original && $image->original_temp_url) {
             $this->scheduleOriginalCleanup($image);
         }
+
+        $this->triggerAutomaticVideoFlows($image->yacht()->with(['images', 'owner'])->firstOrFail());
 
         return response()->json([
             'status'  => 'success',
@@ -386,6 +396,10 @@ class ImagePipelineController extends Controller
             $this->scheduleOriginalCleanup($image);
         }
 
+        if ($updated > 0) {
+            $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']));
+        }
+
         $approvedCount = $yacht->images()->where('status', 'approved')->count();
 
         return response()->json([
@@ -432,6 +446,17 @@ class ImagePipelineController extends Controller
         if ($image->original_temp_url && !$image->keep_original) {
             Storage::disk('public')->delete($image->original_temp_url);
             Log::info("Cleaned up temp original: {$image->original_temp_url}");
+        }
+    }
+
+    private function triggerAutomaticVideoFlows(Yacht $yacht): void
+    {
+        try {
+            $this->videoAutomation->handleYachtPublished($yacht);
+        } catch (\Throwable $e) {
+            Log::warning('[VideoAutomation] Non-critical failure after image pipeline action: '.$e->getMessage(), [
+                'yacht_id' => $yacht->id,
+            ]);
         }
     }
 

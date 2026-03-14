@@ -13,6 +13,7 @@ class Video extends Model
         'yacht_id',
         'status',
         'template_type',
+        'generation_trigger',
         'video_path',
         'video_url',
         'thumbnail_path',
@@ -23,12 +24,18 @@ class Video extends Model
         'caption',
         'error_message',
         'generated_at',
+        'whatsapp_status',
+        'whatsapp_sent_at',
+        'whatsapp_message_id',
+        'whatsapp_recipient',
+        'whatsapp_error',
     ];
 
     protected $casts = [
         'duration_seconds' => 'integer',
         'file_size_bytes' => 'integer',
         'generated_at' => 'datetime',
+        'whatsapp_sent_at' => 'datetime',
     ];
 
     public function yacht(): BelongsTo

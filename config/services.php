@@ -68,8 +68,15 @@ return [
 
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
+        'chat_model' => env('OPENAI_CHAT_MODEL', 'gpt-5-mini'),
+        'chat_timeout' => env('OPENAI_CHAT_TIMEOUT', 45),
+        'chat_max_output_tokens' => env('OPENAI_CHAT_MAX_OUTPUT_TOKENS', 450),
         'translation_model' => env('OPENAI_TRANSLATION_MODEL', 'gpt-4o-mini'),
         'translation_timeout' => env('OPENAI_TRANSLATION_TIMEOUT', 30),
+        'insights_model' => env('OPENAI_INSIGHTS_MODEL', 'gpt-5'),
+        'insights_timeout' => env('OPENAI_INSIGHTS_TIMEOUT', 90),
+        'insights_max_output_tokens' => env('OPENAI_INSIGHTS_MAX_OUTPUT_TOKENS', 2500),
+        'insights_reasoning_effort' => env('OPENAI_INSIGHTS_REASONING_EFFORT', 'medium'),
     ],
 
     'pinecone' => [

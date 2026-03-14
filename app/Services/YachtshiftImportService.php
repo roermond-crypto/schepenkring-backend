@@ -261,6 +261,19 @@ class YachtshiftImportService
                         }
 
                         DB::commit();
+
+                        try {
+                            $freshYacht = Yacht::query()->with(['images', 'owner'])->find($yacht->id);
+                            if ($freshYacht) {
+                                app(VideoAutomationService::class)->handleYachtCreated($freshYacht);
+                                app(VideoAutomationService::class)->handleYachtPublished($freshYacht);
+                            }
+                        } catch (\Throwable $automationError) {
+                            Log::warning('[VideoAutomation] Non-critical Yachtshift import failure: '.$automationError->getMessage(), [
+                                'yacht_id' => $yacht->id,
+                                'vessel_id' => $vesselId,
+                            ]);
+                        }
                         
                         if ($isNew) {
                             $imported++;
