@@ -435,4 +435,4 @@ Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->gro
 });
 
 
-// Scrape 3000+ boats
+// crape 3000+ boats

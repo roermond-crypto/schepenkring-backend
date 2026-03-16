@@ -1187,9 +1187,11 @@ class AiPipelineController extends Controller
             }
         }
 
+        $responseFormValues = $this->normalizeStep2ResponseFormValues($formValues);
+
         return response()->json([
             'success' => true,
-            'step2_form_values' => $formValues,
+            'step2_form_values' => $responseFormValues,
             'meta' => $meta,
         ]);
     }
@@ -3236,6 +3238,7 @@ CONTEXT,
     ): JsonResponse {
         $rawOutput = is_array($cachedExtraction->raw_output_json) ? $cachedExtraction->raw_output_json : [];
         $step2FormValues = $rawOutput['step2_form_values'] ?? $cachedExtraction->normalized_fields_json ?? [];
+        $responseFormValues = $this->normalizeStep2ResponseFormValues($step2FormValues);
         $meta = is_array($rawOutput['meta'] ?? null) ? $rawOutput['meta'] : [];
 
         $meta['ai_session_id'] = $cachedExtraction->session_id;
@@ -3252,7 +3255,7 @@ CONTEXT,
 
         return response()->json([
             'success' => true,
-            'step2_form_values' => $step2FormValues,
+            'step2_form_values' => $responseFormValues,
             'meta' => $meta,
         ]);
     }
@@ -3299,6 +3302,22 @@ CONTEXT,
     private function buildEmptyFormValues(): array
     {
         return array_fill_keys(self::STEP2_SCHEMA_FIELDS, null);
+    }
+
+    private function normalizeStep2ResponseFormValues(array $formValues): array
+    {
+        $normalized = array_fill_keys(self::STEP2_SCHEMA_FIELDS, '');
+
+        foreach ($formValues as $field => $value) {
+            if (is_string($value) && strtolower(trim($value)) === 'unknown') {
+                $normalized[$field] = '';
+                continue;
+            }
+
+            $normalized[$field] = $value ?? '';
+        }
+
+        return $normalized;
     }
 
     private function resolveStoredImagePath(\App\Models\YachtImage $yachtImage): ?string
@@ -3662,10 +3681,11 @@ CONTEXT,
         $yacht = Yacht::findOrFail($request->input('yacht_id'));
         $formValues = is_array($request->input('form_values')) ? $request->input('form_values') : [];
 
-        $openAiKey = config('services.openai.key');
-        if (!$openAiKey) {
-            return response()->json(['error' => 'OPENAI_API_KEY not configured'], 500);
+        $geminiKey = config('services.gemini.key');
+        if (!$geminiKey) {
+            return response()->json(['error' => 'GEMINI_API_KEY not configured'], 500);
         }
+        $openAiKey = config('services.openai.key');
 
         $tone = $request->input('tone', 'professional');
         $minWords = $request->input('min_words', 200);
@@ -3695,14 +3715,16 @@ CONTEXT,
         $rankedReferences = [];
 
         try {
-            $pineconeReferences = $this->fetchPineconeDescriptionMatches($allSpecs, $yacht->id, $openAiKey);
-            foreach ($pineconeReferences as $reference) {
-                $referenceId = $reference['yacht']->id;
-                $rankedReferences[$referenceId] = [
-                    'yacht' => $reference['yacht'],
-                    'score' => $this->scoreDescriptionReferenceBoat($allSpecs, $reference['yacht'], (int) ($reference['score'] ?? 0)),
-                    'source' => 'pinecone',
-                ];
+            if ($openAiKey) {
+                $pineconeReferences = $this->fetchPineconeDescriptionMatches($allSpecs, $yacht->id, $openAiKey);
+                foreach ($pineconeReferences as $reference) {
+                    $referenceId = $reference['yacht']->id;
+                    $rankedReferences[$referenceId] = [
+                        'yacht' => $reference['yacht'],
+                        'score' => $this->scoreDescriptionReferenceBoat($allSpecs, $reference['yacht'], (int) ($reference['score'] ?? 0)),
+                        'source' => 'pinecone',
+                    ];
+                }
             }
         } catch (\Throwable $e) {
             Log::warning('[AI Description RAG] Pinecone search failed: ' . $e->getMessage());
@@ -3746,7 +3768,7 @@ CONTEXT,
 
         $exampleDescriptions = $this->dedupeDescriptionExamples($exampleDescriptions, 6);
 
-        // ── 4. BUILD RICH GPT-4o PROMPT ──────────────────────────────────
+        // ── 4. BUILD RICH GEMINI PROMPT ─────────────────────────────────
         $boatTitle = $this->buildBoatTitleFromSpecs($allSpecs);
 
         $examplesBlock = '';
@@ -3825,30 +3847,33 @@ USER;
             'example_descriptions' => count($exampleDescriptions),
         ]);
 
-        // ── 5. CALL GPT-4o ──────────────────────────────────────────────
+        // ── 5. CALL GEMINI ──────────────────────────────────────────────
         try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $openAiKey,
-            ])->timeout(90)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o',
-                'messages' => [
-                    ['role' => 'system', 'content' => $systemPrompt],
-                    ['role' => 'user', 'content' => $userPrompt],
+            $model = 'gemini-2.5-flash';
+            $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$geminiKey}";
+
+            $response = Http::timeout(90)->post($endpoint, [
+                'system_instruction' => [
+                    'parts' => [['text' => $systemPrompt]],
                 ],
-                'response_format' => ['type' => 'json_object'],
-                'temperature' => 0.7,
+                'contents' => [[
+                    'parts' => [['text' => $userPrompt]],
+                ]],
+                'generationConfig' => [
+                    'responseMimeType' => 'application/json',
+                    'temperature' => 0.7,
+                ],
             ]);
 
             if (!$response->successful()) {
-                Log::error('[AI Description RAG] API error: ' . $response->body());
-                return response()->json(['error' => 'OpenAI API failed'], 500);
+                Log::error('[AI Description RAG] Gemini API error: ' . $response->body());
+                return response()->json(['error' => 'Gemini API failed'], 500);
             }
 
-            $body = $response->json();
-            $text = $body['choices'][0]['message']['content'] ?? null;
+            $text = $response->json('candidates.0.content.parts.0.text');
 
             if (!$text) {
-                return response()->json(['error' => 'Empty response from OpenAI'], 500);
+                return response()->json(['error' => 'Empty response from Gemini'], 500);
             }
 
             $decoded = json_decode($text, true);
