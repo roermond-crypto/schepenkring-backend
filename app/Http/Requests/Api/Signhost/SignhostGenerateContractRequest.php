@@ -26,6 +26,8 @@ class SignhostGenerateContractRequest extends ApiRequest
             'title' => ['nullable', 'string', 'max:255'],
             'metadata' => ['nullable', 'array'],
             'pdf' => ['nullable', 'file', 'mimetypes:application/pdf', 'max:20480'],
+            'pdfs' => ['nullable', 'array', 'min:1'],
+            'pdfs.*' => ['file', 'mimetypes:application/pdf', 'max:20480'],
             'send_to_signhost' => ['nullable', 'boolean'],
             'recipients' => ['nullable', 'array', 'min:1'],
             'recipients.*.email' => ['nullable', 'email'],
