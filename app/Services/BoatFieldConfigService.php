@@ -52,6 +52,8 @@ class BoatFieldConfigService
                 'internal_key' => $field->internal_key,
                 'label' => $field->labelForLocale($normalizedLocale),
                 'labels' => $field->labels_json ?? [],
+                'help_text' => $field->helpTextForLocale($normalizedLocale),
+                'help_texts' => $field->helpTexts(),
                 'options' => $this->resolveOptions($field, $normalizedLocale),
                 'field_type' => $field->field_type,
                 'block_key' => $field->block_key,

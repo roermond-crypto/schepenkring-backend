@@ -399,6 +399,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
     Route::get('boat-fields', [AdminBoatFieldController::class, 'index']);
     Route::post('boat-fields', [AdminBoatFieldController::class, 'store']);
+    Route::post('boat-fields/generate-help', [AdminBoatFieldController::class, 'generateHelp']);
     Route::get('boat-fields/{boatField}', [AdminBoatFieldController::class, 'show']);
     Route::put('boat-fields/{boatField}', [AdminBoatFieldController::class, 'update']);
     Route::delete('boat-fields/{boatField}', [AdminBoatFieldController::class, 'destroy']);

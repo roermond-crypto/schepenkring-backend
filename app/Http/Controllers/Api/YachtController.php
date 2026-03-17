@@ -155,6 +155,13 @@ class YachtController extends Controller
 
             $actor = $request->user();
             $isUpdate = $id !== null;
+            if ($this->shouldBootstrapDraft($request, $isUpdate)) {
+                $draft = $this->createBootstrapDraft($request, $actor, $offlineUuid);
+                DB::commit();
+
+                return response()->json($draft, 201);
+            }
+
             $yacht = $isUpdate ? Yacht::findOrFail($id) : new Yacht();
             if ($isUpdate) {
                 $this->authorizeYachtAccess($actor, $yacht);
@@ -216,23 +223,7 @@ class YachtController extends Controller
                 $yacht->main_image = $request->file('main_image')->store('yachts/main', 'public');
             }
 
-            if ($request->has('ref_harbor_id')) {
-                $requestedHarborId = $request->integer('ref_harbor_id') ?: null;
-
-                if ($actor?->isClient()) {
-                    $yacht->ref_harbor_id = $actor->client_location_id;
-                } elseif ($actor?->isEmployee()) {
-                    if ($requestedHarborId !== null && ! $this->locationAccess->sharesLocation($actor, $requestedHarborId)) {
-                        abort(403, 'Forbidden');
-                    }
-
-                    $yacht->ref_harbor_id = $requestedHarborId;
-                } else {
-                    $yacht->ref_harbor_id = $requestedHarborId;
-                }
-            } elseif (! $isUpdate && $actor?->client_location_id) {
-                $yacht->ref_harbor_id = $actor->client_location_id;
-            }
+            $this->applyRequestedHarbor($request, $yacht, $actor, $isUpdate);
 
             if (! $isUpdate) {
                 $yacht->user_id = $actor?->id;
@@ -321,6 +312,76 @@ class YachtController extends Controller
                 'error' => $e->getMessage(),
                 'line' => $e->getLine(),
             ], 500);
+        }
+    }
+
+    private function shouldBootstrapDraft(Request $request, bool $isUpdate): bool
+    {
+        if ($isUpdate) {
+            return false;
+        }
+
+        if (strtolower((string) $request->input('status')) !== 'draft') {
+            return false;
+        }
+
+        if ($request->hasFile('main_image')) {
+            return false;
+        }
+
+        $allowedKeys = ['status', 'ref_harbor_id'];
+        $presentKeys = array_keys($request->except(['_method']));
+
+        foreach ($presentKeys as $key) {
+            if (! in_array($key, $allowedKeys, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function createBootstrapDraft(Request $request, ?User $actor, ?string $offlineUuid): Yacht
+    {
+        $yacht = new Yacht();
+        $yacht->status = 'draft';
+        $yacht->boat_name = 'Yacht '.date('Y-m-d H:i');
+        $yacht->allow_bidding = false;
+        $yacht->user_id = $actor?->id;
+
+        $this->applyRequestedHarbor($request, $yacht, $actor, false);
+
+        if (! $yacht->vessel_id) {
+            $yacht->vessel_id = 'SK-'.date('Y').'-'.strtoupper(bin2hex(random_bytes(3)));
+        }
+
+        if ($offlineUuid) {
+            $yacht->offline_uuid = $offlineUuid;
+        }
+
+        $yacht->save();
+
+        return $yacht;
+    }
+
+    private function applyRequestedHarbor(Request $request, Yacht $yacht, ?User $actor, bool $isUpdate): void
+    {
+        if ($request->has('ref_harbor_id')) {
+            $requestedHarborId = $request->integer('ref_harbor_id') ?: null;
+
+            if ($actor?->isClient()) {
+                $yacht->ref_harbor_id = $actor->client_location_id;
+            } elseif ($actor?->isEmployee()) {
+                if ($requestedHarborId !== null && ! $this->locationAccess->sharesLocation($actor, $requestedHarborId)) {
+                    abort(403, 'Forbidden');
+                }
+
+                $yacht->ref_harbor_id = $requestedHarborId;
+            } else {
+                $yacht->ref_harbor_id = $requestedHarborId;
+            }
+        } elseif (! $isUpdate && $actor?->client_location_id) {
+            $yacht->ref_harbor_id = $actor->client_location_id;
         }
     }
 

@@ -10,22 +10,30 @@ class FaqKnowledgeTextExtractor
 {
     public function extract(UploadedFile $file): string
     {
-        $extension = strtolower($file->getClientOriginalExtension());
+        return $this->extractFromPath(
+            $file->getRealPath(),
+            $file->getClientOriginalExtension(),
+        );
+    }
+
+    public function extractFromPath(string $path, ?string $extension = null): string
+    {
+        $extension = strtolower($extension ?: pathinfo($path, PATHINFO_EXTENSION));
 
         return match ($extension) {
-            'txt', 'md' => $this->normalize((string) file_get_contents($file->getRealPath())),
-            'csv' => $this->extractCsv($file),
-            'docx' => $this->extractDocx($file),
-            'xlsx' => $this->extractXlsx($file),
-            'pdf' => $this->extractPdf($file),
+            'txt', 'md' => $this->normalize((string) file_get_contents($path)),
+            'csv' => $this->extractCsv($path),
+            'docx' => $this->extractDocx($path),
+            'xlsx' => $this->extractXlsx($path),
+            'pdf' => $this->extractPdf($path),
             default => throw new RuntimeException('Unsupported knowledge file type: '.$extension),
         };
     }
 
-    private function extractCsv(UploadedFile $file): string
+    private function extractCsv(string $path): string
     {
         $rows = [];
-        $handle = fopen($file->getRealPath(), 'rb');
+        $handle = fopen($path, 'rb');
 
         if (! $handle) {
             throw new RuntimeException('Unable to read CSV file.');
@@ -49,10 +57,10 @@ class FaqKnowledgeTextExtractor
         return $this->normalize(implode("\n", $rows));
     }
 
-    private function extractDocx(UploadedFile $file): string
+    private function extractDocx(string $path): string
     {
         $zip = new ZipArchive();
-        if ($zip->open($file->getRealPath()) !== true) {
+        if ($zip->open($path) !== true) {
             throw new RuntimeException('Unable to open Word document.');
         }
 
@@ -66,10 +74,10 @@ class FaqKnowledgeTextExtractor
         return $this->normalize(html_entity_decode(strip_tags(str_replace('</w:p>', "\n", $xml))));
     }
 
-    private function extractXlsx(UploadedFile $file): string
+    private function extractXlsx(string $path): string
     {
         $zip = new ZipArchive();
-        if ($zip->open($file->getRealPath()) !== true) {
+        if ($zip->open($path) !== true) {
             throw new RuntimeException('Unable to open Excel workbook.');
         }
 
@@ -138,9 +146,9 @@ class FaqKnowledgeTextExtractor
         return $this->normalize(implode("\n", $rows));
     }
 
-    private function extractPdf(UploadedFile $file): string
+    private function extractPdf(string $path): string
     {
-        $contents = (string) file_get_contents($file->getRealPath());
+        $contents = (string) file_get_contents($path);
         if ($contents === '') {
             throw new RuntimeException('Unable to read PDF file.');
         }

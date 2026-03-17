@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BoatField;
 use App\Models\BoatFieldPriority;
 use App\Services\BoatFieldConfigService;
+use App\Services\BoatFieldHelpGeneratorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -103,6 +104,37 @@ class BoatFieldController extends Controller
         ]);
     }
 
+    public function generateHelp(Request $request, BoatFieldHelpGeneratorService $helpGenerator): JsonResponse
+    {
+        $validated = $request->validate([
+            'internal_key' => 'required|string|max:120',
+            'labels_json' => 'required|array',
+            'labels_json.nl' => 'nullable|string|max:255',
+            'labels_json.en' => 'nullable|string|max:255',
+            'labels_json.de' => 'nullable|string|max:255',
+            'labels_json.fr' => 'nullable|string|max:255',
+            'field_type' => 'required|string|max:50',
+            'block_key' => 'nullable|string|max:80',
+            'step_key' => 'nullable|string|max:80',
+            'options_json' => 'nullable|array',
+            'options_json.*.value' => 'nullable|string|max:120',
+            'options_json.*.label' => 'nullable|string|max:255',
+            'options_json.*.labels' => 'nullable|array',
+            'options_json.*.labels.nl' => 'nullable|string|max:255',
+            'options_json.*.labels.en' => 'nullable|string|max:255',
+            'options_json.*.labels.de' => 'nullable|string|max:255',
+            'options_json.*.labels.fr' => 'nullable|string|max:255',
+        ]);
+
+        $generatedHelp = $helpGenerator->generate($validated);
+
+        return response()->json([
+            'data' => [
+                'help_json' => $generatedHelp,
+            ],
+        ]);
+    }
+
     private function persist(Request $request, BoatField $boatField, int $status): JsonResponse
     {
         $validated = $request->validate([
@@ -118,6 +150,11 @@ class BoatFieldController extends Controller
             'labels_json.en' => 'nullable|string|max:255',
             'labels_json.de' => 'nullable|string|max:255',
             'labels_json.fr' => 'nullable|string|max:255',
+            'help_json' => 'nullable|array',
+            'help_json.nl' => 'nullable|string|max:2000',
+            'help_json.en' => 'nullable|string|max:2000',
+            'help_json.de' => 'nullable|string|max:2000',
+            'help_json.fr' => 'nullable|string|max:2000',
             'options_json' => 'nullable|array',
             'options_json.*.value' => 'required|string|max:120',
             'options_json.*.label' => 'nullable|string|max:255',
@@ -158,6 +195,11 @@ class BoatFieldController extends Controller
             $validated['storage_column'],
         );
 
+        $helpTexts = collect($validated['help_json'] ?? [])
+            ->map(fn ($value) => is_string($value) ? trim($value) : null)
+            ->filter(fn ($value) => is_string($value) && $value !== '')
+            ->all();
+
         $options = collect($validated['options_json'] ?? [])
             ->map(function (array $option) {
                 $optionLabels = collect($option['labels'] ?? [])
@@ -180,10 +222,11 @@ class BoatFieldController extends Controller
             ->values()
             ->all();
 
-        $field = DB::transaction(function () use ($boatField, $validated, $labels, $options) {
+        $field = DB::transaction(function () use ($boatField, $validated, $labels, $helpTexts, $options) {
             $boatField->fill([
                 'internal_key' => trim($validated['internal_key']),
                 'labels_json' => $labels,
+                'help_json' => $helpTexts !== [] ? $helpTexts : null,
                 'options_json' => $options !== [] ? $options : null,
                 'field_type' => trim($validated['field_type']),
                 'block_key' => trim($validated['block_key']),
