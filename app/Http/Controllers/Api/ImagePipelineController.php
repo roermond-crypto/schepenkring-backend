@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\EnhanceYachtImageJob;
 use App\Jobs\ProcessYachtImageJob;
+use App\Models\User;
 use App\Models\Yacht;
 use App\Models\YachtImage;
+use App\Services\LocationAccessService;
+use App\Services\VideoAutomationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +33,10 @@ class ImagePipelineController extends Controller
      */
     protected int $minApproved;
 
-    public function __construct()
+    public function __construct(
+        private readonly LocationAccessService $locationAccess,
+        private readonly VideoAutomationService $videoAutomation
+    )
     {
         $this->minApproved = (int) config('services.pipeline.min_approved_images', 1);
     }
@@ -46,7 +52,7 @@ class ImagePipelineController extends Controller
             'images.*' => 'required|file|max:15360', // 15MB each
         ]);
 
-        $yacht = Yacht::findOrFail($yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
 
         // Check current image count
         $currentCount = $yacht->images()->whereNotIn('status', ['deleted'])->count();
@@ -96,6 +102,10 @@ class ImagePipelineController extends Controller
             }
         }
 
+        if ($uploaded !== []) {
+            $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']));
+        }
+
         return response()->json([
             'status'  => 'success',
             'message' => count($uploaded) . ' images uploaded and queued for processing.',
@@ -107,9 +117,9 @@ class ImagePipelineController extends Controller
      * GET /yachts/{yachtId}/images
      * List all images with statuses and quality info.
      */
-    public function index($yachtId): JsonResponse
+    public function index(Request $request, $yachtId): JsonResponse
     {
-        $yacht = Yacht::findOrFail($yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
 
         $images = $yacht->images()
             ->whereNotIn('status', ['deleted'])
@@ -141,8 +151,10 @@ class ImagePipelineController extends Controller
      * POST /yachts/{yachtId}/images/{imageId}/approve
      * Approve a single image.
      */
-    public function approve($yachtId, $imageId): JsonResponse
+    public function approve(Request $request, $yachtId, $imageId): JsonResponse
     {
+        $this->findAuthorizedYacht($request, $yachtId);
+
         $image = YachtImage::where('yacht_id', $yachtId)
             ->where('id', $imageId)
             ->firstOrFail();
@@ -165,6 +177,8 @@ class ImagePipelineController extends Controller
             $this->scheduleOriginalCleanup($image);
         }
 
+        $this->triggerAutomaticVideoFlows($image->yacht()->with(['images', 'owner'])->firstOrFail());
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Image approved.',
@@ -176,8 +190,10 @@ class ImagePipelineController extends Controller
      * POST /yachts/{yachtId}/images/{imageId}/delete
      * Soft-delete (set status) and remove files.
      */
-    public function deleteImage($yachtId, $imageId): JsonResponse
+    public function deleteImage(Request $request, $yachtId, $imageId): JsonResponse
     {
+        $this->findAuthorizedYacht($request, $yachtId);
+
         $image = YachtImage::where('yacht_id', $yachtId)
             ->where('id', $imageId)
             ->firstOrFail();
@@ -206,8 +222,10 @@ class ImagePipelineController extends Controller
      * POST /yachts/{yachtId}/images/{imageId}/toggle-keep-original
      * Toggle the keep_original flag.
      */
-    public function toggleKeepOriginal($yachtId, $imageId): JsonResponse
+    public function toggleKeepOriginal(Request $request, $yachtId, $imageId): JsonResponse
     {
+        $this->findAuthorizedYacht($request, $yachtId);
+
         $image = YachtImage::where('yacht_id', $yachtId)
             ->where('id', $imageId)
             ->firstOrFail();
@@ -267,7 +285,7 @@ class ImagePipelineController extends Controller
             'image_ids.*' => 'required|integer',
         ]);
 
-        $yacht = Yacht::findOrFail($yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
         $images = $yacht->images()->whereNotIn('status', ['deleted'])->get(['id']);
         $existingIds = $images->pluck('id')->all();
         $incomingIds = array_values(array_map('intval', $request->input('image_ids', [])));
@@ -298,9 +316,9 @@ class ImagePipelineController extends Controller
      * POST /yachts/{yachtId}/images/auto-classify
      * Reclassify stored images into gallery buckets and regroup sort order.
      */
-    public function autoClassify($yachtId): JsonResponse
+    public function autoClassify(Request $request, $yachtId): JsonResponse
     {
-        $yacht = Yacht::findOrFail($yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
         $images = $yacht->images()
             ->whereNotIn('status', ['deleted'])
             ->orderBy('sort_order')
@@ -351,9 +369,9 @@ class ImagePipelineController extends Controller
      * POST /yachts/{yachtId}/images/approve-all
      * Bulk approve all ready_for_review images.
      */
-    public function approveAll($yachtId): JsonResponse
+    public function approveAll(Request $request, $yachtId): JsonResponse
     {
-        $yacht = Yacht::findOrFail($yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
 
         $updated = $yacht->images()
             ->where('status', 'ready_for_review')
@@ -378,6 +396,10 @@ class ImagePipelineController extends Controller
             $this->scheduleOriginalCleanup($image);
         }
 
+        if ($updated > 0) {
+            $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']));
+        }
+
         $approvedCount = $yacht->images()->where('status', 'approved')->count();
 
         return response()->json([
@@ -392,9 +414,9 @@ class ImagePipelineController extends Controller
      * GET /yachts/{yachtId}/step2-unlocked
      * Check if the approval gate passes.
      */
-    public function step2Unlocked($yachtId): JsonResponse
+    public function step2Unlocked(Request $request, $yachtId): JsonResponse
     {
-        $yacht = Yacht::findOrFail($yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
 
         $approvedCount = $yacht->images()->where('status', 'approved')->count();
         $processingCount = $yacht->images()->where('status', 'processing')->count()
@@ -425,6 +447,68 @@ class ImagePipelineController extends Controller
             Storage::disk('public')->delete($image->original_temp_url);
             Log::info("Cleaned up temp original: {$image->original_temp_url}");
         }
+    }
+
+    private function triggerAutomaticVideoFlows(Yacht $yacht): void
+    {
+        try {
+            $this->videoAutomation->handleYachtPublished($yacht);
+        } catch (\Throwable $e) {
+            Log::warning('[VideoAutomation] Non-critical failure after image pipeline action: '.$e->getMessage(), [
+                'yacht_id' => $yacht->id,
+            ]);
+        }
+    }
+
+    private function findAuthorizedYacht(Request $request, int|string $yachtId): Yacht
+    {
+        $yacht = Yacht::query()->with('owner')->findOrFail($yachtId);
+        $this->authorizeYachtAccess($request->user(), $yacht);
+
+        return $yacht;
+    }
+
+    private function authorizeYachtAccess(?User $user, Yacht $yacht): void
+    {
+        if (! $user) {
+            abort(401, 'Unauthenticated.');
+        }
+
+        if ($user->isAdmin()) {
+            return;
+        }
+
+        if ($user->isClient() && (int) $yacht->user_id === (int) $user->id) {
+            return;
+        }
+
+        if ($user->isEmployee()) {
+            $locationId = $this->resolveYachtLocationId($yacht);
+            if ($locationId !== null && $this->locationAccess->sharesLocation($user, $locationId)) {
+                return;
+            }
+        }
+
+        abort(403, 'Forbidden');
+    }
+
+    private function resolveYachtLocationId(Yacht $yacht): ?int
+    {
+        if ($yacht->ref_harbor_id) {
+            return (int) $yacht->ref_harbor_id;
+        }
+
+        if ($yacht->owner?->client_location_id) {
+            return (int) $yacht->owner->client_location_id;
+        }
+
+        if (! $yacht->user_id) {
+            return null;
+        }
+
+        return User::query()
+            ->whereKey($yacht->user_id)
+            ->value('client_location_id');
     }
 
     private function classifyStoredImage(YachtImage $image): string

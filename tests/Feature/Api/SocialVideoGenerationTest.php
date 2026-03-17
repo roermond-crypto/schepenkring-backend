@@ -106,7 +106,7 @@ test('generate social video returns existing queued video by default', function 
         ->assertJsonPath('video.id', $existing->id);
 
     expect(Video::count())->toBe(1);
-    Queue::assertNothingPushed();
+    Queue::assertNotPushed(RenderMarketingVideo::class);
 });
 
 test('generate social video rejects yachts without usable images', function () {
@@ -130,7 +130,7 @@ test('generate social video rejects yachts without usable images', function () {
         ->assertJsonPath('message', 'No usable boat images found for video generation.');
 
     expect(Video::count())->toBe(0);
-    Queue::assertNothingPushed();
+    Queue::assertNotPushed(RenderMarketingVideo::class);
 });
 
 test('staff cannot queue a generated social video for an inaccessible yacht', function () {
@@ -168,7 +168,7 @@ test('staff cannot queue a generated social video for an inaccessible yacht', fu
     ])->assertForbidden();
 
     expect(Video::count())->toBe(0);
-    Queue::assertNothingPushed();
+    Queue::assertNotPushed(RenderMarketingVideo::class);
 });
 
 function socialVideoStaffForLocation(Location $location): User

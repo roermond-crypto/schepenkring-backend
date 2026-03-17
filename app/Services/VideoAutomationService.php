@@ -34,13 +34,22 @@ class VideoAutomationService
             return null;
         }
 
+        if ($this->renderableImageCount($yacht) === 0) {
+            Log::info('Marketing video skipped because no renderable images are available', [
+                'yacht_id' => $yacht->id,
+                'trigger' => $trigger,
+            ]);
+
+            return null;
+        }
+
         $existing = $this->findReusableVideo($yacht);
 
         if ($existing) {
             return $existing;
         }
 
-        $video = $this->createQueuedVideo($yacht, config('video_automation.template_type'));
+        $video = $this->createQueuedVideo($yacht, config('video_automation.template_type'), $trigger);
 
         Log::info('Marketing video queued', [
             'yacht_id' => $yacht->id,
@@ -67,7 +76,7 @@ class VideoAutomationService
         }
 
         return [
-            'video' => $this->createQueuedVideo($yacht, $templateType),
+            'video' => $this->createQueuedVideo($yacht, $templateType, 'manual'),
             'created' => true,
         ];
     }
@@ -129,32 +138,35 @@ class VideoAutomationService
         );
     }
 
-    private function isPublishable(Yacht $yacht, string $trigger): bool
+    public function isPublishedStatus(?string $status): bool
     {
-        if ($trigger === 'created') {
-            return true;
-        }
-
-        $status = strtolower((string) $yacht->status);
-        $publishStatuses = array_map('strtolower', config('video_automation.publish_statuses', []));
-
-        if (in_array($status, ['draft', 'withdrawn'], true)) {
+        $status = strtolower(trim((string) $status));
+        if ($status === '' || in_array($status, ['draft', 'withdrawn'], true)) {
             return false;
         }
 
-        if (empty($publishStatuses)) {
-            return $status !== '';
+        $publishStatuses = array_map('strtolower', config('video_automation.publish_statuses', []));
+
+        if ($publishStatuses === []) {
+            return true;
         }
 
         return in_array($status, $publishStatuses, true);
     }
 
-    private function createQueuedVideo(Yacht $yacht, ?string $templateType = null): Video
+    private function isPublishable(Yacht $yacht, string $trigger): bool
+    {
+        return $this->isPublishedStatus($yacht->status);
+    }
+
+    private function createQueuedVideo(Yacht $yacht, ?string $templateType = null, ?string $trigger = null): Video
     {
         $video = Video::create([
             'yacht_id' => $yacht->id,
             'status' => 'queued',
             'template_type' => $templateType ?: config('video_automation.template_type'),
+            'generation_trigger' => $trigger,
+            'whatsapp_status' => config('video_automation.auto_notify_owner_whatsapp', true) ? 'pending' : 'skipped',
         ]);
 
         RenderMarketingVideo::dispatch($video->id)->onQueue('video-rendering');

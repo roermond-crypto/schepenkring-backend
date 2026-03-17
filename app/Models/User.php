@@ -154,6 +154,50 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->belongsTo(Location::class, 'client_location_id');
     }
 
+    public function primaryEmployeeLocation(): ?Location
+    {
+        if (! $this->isEmployee()) {
+            return null;
+        }
+
+        if ($this->relationLoaded('locations')) {
+            return $this->locations->sortBy('id')->first();
+        }
+
+        return $this->locations()->orderBy('locations.id')->first();
+    }
+
+    public function resolvedLocation(): ?Location
+    {
+        if ($this->isClient()) {
+            if ($this->relationLoaded('clientLocation')) {
+                return $this->clientLocation;
+            }
+
+            return $this->clientLocation()->first();
+        }
+
+        return $this->primaryEmployeeLocation();
+    }
+
+    public function resolvedLocationId(): ?int
+    {
+        if ($this->isClient()) {
+            return $this->client_location_id;
+        }
+
+        return $this->primaryEmployeeLocation()?->id;
+    }
+
+    public function resolvedLocationRole(): ?string
+    {
+        if (! $this->isEmployee()) {
+            return null;
+        }
+
+        return $this->primaryEmployeeLocation()?->pivot?->role;
+    }
+
     public function notifications(): BelongsToMany
     {
         return $this->belongsToMany(Notification::class, 'user_notifications')
@@ -201,6 +245,16 @@ class User extends Authenticatable implements MustVerifyEmail
         $normalized = self::normalizeRoleName($role);
 
         return $normalized !== null && $this->role === $normalized;
+    }
+
+    public function getLocationIdAttribute(): ?int
+    {
+        return $this->resolvedLocationId();
+    }
+
+    public function getLocationRoleAttribute(): ?string
+    {
+        return $this->resolvedLocationRole();
     }
 
     public function getRoleAttribute(): ?string

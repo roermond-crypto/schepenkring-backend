@@ -6,6 +6,10 @@ use App\Models\User;
 
 class PermissionService
 {
+    public function __construct(private LocationAccessService $locations)
+    {
+    }
+
     public function hasLocationPermission(User $user, string $permission, ?int $locationId = null): bool
     {
         if ($user->isAdmin()) {
@@ -16,7 +20,7 @@ class PermissionService
             return false;
         }
 
-        $roles = $user->locations()->pluck('role', 'locations.id');
+        $roles = $this->rolesForUser($user);
 
         if ($locationId !== null) {
             $role = $roles->get($locationId);
@@ -43,7 +47,7 @@ class PermissionService
             return false;
         }
 
-        $roles = $user->locations()->pluck('role', 'locations.id');
+        $roles = $this->rolesForUser($user);
 
         if ($locationId !== null) {
             return $roles->get($locationId) === $role;
@@ -65,7 +69,7 @@ class PermissionService
             return [];
         }
 
-        $roles = $user->locations()->pluck('role', 'locations.id');
+        $roles = $this->rolesForUser($user);
 
         $locations = [];
         foreach ($roles as $locationId => $role) {
@@ -86,5 +90,18 @@ class PermissionService
         $permissions = config('permissions.roles.'.$role, []);
 
         return in_array($permission, $permissions, true);
+    }
+
+    private function rolesForUser(User $user)
+    {
+        $roles = $user->relationLoaded('locations')
+            ? $user->locations->mapWithKeys(fn ($location) => [(int) $location->id => $location->pivot?->role])
+            : $user->locations()->pluck('role', 'locations.id');
+
+        if ($user->isAdmin()) {
+            return collect($roles);
+        }
+
+        return collect($roles)->only($this->locations->accessibleLocationIds($user));
     }
 }

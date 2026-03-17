@@ -142,6 +142,10 @@ class ActionSecurity
             return $actor->client_location_id;
         }
 
+        if ($actor?->location_id) {
+            return $actor->location_id;
+        }
+
         return null;
     }
 }

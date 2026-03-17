@@ -67,7 +67,7 @@ test('employee search is scoped to users in their own locations', function () {
 
     Sanctum::actingAs($employee);
 
-    $response = $this->getJson('/api/admin/users?type=ADMIN&search=client');
+    $response = $this->getJson('/api/employee/users?search=client');
 
     $response->assertOk()
         ->assertJsonCount(1, 'data')

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\ChatAiReplyService;
 use App\Services\ChatAccessService;
 use App\Services\ChatConversationService;
 use App\Services\FaqTrainingService;
@@ -19,7 +20,8 @@ class ChatMessageController extends Controller
         string $conversationId,
         ChatAccessService $access,
         ChatConversationService $service,
-        CopilotLanguage $language
+        CopilotLanguage $language,
+        ChatAiReplyService $ai
     )
     {
         $conversation = Conversation::findOrFail($conversationId);
@@ -98,11 +100,17 @@ class ChatMessageController extends Controller
             !empty($payload['text']) || $explicitLanguage
         );
 
+        $aiMessage = null;
+        if (! $user && $message->sender_type === 'visitor') {
+            $aiMessage = $ai->generateForVisitorMessage($conversation->fresh(), $message, $request);
+        }
+
         return response()
-            ->json(array_merge($message->toArray(), [
+            ->json(array_merge($message->toArray(), array_filter([
+                'ai_message' => $aiMessage?->toArray(),
                 'header_language' => $resolvedLanguage['header_language'],
                 'language_detected_from_input' => $resolvedLanguage['detected_from_input'],
-            ]), 201)
+            ], static fn ($value) => $value !== null)), 201)
             ->header('Content-Language', $resolvedLanguage['language'])
             ->header('X-Header-Language', $resolvedLanguage['header_language']);
     }

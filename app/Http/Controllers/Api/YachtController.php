@@ -11,6 +11,7 @@ use App\Services\AiCorrectionLoggingService;
 use App\Services\BoatTaskAutomationService;
 use App\Services\SyncYachtTasksService;
 use App\Services\LocationAccessService;
+use App\Services\VideoAutomationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,7 +36,8 @@ class YachtController extends Controller
 
     public function __construct(
         private readonly LocationAccessService $locationAccess,
-        private readonly AiCorrectionLoggingService $correctionLogging
+        private readonly AiCorrectionLoggingService $correctionLogging,
+        private readonly VideoAutomationService $videoAutomation
     )
     {
     }
@@ -180,6 +182,7 @@ class YachtController extends Controller
 
             $coreFields = [
                 'boat_name', 'price', 'status', 'year', 'main_image', 'min_bid_amount',
+                'auction_mode', 'auction_start', 'auction_end', 'auction_duration_minutes', 'auction_extension_seconds',
                 'external_url', 'print_url', 'owners_comment', 'reg_details',
                 'known_defects', 'last_serviced',
                 'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
@@ -191,7 +194,7 @@ class YachtController extends Controller
                 'remote_control', 'rudder', 'drift_restriction',
                 'drift_restriction_controls', 'trimflaps', 'stabilizer',
             ];
-            $booleanFields = ['allow_bidding'];
+            $booleanFields = ['allow_bidding', 'auction_enabled'];
             $trackableFields = $this->buildTrackableFields($coreFields, $booleanFields);
             $submittedFields = $this->extractSubmittedTrackableFields($request, $trackableFields);
             $beforeSnapshot = $this->captureBeforeSnapshot($yacht, $submittedFields, $isUpdate);
@@ -213,6 +216,15 @@ class YachtController extends Controller
                 } elseif (! $isUpdate) {
                     $yacht->{$field} = false;
                 }
+            }
+
+            if ($request->has('auction_mode')) {
+                $auctionMode = strtolower(trim((string) $request->input('auction_mode')));
+                $yacht->auction_mode = in_array($auctionMode, ['bids', 'live'], true) ? $auctionMode : null;
+            }
+
+            if ($request->has('auction_enabled') && $yacht->auction_enabled && in_array($yacht->auction_mode, ['bids', 'live'], true)) {
+                $yacht->allow_bidding = true;
             }
 
             if ($request->hasFile('main_image')) {
@@ -294,6 +306,8 @@ class YachtController extends Controller
                     Log::warning('[BoatTaskAutomation] Non-critical failure: ' . $e->getMessage());
                 }
             }
+
+            $this->triggerAutomaticVideoFlows($yacht, ! $isUpdate);
 
             return response()->json($yacht, $isUpdate ? 200 : 201);
         } catch (\Throwable $e) {
@@ -452,6 +466,10 @@ class YachtController extends Controller
             }
         }
 
+        if ($uploaded !== []) {
+            $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']), false);
+        }
+
         return response()->json(['status' => 'success', 'data' => $uploaded], 200);
     }
 
@@ -494,6 +512,7 @@ class YachtController extends Controller
         }
 
         $image->update(['status' => 'approved']);
+        $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']), false);
 
         return response()->json(['message' => 'Image approved', 'image' => $image]);
     }
@@ -535,6 +554,22 @@ class YachtController extends Controller
         $updated = YachtImage::whereIn('id', $request->image_ids)
             ->whereIn('status', $validStatuses)
             ->update(['status' => $newStatus]);
+
+        if ($newStatus === 'approved' && $updated > 0) {
+            $yachtIds = YachtImage::query()
+                ->whereIn('id', $request->image_ids)
+                ->pluck('yacht_id')
+                ->unique()
+                ->filter()
+                ->values();
+
+            foreach ($yachtIds as $yachtId) {
+                $yacht = Yacht::query()->with(['images', 'owner'])->find($yachtId);
+                if ($yacht) {
+                    $this->triggerAutomaticVideoFlows($yacht, false);
+                }
+            }
+        }
 
         return response()->json([
             'message' => "{$updated} images {$request->action}d",
@@ -672,6 +707,22 @@ class YachtController extends Controller
         return User::query()
             ->whereKey($yacht->user_id)
             ->value('client_location_id');
+    }
+
+    private function triggerAutomaticVideoFlows(Yacht $yacht, bool $isNew): void
+    {
+        try {
+            if ($isNew) {
+                $this->videoAutomation->handleYachtCreated($yacht);
+            }
+
+            $this->videoAutomation->handleYachtPublished($yacht);
+        } catch (\Throwable $e) {
+            Log::warning('[VideoAutomation] Non-critical failure: '.$e->getMessage(), [
+                'yacht_id' => $yacht->id,
+                'is_new' => $isNew,
+            ]);
+        }
     }
 
     public function classifyImages(Request $request): JsonResponse

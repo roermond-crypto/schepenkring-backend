@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\CopilotAuditEvent;
 use App\Http\Controllers\Controller;
 use App\Services\CopilotFeedbackService;
+use App\Services\KnowledgeBrainService;
 use App\Services\CopilotLearningService;
 use App\Services\CopilotResolverService;
 use App\Support\CopilotLanguage;
@@ -16,7 +17,8 @@ class CopilotController extends Controller
     public function __construct(
         private CopilotResolverService $resolver,
         private CopilotLanguage $language,
-        private CopilotLearningService $learning
+        private CopilotLearningService $learning,
+        private KnowledgeBrainService $brain
     )
     {
     }
@@ -60,6 +62,7 @@ class CopilotController extends Controller
         $response['locale_updated'] = $localeUpdated;
 
         $this->logResolveEvent($request, $user->id, $validated['text'], $response);
+        $this->brain->captureCopilotResolution($user, $validated['text'], $response, $context);
 
         return response()
             ->json($response)

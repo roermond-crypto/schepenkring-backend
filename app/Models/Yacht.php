@@ -97,7 +97,8 @@ class Yacht extends Model
     protected $fillable = [
         // Core identity
         'user_id', 'location_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
-        'allow_bidding', 'main_image', 'year', 'min_bid_amount',
+        'allow_bidding', 'auction_enabled', 'auction_mode', 'auction_start', 'auction_end',
+        'auction_duration_minutes', 'auction_extension_seconds', 'main_image', 'year', 'min_bid_amount',
         'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
 
         // Identity (from Yachtshift)
@@ -134,10 +135,16 @@ class Yacht extends Model
         'year' => 'integer',
         'booking_duration_minutes' => 'integer',
         'min_bid_amount' => 'float',
+        'current_bid' => 'float',
         'advertising_channels' => 'array',
         'location_lat' => 'float',
         'location_lng' => 'float',
         'allow_bidding' => 'boolean',
+        'auction_enabled' => 'boolean',
+        'auction_start' => 'datetime',
+        'auction_end' => 'datetime',
+        'auction_duration_minutes' => 'integer',
+        'auction_extension_seconds' => 'integer',
     ];
 
     // Eager-load all sub-tables by default
@@ -195,6 +202,11 @@ class Yacht extends Model
 
     public function socialPosts(): HasMany {
         return $this->hasMany(SocialPost::class);
+    }
+
+    public function auctionSessions(): HasMany
+    {
+        return $this->hasMany(AuctionSession::class);
     }
 
     public function fieldChanges(): HasMany {

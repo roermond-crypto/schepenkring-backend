@@ -9,3 +9,8 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('sentry:sync-issues')->everyTenMinutes();
+Schedule::command('app:generate-ai-insights')
+    ->dailyAt('02:00')
+    ->timezone(config('app.timezone', 'UTC'))
+    ->withoutOverlapping();
+Schedule::command('social:publish-scheduled')->everyMinute();

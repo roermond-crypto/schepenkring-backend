@@ -19,6 +19,7 @@ return [
 
     // Auto-scheduling defaults
     'auto_schedule' => env('VIDEO_AUTOMATION_AUTO_SCHEDULE', true),
+    'auto_notify_owner_whatsapp' => env('VIDEO_AUTOMATION_NOTIFY_OWNER_WHATSAPP', true),
     'schedule_time' => env('VIDEO_AUTOMATION_SCHEDULE_TIME', '10:30'),
     'skip_weekends' => env('VIDEO_AUTOMATION_SKIP_WEEKENDS', false),
     'default_publishers' => array_filter(array_map('trim', explode(',', env('VIDEO_AUTOMATION_PUBLISHERS', 'facebook,instagram,google,linkedin,apple')))),

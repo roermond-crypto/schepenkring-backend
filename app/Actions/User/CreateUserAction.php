@@ -2,6 +2,7 @@
 
 namespace App\Actions\User;
 
+use App\Enums\LocationRole;
 use App\Enums\RiskLevel;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
@@ -70,10 +71,18 @@ class CreateUserAction
 
         $user = $this->users->create($payload);
 
+        if ($type === UserType::EMPLOYEE && ! empty($data['location_id'])) {
+            $this->users->syncLocations($user, [[
+                'location_id' => (int) $data['location_id'],
+                'role' => $data['location_role'] ?? LocationRole::LOCATION_EMPLOYEE->value,
+            ]]);
+            $user->load('locations');
+        }
+
         $this->security->log('admin.user.create', RiskLevel::MEDIUM, $actor, $user, [
             'type' => $type->value,
         ], [
-            'location_id' => $user->client_location_id,
+            'location_id' => $user->location_id,
             'snapshot_after' => $user->toArray(),
             'idempotency_key' => $idempotencyKey,
         ]);

@@ -17,8 +17,6 @@ class PublishVideoPost implements ShouldQueue
 
     public int $tries = 3;
     public array $backoff = [60, 300, 900];
-    public string $queue = 'social-publishing';
-
     private int $postId;
 
     public function __construct(int $postId)

@@ -45,6 +45,11 @@ class HarborController extends Controller
     public function show(Request $request, Location $harbor): JsonResponse
     {
         $this->authorizeAdmin($request);
+        $harbor->load([
+            'employees' => fn ($query) => $query
+                ->select('users.id', 'users.name', 'users.email', 'users.type')
+                ->orderBy('users.name'),
+        ]);
 
         $counts = $this->buildSnapshotCounts(collect([$harbor->id]));
 
@@ -177,7 +182,11 @@ class HarborController extends Controller
 
     private function baseQuery(Request $request)
     {
-        $query = Location::query();
+        $query = Location::query()->with([
+            'employees' => fn ($query) => $query
+                ->select('users.id', 'users.name', 'users.email', 'users.type')
+                ->orderBy('users.name'),
+        ]);
 
         $includeInactive = filter_var($request->query('include_inactive', false), FILTER_VALIDATE_BOOL);
         if (! $includeInactive) {
@@ -363,6 +372,9 @@ class HarborController extends Controller
     private function serializeHarbor(Location $harbor, array $counts): array
     {
         $id = $harbor->id;
+        $employees = $harbor->relationLoaded('employees')
+            ? $harbor->employees->values()
+            : collect();
 
         return [
             'id' => $id,
@@ -371,6 +383,14 @@ class HarborController extends Controller
             'status' => $harbor->status,
             'clients_total' => $counts['clients'][$id] ?? 0,
             'staff_total' => $counts['staff'][$id] ?? 0,
+            'employee_count' => $employees->count(),
+            'employees' => $employees->map(fn (User $employee) => [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'email' => $employee->email,
+                'role' => $employee->role,
+                'location_role' => $employee->pivot?->role,
+            ])->values(),
             'boats_total' => $counts['boats'][$id] ?? 0,
             'yachts_total' => $counts['yachts'][$id] ?? 0,
             'open_leads' => $counts['open_leads'][$id] ?? 0,

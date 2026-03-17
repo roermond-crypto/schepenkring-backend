@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api;
 
+use App\Enums\LocationRole;
 use App\Enums\UserStatus;
 use Illuminate\Validation\Rule;
 
@@ -19,6 +20,12 @@ class AdminUserUpdateRequest extends ApiRequest
             'type' => ['prohibited'],
             'client_location_id' => ['prohibited'],
             'locations' => ['prohibited'],
+            'location_id' => ['sometimes', 'nullable', 'integer', 'exists:locations,id'],
+            'location_role' => [
+                'sometimes',
+                'nullable',
+                Rule::in(array_map(fn (LocationRole $role) => $role->value, LocationRole::cases())),
+            ],
         ];
     }
 }

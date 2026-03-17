@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
 use App\Http\Controllers\Api\Admin\CopilotSuggestionController;
 use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
 use App\Http\Controllers\Api\Admin\HarborController as AdminHarborController;
+use App\Http\Controllers\Api\Admin\InsightController as AdminInsightController;
 use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
@@ -29,16 +30,19 @@ use App\Http\Controllers\Api\ChecklistTemplateController;
 use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
 use App\Http\Controllers\Api\ChatMessageController;
+use App\Http\Controllers\Api\ChatTranslationController;
 use App\Http\Controllers\Api\ChatWidgetController;
 use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
+use App\Http\Controllers\Api\EmployeeUserController;
 use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\FaqKnowledgeController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
+use App\Http\Controllers\Api\KnowledgeBrainController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
 use App\Http\Controllers\Api\SocialVideoController;
@@ -87,22 +91,11 @@ Route::prefix('auth')->group(function () {
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
     Route::post('messages', [PublicConversationMessageController::class, 'store']);
+    Route::post('ask', [PublicConversationMessageController::class, 'ask']);
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);
 });
 
-// ── Image Pipeline ──────────
-Route::prefix('yachts/{yachtId}/images')->group(function () {
-    Route::post('/upload', [ImagePipelineController::class, 'upload']);
-    Route::get('/', [ImagePipelineController::class, 'index']);
-    Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
-    Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
-    Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
-    Route::post('/reorder', [ImagePipelineController::class, 'reorder']);
-    Route::post('/auto-classify', [ImagePipelineController::class, 'autoClassify']);
-    Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
-});
 Route::get('yachts/{yachtId}/fields/{fieldName}/history', [\App\Http\Controllers\Api\YachtFieldHistoryController::class, 'show']);
-Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
 Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
 
 // AI pipeline
@@ -123,11 +116,15 @@ Route::prefix('auth')->group(function () {
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
+    Route::post('chat/translate', [ChatTranslationController::class, 'translatePublic']);
 
     Route::post('bids/register', [BidWidgetController::class, 'register']);
     Route::post('bids/verify', [BidWidgetController::class, 'verify']);
     Route::get('bids/{yachtId}/state', [BidWidgetController::class, 'state']);
-    Route::get('bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::match(['get', 'post'], 'bids/{yachtId}', [BidWidgetController::class, 'place'])->middleware('bid.session');
+    Route::get('boats/{yachtId}/auction', [BidWidgetController::class, 'auction']);
+    Route::get('boats/{yachtId}/bids', [BidWidgetController::class, 'bids']);
+    Route::post('boats/{yachtId}/bid', [BidWidgetController::class, 'place'])->middleware('bid.session');
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
 });
 
@@ -224,10 +221,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('/social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('/social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('/social/videos/{id}', [SocialVideoController::class, 'show']);
     Route::get('/social/posts', [SocialVideoController::class, 'listPosts']);
     Route::patch('/social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
     Route::post('/social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
     Route::post('/social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
+    Route::post('/social/videos/{id}/notify-owner', [SocialVideoController::class, 'notifyOwner']);
 
     // Audit logs
     Route::get('audit-logs', [AuditLogController::class, 'index']);
@@ -265,6 +264,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
 
     // Chat inbox (staff & authenticated users)
+    Route::post('chat/translate', [ChatTranslationController::class, 'translate']);
     Route::get('chat/conversations', [ChatConversationController::class, 'index']);
     Route::get('chat/conversations/{id}', [ChatConversationController::class, 'show']);
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
@@ -281,6 +281,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'review']);
     Route::delete('faqs/knowledge/items/{item}', [FaqKnowledgeController::class, 'destroy']);
     Route::get('faqs/knowledge/analytics', [FaqKnowledgeController::class, 'analytics']);
+    Route::get('faqs/knowledge-brain', [KnowledgeBrainController::class, 'show']);
+    Route::get('faqs/knowledge-brain/questions', [KnowledgeBrainController::class, 'questions']);
+    Route::get('faqs/knowledge-brain/suggestions', [KnowledgeBrainController::class, 'suggestions']);
+    Route::post('faqs/knowledge-brain/refresh', [KnowledgeBrainController::class, 'refresh']);
+    Route::patch('faqs/knowledge-brain/suggestions/{suggestion}', [KnowledgeBrainController::class, 'review']);
     Route::put('faqs/{faq}', [FaqController::class, 'update']);
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
@@ -288,10 +293,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('social/videos/generate', [SocialVideoController::class, 'generate']);
     Route::post('social/schedule', [SocialVideoController::class, 'schedule']);
     Route::get('social/videos', [SocialVideoController::class, 'listVideos']);
+    Route::get('social/videos/{id}', [SocialVideoController::class, 'show']);
     Route::get('social/posts', [SocialVideoController::class, 'listPosts']);
     Route::patch('social/posts/{id}/reschedule', [SocialVideoController::class, 'reschedule']);
     Route::post('social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
     Route::post('social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
+    Route::post('social/videos/{id}/notify-owner', [SocialVideoController::class, 'notifyOwner']);
 
     // Signhost / contracts
     Route::post('contracts/generate', [SignhostController::class, 'generateContract']);
@@ -368,12 +375,27 @@ Route::middleware('auth:sanctum')->group(function () {
 // ──────────────────────────────────────────────────────────
 // Admin routes
 // ──────────────────────────────────────────────────────────
-Route::prefix('admin')->middleware(['auth:sanctum', 'admin.errors'])->group(function () {
-    Route::get('users', [AdminUserController::class, 'index']);
-    Route::get('users/{id}', [AdminUserController::class, 'show']);
+Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
+    Route::post('boats/{yachtId}/auction/start', [AdminBoatAuctionController::class, 'start']);
+    Route::post('boats/{yachtId}/auction/end', [AdminBoatAuctionController::class, 'end']);
+});
+
+Route::prefix('employee')->middleware(['auth:sanctum', 'role:employee'])->group(function () {
+    Route::get('users', [EmployeeUserController::class, 'index']);
+    Route::get('users/{id}', [EmployeeUserController::class, 'show']);
+    Route::get('clients', [EmployeeUserController::class, 'index']);
+    Route::get('clients/{id}', [EmployeeUserController::class, 'show']);
 });
 
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::get('users', [AdminUserController::class, 'index']);
+    Route::get('users/{id}', [AdminUserController::class, 'show']);
+
+    Route::get('insights', [AdminInsightController::class, 'index']);
+    Route::get('insights/latest', [AdminInsightController::class, 'latest']);
+    Route::get('insights/{insight}', [AdminInsightController::class, 'show']);
+    Route::post('insights/generate', [AdminInsightController::class, 'generate']);
+
     // Harbors
     Route::get('harbors', [AdminHarborController::class, 'index']);
     Route::post('harbors', [AdminHarborController::class, 'store']);
