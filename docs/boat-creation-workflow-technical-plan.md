@@ -8,6 +8,9 @@ Improve the boat creation workflow to:
 2. Reduce perceived and actual image upload latency.
 3. Make AI extraction non-blocking so users can continue working while enrichment runs.
 4. Maintain responsive UX with clear save/progress states.
+5. Replace the current hardcoded yacht form with a priority-based dynamic field system.
+6. Normalize YachtShift, scraped, and future import values before they reach UI, DB, AI, or Pinecone.
+7. Give admin a central control layer for field visibility, mapping, AI relevance, and boat-type specific behavior.
 
 ## Current State (Validated in Code)
 
@@ -25,6 +28,7 @@ Observed issues:
 2. AI extraction is executed inline in the page (`/ai/pipeline-extract`) with a blocking loading modal.
 3. Auto-trigger extraction occurs immediately after image approval in new mode.
 4. Language switch warning exists, but route matching misses some create paths and does not explicitly flush draft before navigation.
+5. The yacht editor still hardcodes field grouping, ordering, and visibility inside one large page component instead of rendering from a central field registry.
 
 ### Backend
 
@@ -43,6 +47,8 @@ Observed issue:
 
 1. AI extraction pipeline is still synchronous from frontend perspective and blocks user flow.
 2. Step unlock currently waits for processing and enhancement completion, which delays progression.
+3. YachtShift import maps source data directly into yacht columns and `saveSubTables()` without a reusable field-mapping control layer.
+4. The yacht model flattens 228+ fields for API compatibility, but there is no field metadata model for step, block, priority, boat type, or AI relevance.
 
 ## Target Architecture
 
@@ -258,7 +264,253 @@ Indexes:
 - AI can auto-fill empty fields.
 - edited fields require explicit user confirmation.
 
-## E. Queue and Worker Topology
+## E. Central Field Registry, Priority System, and Mapping Hub
+
+### Goal
+
+Create one admin-managed field system that controls:
+
+1. Which fields exist and how they are labeled.
+2. Which step and block each field belongs to.
+3. Whether a field is `primary` or `secondary` per boat type.
+4. How external source fields and raw values normalize into internal values.
+5. Which normalized fields AI is allowed to use.
+
+This becomes the control layer between:
+
+1. frontend form rendering
+2. backend storage
+3. YachtShift import
+4. scraped imports
+5. AI extraction and generation
+6. Pinecone-ready normalized payloads
+
+### Non-negotiable rules
+
+1. Each field has only two priorities:
+- `primary`
+- `secondary`
+2. `primary` fields are always visible in their block.
+3. `secondary` fields are hidden behind `+ Show more (X)`.
+4. If any secondary field in a block has a value, that block auto-expands.
+5. Priority is per boat type, not global.
+6. Raw external values must never be used directly after import.
+7. The data flow is always:
+- `external key/value -> normalized value -> internal field`
+8. AI receives normalized internal values only.
+- primary fields are always included
+- secondary fields are included only when filled
+
+### Backend data model
+
+#### 1. `boat_fields`
+
+Represents the canonical internal field registry.
+
+- `id`
+- `internal_key` unique
+- `labels_json` (`nl`, `en`, `de`, optional `fr`)
+- `field_type`
+- `block_key`
+- `step_key`
+- `sort_order`
+- `storage_relation` nullable
+- `storage_column`
+- `ai_relevance` boolean default `true`
+- `is_active` boolean default `true`
+- timestamps
+
+Notes:
+
+1. `storage_relation` maps to the current flattened yacht backend model.
+- Example: `accommodation`, `engine`, `comfort`
+2. `storage_column` maps to the actual persisted column.
+- Example: `cabins`, `berths`, `fuel`, `air_conditioning`
+3. This allows the new field system to sit on top of the existing `Yacht::SUB_TABLE_MAP` instead of forcing an immediate schema rewrite.
+
+#### 2. `boat_field_priorities`
+
+Stores per-boat-type visibility rules.
+
+- `id`
+- `field_id`
+- `boat_type_key`
+- `priority` enum: `primary`, `secondary`
+- timestamps
+
+Notes:
+
+1. `boat_type_key` should be a normalized internal slug such as `motorboat`, `sailboat`, `rib`, `tender`.
+2. Do not depend directly on raw YachtShift `boat_type` strings for visibility logic.
+
+#### 3. `boat_field_mappings`
+
+Stores mapping rules from external systems into normalized internal values.
+
+- `id`
+- `field_id`
+- `source` enum: `yachtshift`, `scrape`, `future_import`
+- `external_key` nullable
+- `external_value`
+- `normalized_value`
+- `match_type` enum: `exact`, `contains`, `regex`, `manual`
+- timestamps
+
+Notes:
+
+1. This is value normalization, not only field-name mapping.
+2. Multiple external values may point to the same normalized value.
+
+#### 4. `boat_field_value_observations`
+
+Stores discovered raw values and usage frequency for admin review.
+
+- `id`
+- `field_id`
+- `source`
+- `external_value`
+- `observed_count`
+- `last_seen_at`
+- timestamps
+
+This supports the “3000 boats” usage-stat workflow and lets admin promote or demote fields based on actual data coverage.
+
+### Admin settings UI
+
+#### Left panel
+
+1. Fields grouped by block:
+- dimensions
+- construction
+- accommodation / interior
+- engine
+- comfort
+- deck equipment
+- navigation
+- safety
+- rigging
+2. Search by internal key or label.
+3. Show coverage badge per field:
+- example `Scrape 78%`
+
+#### Right panel for selected field
+
+##### Internal config
+
+- internal key
+- labels (`nl`, `en`, `de`)
+- field type
+- block
+- step
+- sort order
+- storage relation
+- storage column
+- AI relevance flag
+
+##### Priority config
+
+- per-boat-type priority:
+  - `primary`
+  - `secondary`
+
+##### Mapping config
+
+1. YachtShift:
+- external key selection
+- value mapping table
+2. Scraped values:
+- all observed raw values
+- frequency count
+- editable normalized value
+- unresolved value marker
+
+### Frontend form-rendering contract
+
+Add a backend endpoint that returns form config already filtered for boat type and step.
+
+Suggested endpoint:
+
+- `GET /api/boat-form-config?boat_type=<boatTypeKey>&step=<stepKey>`
+
+Suggested response shape:
+
+- `blocks[]`
+  - `block_key`
+  - `label`
+  - `primary_fields[]`
+  - `secondary_fields[]`
+  - `secondary_count`
+
+Rendering algorithm per block:
+
+1. `fields = block fields filtered by boat_type_key`
+2. `primaryFields = fields where priority = primary`
+3. `secondaryFields = fields where priority = secondary`
+4. render `primaryFields` immediately
+5. if `secondaryFields.length > 0`, show `+ Show more (X)`
+6. auto-expand if any `secondaryField` already has a value
+7. toggle to `- Show less` when expanded
+
+UX requirements:
+
+1. Smooth expand/collapse animation.
+2. Two-column compact layout on desktop where possible.
+3. Optional completion badge per block:
+- example `Interior 4/7 completed`
+
+### Normalization and persistence flow
+
+#### Import flow
+
+1. identify external source field
+2. resolve matching `boat_fields.internal_key`
+3. normalize raw value through `boat_field_mappings`
+4. persist normalized value into the mapped yacht column
+5. log raw value into `boat_field_value_observations` when unknown or newly seen
+
+#### Draft and form flow
+
+1. drafts store canonical internal keys only
+2. frontend renders from field config, not hardcoded JSX groups
+3. values in form state remain normalized internal values
+
+#### AI flow
+
+1. AI extraction may propose values, but application into yacht/draft must target canonical internal keys
+2. generation payloads must use normalized internal values only
+3. unresolved raw values should be excluded or flagged instead of silently passed through
+
+### Integration with existing code
+
+This design should extend current structures instead of replacing them immediately:
+
+1. Keep `Yacht::SUB_TABLE_MAP` as the physical storage map for now.
+2. Add field metadata above it using `storage_relation` and `storage_column`.
+3. Refactor the yacht editor page to fetch config and render blocks dynamically.
+4. Refactor YachtShift and scraper import services to call a shared normalization service before `saveSubTables()`.
+5. Keep API responses backward-compatible while gradually introducing config-driven rendering.
+
+### Implementation phases
+
+#### Phase 1
+
+1. Introduce `boat_fields` and `boat_field_priorities`.
+2. Build config endpoint for one step, starting with accommodation/interior.
+3. Replace the hardcoded accommodation section in the yacht editor with a config-driven renderer.
+
+#### Phase 2
+
+1. Introduce `boat_field_mappings` and `boat_field_value_observations`.
+2. Route YachtShift import through normalization.
+3. Route scraped import through the same normalization path.
+
+#### Phase 3
+
+1. Build admin settings UI for field config and mapping review.
+2. Show usage stats from observed values.
+3. Apply AI relevance filtering from field settings into generation payloads.
+
+## F. Queue and Worker Topology
 
 Define separate queues for isolation:
 
@@ -281,7 +533,7 @@ Operational requirements:
 2. Alert on queue depth and job age thresholds.
 3. Add failed job dashboards by queue name.
 
-## F. Frontend Implementation Tasks
+## G. Frontend Implementation Tasks
 
 ### 1. Wizard state integration
 
@@ -300,7 +552,22 @@ File: `/src/app/[locale]/dashboard/[role]/yachts/[id]/page.tsx`
 4. On submit success:
 - call draft commit endpoint and local cleanup.
 
-### 2. Draft infrastructure
+### 2. Config-driven field renderer
+
+Files:
+
+- `/src/app/[locale]/dashboard/[role]/yachts/[id]/page.tsx`
+- new shared renderer components under `/src/components/yachts/`
+
+Responsibilities:
+
+1. replace hardcoded field blocks with config-driven block rendering
+2. support `primary` vs `secondary` visibility only
+3. implement `+ Show more (X)` and `- Show less`
+4. auto-expand blocks with filled secondary values
+5. keep locale-specific labels purely presentational
+
+### 3. Draft infrastructure
 
 New files:
 
@@ -314,7 +581,21 @@ Responsibilities:
 3. flush/retry/conflict resolution
 4. migration helpers for old localStorage-only drafts
 
-### 3. Language switcher hardening
+### 4. Admin settings UI
+
+New page(s):
+
+- admin field settings page in frontend dashboard
+
+Responsibilities:
+
+1. list fields by block
+2. edit internal metadata
+3. edit per-boat-type priority
+4. review and correct YachtShift mappings
+5. review and correct scraped value mappings with frequency counts
+
+### 5. Language switcher hardening
 
 File: `/src/components/common/language-switcher.tsx`
 
@@ -322,7 +603,7 @@ File: `/src/components/common/language-switcher.tsx`
 2. call shared `flushDraft()` before locale navigation.
 3. preserve `draftId` query param.
 
-### 4. Upload UX improvements
+### 6. Upload UX improvements
 
 File: wizard page + image hook
 
@@ -330,36 +611,51 @@ File: wizard page + image hook
 2. per-file state.
 3. retry controls.
 
-### 5. Non-blocking AI UX
+### 7. Non-blocking AI UX
 
 1. remove auto-blocking extraction modal.
 2. show background status and manual apply flow.
 
-## G. Backend Implementation Tasks
+## H. Backend Implementation Tasks
 
 ### 1. Migrations
 
 1. `create_yacht_drafts_table`
 2. `create_yacht_ai_runs_table`
+3. `create_boat_fields_table`
+4. `create_boat_field_priorities_table`
+5. `create_boat_field_mappings_table`
+6. `create_boat_field_value_observations_table`
 
 ### 2. Models
 
 1. `YachtDraft`
 2. `YachtAiRun`
+3. `BoatField`
+4. `BoatFieldPriority`
+5. `BoatFieldMapping`
+6. `BoatFieldValueObservation`
 
 ### 3. Controllers
 
 1. `YachtDraftController`
 2. `YachtAiRunController`
+3. `Admin/BoatFieldController`
+4. `Admin/BoatFieldMappingController`
+5. `BoatFormConfigController`
 
 ### 4. Services
 
 1. `YachtDraftMergeService`
 2. `YachtAiExtractionService` (refactor from `AiPipelineController`)
+3. `BoatFieldConfigService`
+4. `BoatFieldNormalizationService`
+5. `BoatFieldObservationService`
 
 ### 5. Jobs
 
 1. `RunYachtAiExtractionJob`
+2. optional usage-stat aggregation job if observation growth becomes large
 
 ### 6. Route additions
 
@@ -367,8 +663,17 @@ Under authenticated API group:
 
 1. draft CRUD/patch/commit routes
 2. AI run enqueue/status/apply routes
+3. admin field config CRUD routes
+4. admin mapping review/update routes
+5. boat-form-config read endpoint for frontend rendering
 
-## H. Performance and UX Standards
+### 7. Import refactors
+
+1. update YachtShift import to normalize field keys and values before save
+2. update scraper import path to use the same normalization service
+3. reject or flag unmapped raw values instead of silently persisting source-specific values
+
+## I. Performance and UX Standards
 
 Targets:
 
@@ -377,6 +682,8 @@ Targets:
 3. Image selection to visible placeholder < 100ms
 4. Image upload to `processing` status p95 < 3s per file (normal broadband)
 5. Zero blocking navigation due to AI extraction
+6. Form blocks render with config response p95 < 500ms
+7. No raw external values reach AI payloads in normal flow
 
 UX standards:
 
@@ -386,14 +693,17 @@ UX standards:
 - `Saved at HH:MM`
 2. Non-blocking toasts (avoid repeated noisy alerts).
 3. Explicit offline banner with sync state and retry count.
+4. Consistent `Show more` / `Show less` affordance across all configurable blocks.
 
-## I. Testing Plan
+## J. Testing Plan
 
 ## Unit tests
 
 1. Draft patch merge logic (conflicts, version mismatch).
 2. AI apply logic respects user-edited fields.
 3. Upload chunk retry/backoff utilities.
+4. field-priority resolution by boat type.
+5. normalization service resolves mapped values correctly and flags unknown values.
 
 ## Integration tests
 
@@ -402,6 +712,8 @@ UX standards:
 3. Approve images then continue to Step 2 while AI run is pending.
 4. AI run completes and apply button populates eligible fields only.
 5. Offline edits sync when connection returns.
+6. motorboat and sailboat render different primary/secondary field sets for the same block.
+7. imported YachtShift and scraped values normalize to the same internal value for the same field.
 
 ## E2E scenarios
 
@@ -409,8 +721,10 @@ UX standards:
 2. Slow network + intermittent offline.
 3. AI failure and retry path without blocking submit.
 4. Concurrent tabs editing same draft (conflict handling).
+5. admin changes field priority and frontend reflects it without code changes.
+6. block auto-expands when a secondary field already has a value.
 
-## J. Rollout Plan
+## K. Rollout Plan
 
 ## Sprint 1
 
@@ -430,17 +744,24 @@ UX standards:
 
 ## Sprint 4
 
-1. Chunked upload + retry UX.
-2. Step unlock decoupled from enhancement.
-3. Optional direct-to-storage upload start.
+1. `boat_fields` and `boat_field_priorities` foundations.
+2. Config-driven renderer for one target block (`accommodation` / `interior`).
+3. Step unlock decoupled from enhancement.
 
 ## Sprint 5
+
+1. `boat_field_mappings` and `boat_field_value_observations`.
+2. YachtShift and scrape normalization integration.
+3. Admin mapping review UI.
+
+## Sprint 6
 
 1. Observability dashboards.
 2. SLO alerts.
 3. Performance tuning from production telemetry.
+4. Expand config-driven renderer to remaining yacht blocks.
 
-## K. Risks and Mitigations
+## L. Risks and Mitigations
 
 1. Risk: uncontrolled form fields miss late updates.
 - Mitigation: explicit snapshot extraction on every change + controlled fields for critical inputs.
@@ -451,17 +772,28 @@ UX standards:
 3. Risk: queue backlog delays AI run.
 - Mitigation: dedicated `ai-extract` queue + autoscaling workers + stale run invalidation.
 
-4. Risk: partial migration complexity.
+4. Risk: field registry diverges from actual yacht storage columns.
+- Mitigation: store `storage_relation` and `storage_column`, validate them against `Yacht::SUB_TABLE_MAP`, and block invalid admin saves.
+
+5. Risk: unmapped raw source values silently pollute normalized data.
+- Mitigation: log unknown values to observation table, require explicit mapping for reuse, and avoid sending unresolved values to AI.
+
+6. Risk: partial migration complexity.
 - Mitigation: feature flags per capability:
   - `FEATURE_SERVER_DRAFTS`
   - `FEATURE_ASYNC_AI_RUNS`
+  - `FEATURE_DYNAMIC_BOAT_FIELDS`
+  - `FEATURE_BOAT_FIELD_MAPPINGS`
   - `FEATURE_CHUNKED_UPLOAD`
 
-## L. Definition of Done
+## M. Definition of Done
 
 1. No reproducible data loss via refresh, locale switch, or tab close.
 2. User can proceed to Step 2 while AI extraction runs in background.
 3. Upload UX shows progress and remains interactive.
 4. Draft recovery works for both `new` and existing yacht edit flows.
 5. Monitoring dashboards show draft save success rate, queue health, AI run outcomes.
-
+6. At least one target block in the yacht form is rendered entirely from backend field config.
+7. Admin can set `primary` or `secondary` priority per boat type without code changes.
+8. YachtShift and scraped imports normalize into the same internal values for mapped fields.
+9. AI payload generation uses normalized internal values only.
