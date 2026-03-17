@@ -36,14 +36,14 @@ class CreateSignhostRequestAction
         $signRequest = $this->resolveRequest($actor, $data);
         $before = $signRequest->toArray();
 
-        $document = $signRequest->documents()->where('type', 'original')->latest()->first();
-        if (! $document) {
+        $documents = $signRequest->documents()->where('type', 'original')->latest()->get();
+        if ($documents->isEmpty()) {
             throw ValidationException::withMessages([
                 'document' => 'No contract document available. Generate the contract first.',
             ]);
         }
 
-        $pdfPath = Storage::disk('public')->path($document->file_path);
+        $pdfPaths = $documents->map(fn ($doc) => Storage::disk('public')->path($doc->file_path))->values()->all();
 
         $recipients = $this->normalizeRecipients($data['recipients']);
         if (count($recipients) === 0) {
@@ -53,7 +53,7 @@ class CreateSignhostRequestAction
         }
 
         $reference = $data['reference'] ?? Str::slug($signRequest->entity_type).'-'.$signRequest->entity_id;
-        $result = $this->signhost->createTransaction($recipients, $pdfPath, $reference);
+        $result = $this->signhost->createTransaction($recipients, $pdfPaths, $reference);
 
         $transaction = $result['transaction'] ?? [];
         $signUrls = $this->extractSigningUrls($transaction, $recipients);

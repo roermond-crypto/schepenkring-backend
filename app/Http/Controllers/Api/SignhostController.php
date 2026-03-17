@@ -35,6 +35,8 @@ class SignhostController extends Controller
             'message' => $signRequest->signhost_transaction_id ? 'Contract generated and Signhost request created' : 'Contract generated',
             'contract_pdf_path' => $metadata['contract_pdf_path'] ?? null,
             'contract_sha256' => $metadata['contract_sha256'] ?? null,
+            'contract_pdf_paths' => $metadata['contract_pdf_paths'] ?? [],
+            'contract_sha256s' => $metadata['contract_sha256s'] ?? [],
             'sign_url' => $signRequest->sign_url,
             'sign_request' => new SignRequestResource($signRequest),
         ]);
@@ -122,6 +124,8 @@ class SignhostController extends Controller
             'message' => $signRequest->signhost_transaction_id ? 'Contract generated and Signhost request created' : 'Contract generated',
             'contract_pdf_path' => $metadata['contract_pdf_path'] ?? null,
             'contract_sha256' => $metadata['contract_sha256'] ?? null,
+            'contract_pdf_paths' => $metadata['contract_pdf_paths'] ?? [],
+            'contract_sha256s' => $metadata['contract_sha256s'] ?? [],
             'sign_url' => $signRequest->sign_url,
             'sign_request' => new SignRequestResource($signRequest),
         ];

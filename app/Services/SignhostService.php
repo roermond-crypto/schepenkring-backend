@@ -20,9 +20,13 @@ class SignhostService
 
     /**
      * @param array<int, array{email:string,name:string,send?:bool}> $signers
+     * @param string|array<int, string> $pdfPaths  Single path or array of paths
      */
-    public function createTransaction(array $signers, string $pdfPath, string $reference): array
+    public function createTransaction(array $signers, string|array $pdfPaths, string $reference): array
     {
+        // Normalize to array for uniform handling
+        $pdfPaths = is_array($pdfPaths) ? array_values($pdfPaths) : [$pdfPaths];
+
         $payloadSigners = [];
         foreach ($signers as $signer) {
             $payloadSigners[] = $this->buildSignerPayload($signer);
@@ -39,7 +43,14 @@ class SignhostService
             throw new \RuntimeException('Signhost transaction id missing');
         }
 
-        $this->uploadFile($transactionId, $pdfPath);
+        // Upload each PDF with a unique file key
+        foreach ($pdfPaths as $index => $pdfPath) {
+            $fileKey = count($pdfPaths) === 1
+                ? 'Contract.pdf'
+                : 'Contract_' . ($index + 1) . '.pdf';
+            $this->uploadFile($transactionId, $pdfPath, $fileKey);
+        }
+
         $this->startTransaction($transactionId);
 
         $transaction = $this->request('get', "transaction/{$transactionId}");
@@ -50,9 +61,9 @@ class SignhostService
         ];
     }
 
-    public function createSingleSignerTransaction(array $signer, string $pdfPath, string $reference): array
+    public function createSingleSignerTransaction(array $signer, string|array $pdfPaths, string $reference): array
     {
-        return $this->createTransaction([$signer], $pdfPath, $reference);
+        return $this->createTransaction([$signer], $pdfPaths, $reference);
     }
 
     public function getTransaction(string $transactionId): array
@@ -104,16 +115,16 @@ class SignhostService
         return hash_equals($calculated, $checksum);
     }
 
-    private function uploadFile(string $transactionId, string $pdfPath): void
+    private function uploadFile(string $transactionId, string $pdfPath, string $fileKey = 'Contract.pdf'): void
     {
         $contents = file_get_contents($pdfPath);
         if ($contents === false) {
-            throw new \RuntimeException('Failed to read contract PDF');
+            throw new \RuntimeException('Failed to read contract PDF: ' . $pdfPath);
         }
 
         $digest = base64_encode(hash('sha256', $contents, true));
 
-        $this->requestRaw('put', "transaction/{$transactionId}/file/Contract.pdf", [
+        $this->requestRaw('put', "transaction/{$transactionId}/file/{$fileKey}", [
             'headers' => [
                 'Content-Type' => 'application/pdf',
                 'Digest' => 'SHA-256='.$digest,
