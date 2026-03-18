@@ -542,7 +542,182 @@ If you see these warnings, the widget is not sending the location. Fix the widge
 
 ---
 
-## 7. Important Notes
+## 7. Salesguy / Location Setup Guide
+
+### Architecture
+
+```
+Location A ──┬── salesguy 1 (role: sales/employee)
+             ├── salesguy 2 (role: sales/employee)
+             └── salesguy 3 (role: sales/employee)
+
+Location B ──┬── salesguy 4
+             └── salesguy 1  ← same person, multiple locations ✅
+```
+
+The `location_user` pivot table links users to locations:
+
+| column | type | description |
+|--------|------|-------------|
+| user_id | bigint | the salesguy |
+| location_id | bigint | the location |
+| role | string | `LOCATION_EMPLOYEE`, `LOCATION_ADMIN`, etc. |
+| active | boolean | `true` = has access, `false` = suspended |
+
+---
+
+### Creating a salesguy (admin only)
+
+**API: `POST /api/users`**
+
+```json
+{
+  "name": "Jan de Vries",
+  "email": "jan@example.com",
+  "role": "employee",
+  "phone": "+31612345678",
+  "location_id": 1,
+  "location_role": "LOCATION_EMPLOYEE"
+}
+```
+
+Response includes `temp_password` — share this securely with the salesguy.
+
+**What happens:**
+1. User is created with `type = EMPLOYEE`
+2. A row is inserted in `location_user` with `active = true`
+3. After login, the system loads all their active locations
+4. Dashboard is filtered to show only their location's data
+
+---
+
+### Assigning a salesguy to additional locations
+
+**API: `PATCH /api/admin/users/{id}/locations`**
+
+Single location:
+```json
+{
+  "location_id": 2,
+  "location_role": "LOCATION_EMPLOYEE"
+}
+```
+
+Multiple locations at once:
+```json
+{
+  "locations": [
+    { "location_id": 1, "role": "LOCATION_EMPLOYEE" },
+    { "location_id": 2, "role": "LOCATION_EMPLOYEE" }
+  ]
+}
+```
+
+> **Note:** Requires `Idempotency-Key` header.
+
+---
+
+### Suspending a salesguy from a location
+
+To remove access to a specific location without deleting the user:
+
+```bash
+php artisan tinker
+```
+
+```php
+$user = \App\Models\User::where('email', 'jan@example.com')->first();
+// Deactivate for location 1 only
+$user->locations()->updateExistingPivot(1, ['active' => false]);
+// Reactivate
+$user->locations()->updateExistingPivot(1, ['active' => true]);
+```
+
+---
+
+### Verifying a salesguy's location setup
+
+```bash
+php artisan tinker
+```
+
+```php
+$user = \App\Models\User::where('email', 'jan@example.com')
+    ->with('locations')
+    ->first();
+
+// All locations (including inactive)
+dump($user->locations->map(fn($l) => [
+    'id' => $l->id,
+    'name' => $l->name,
+    'role' => $l->pivot->role,
+    'active' => $l->pivot->active,
+])->toArray());
+
+// Only active locations (what the system uses for filtering)
+dump($user->activeLocations()->pluck('locations.name', 'locations.id')->toArray());
+```
+
+---
+
+### What the login response returns
+
+After login, the frontend receives:
+
+```json
+{
+  "user": {
+    "id": 42,
+    "type": "EMPLOYEE",
+    "role": "employee",
+    "location_id": 1,
+    "location_role": "LOCATION_EMPLOYEE",
+    "location": { "id": 1, "name": "Location A", "role": "LOCATION_EMPLOYEE" },
+    "locations": [
+      { "id": 1, "name": "Location A", "role": "LOCATION_EMPLOYEE", "active": true },
+      { "id": 2, "name": "Location B", "role": "LOCATION_EMPLOYEE", "active": true }
+    ],
+    "has_location_assignment": true,
+    "can_access_board": true
+  },
+  "token": "..."
+}
+```
+
+**Frontend logic:**
+- If `locations.length === 1` → auto-select, go to dashboard
+- If `locations.length > 1` → show location selector: "Choose your location"
+- If `has_location_assignment === false` → show error: "Your account has no location assigned. Contact your admin."
+
+---
+
+### Data filtering — what each role sees
+
+| Data type | Admin | Employee (salesguy) | Client |
+|-----------|-------|---------------------|--------|
+| Conversations | All locations | Own location(s) only | Own conversations only |
+| Calls | All locations | Own location(s) only | — |
+| Boats/Yachts | All locations | Own location(s) only | — |
+| Leads | All locations | Own location(s) only | — |
+| Users | All | Own location's users | — |
+
+All filtering goes through `LocationAccessService::scopeQuery()` which uses the `location_user` pivot with `active = true`.
+
+---
+
+### Common setup mistakes
+
+| Mistake | Symptom | Fix |
+|---------|---------|-----|
+| Employee created without location | Empty dashboard, no chats | `PATCH /api/admin/users/{id}/locations` |
+| `active = false` on pivot | Employee sees nothing | `updateExistingPivot($locationId, ['active' => true])` |
+| Multiple locations but frontend doesn't show selector | Salesguy stuck on wrong location | Frontend must check `locations.length > 1` |
+| Client has no `client_location_id` | Client sees no conversations | Set `client_location_id` on user |
+| Widget not sending `harbor_id` | Conversations go to wrong location | Fix widget to pass `harbor_id` |
+
+---
+
+## 8. Important Notes
 
 - **Do not only test API response "200 OK"** — test the full chain on real devices
 - **Use a real phone** for both WhatsApp and Telnyx tests

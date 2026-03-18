@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\LocationRole;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
+use App\Models\Location;
+use App\Models\User;
 use App\Repositories\UserRepository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -54,11 +58,13 @@ class UserController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'  => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'role'  => ['required_without:type', Rule::in(['admin', 'employee', 'client', 'ADMIN', 'EMPLOYEE', 'CLIENT'])],
-            'type'  => ['required_without:role', Rule::in(['ADMIN', 'EMPLOYEE', 'CLIENT', 'admin', 'employee', 'client'])],
-            'phone' => 'nullable|string|max:50',
+            'name'          => 'required|string|max:255',
+            'email'         => 'required|email|unique:users,email',
+            'role'          => ['required_without:type', Rule::in(['admin', 'employee', 'client', 'ADMIN', 'EMPLOYEE', 'CLIENT'])],
+            'type'          => ['required_without:role', Rule::in(['ADMIN', 'EMPLOYEE', 'CLIENT', 'admin', 'employee', 'client'])],
+            'phone'         => 'nullable|string|max:50',
+            'location_id'   => 'nullable|integer|exists:locations,id',
+            'location_role' => ['nullable', Rule::in(array_map(fn (LocationRole $r) => $r->value, LocationRole::cases()))],
         ]);
 
         $tempPassword = Str::random(12);
@@ -73,6 +79,21 @@ class UserController extends Controller
             'invited_by' => $request->user()->id,
             'status'     => 'ACTIVE',
         ]);
+
+        // Immediately link the employee to their location if provided.
+        // This prevents the "user exists but has no location" error that
+        // causes empty chat/task dashboards after creation.
+        $normalizedRole = strtoupper($role);
+        if (! empty($validated['location_id'])) {
+            if ($normalizedRole === 'EMPLOYEE') {
+                $locationRole = $validated['location_role'] ?? LocationRole::LOCATION_EMPLOYEE->value;
+                $user->locations()->sync([
+                    (int) $validated['location_id'] => ['role' => $locationRole, 'active' => true],
+                ]);
+            } elseif ($normalizedRole === 'CLIENT') {
+                $user->forceFill(['client_location_id' => (int) $validated['location_id']])->save();
+            }
+        }
 
         $user->load(['locations', 'clientLocation']);
         $resource = new UserResource($user);

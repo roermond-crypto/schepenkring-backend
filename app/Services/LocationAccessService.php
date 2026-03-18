@@ -17,12 +17,11 @@ class LocationAccessService
         }
 
         if ($user->isEmployee()) {
-            // Load ALL location IDs from the location_user pivot so that
+            // Load ALL active location IDs from the location_user pivot so that
             // employees linked to multiple locations can see all their chats.
-            // Previously this only returned the single computed location_id
-            // attribute (primaryEmployeeLocation), which meant employees with
-            // no pivot row or multiple locations saw zero conversations.
-            $ids = $user->locations()->pluck('locations.id')->map(fn ($id) => (int) $id)->all();
+            // Only active assignments are returned — deactivated assignments
+            // are excluded so a suspended salesguy loses access immediately.
+            $ids = $user->activeLocations()->pluck('locations.id')->map(fn ($id) => (int) $id)->all();
 
             if (count($ids) > 0) {
                 return $ids;
