@@ -6,7 +6,10 @@ use App\Models\BlockedContact;
 use App\Models\ChannelIdentity;
 use App\Models\HarborChannel;
 use App\Models\Message;
+use App\Models\User;
+use App\Services\ChatAiReplyService;
 use App\Services\ChatConversationService;
+use App\Services\PhoneNumberService;
 use App\Services\WhatsApp360DialogService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -27,8 +30,12 @@ class ProcessWhatsAppWebhook implements ShouldQueue
     ) {
     }
 
-    public function handle(ChatConversationService $service, WhatsApp360DialogService $whatsApp): void
-    {
+    public function handle(
+        ChatConversationService $service,
+        WhatsApp360DialogService $whatsApp,
+        ChatAiReplyService $ai,
+        PhoneNumberService $phoneService
+    ): void {
         $channel = HarborChannel::find($this->harborChannelId);
         if (! $channel || ! $channel->isActive()) {
             return;
@@ -37,7 +44,7 @@ class ProcessWhatsAppWebhook implements ShouldQueue
         $request = $this->fakeRequest();
 
         foreach ($whatsApp->extractInboundMessages($this->payload) as $entry) {
-            $this->handleInboundMessage($service, $channel, $entry, $request);
+            $this->handleInboundMessage($service, $ai, $channel, $entry, $request, $phoneService);
         }
 
         foreach ($whatsApp->extractStatuses($this->payload) as $entry) {
@@ -45,28 +52,47 @@ class ProcessWhatsAppWebhook implements ShouldQueue
         }
     }
 
-    private function handleInboundMessage(ChatConversationService $service, HarborChannel $channel, array $entry, Request $request): void
-    {
-        $message = $entry['message'] ?? [];
+    private function handleInboundMessage(
+        ChatConversationService $service,
+        ChatAiReplyService $ai,
+        HarborChannel $channel,
+        array $entry,
+        Request $request,
+        PhoneNumberService $phoneService
+    ): void {
+        $message  = $entry['message']  ?? [];
         $metadata = $entry['metadata'] ?? [];
         $contacts = $entry['contacts'] ?? [];
 
-        $waId = (string) ($message['from'] ?? ($contacts[0]['wa_id'] ?? ''));
-        if ($waId === '') {
+        // Raw WhatsApp ID (e.g. "31612345678" — no leading +)
+        $rawWaId = (string) ($message['from'] ?? ($contacts[0]['wa_id'] ?? ''));
+        if ($rawWaId === '') {
             return;
         }
 
+        // ── 1. Normalize to E.164 (+31612345678) ──────────────────────────────
+        // WhatsApp always sends numbers without the leading "+", so we prepend it
+        // before running through PhoneNumberService so that matching against
+        // users.phone (which is stored in E.164) works correctly.
+        $normalizedPhone = $phoneService->normalize(
+            str_starts_with($rawWaId, '+') ? $rawWaId : '+' . $rawWaId
+        ) ?? $rawWaId;
+
+        // Deduplicate: skip if we already processed this external message.
         $externalMessageId = $message['id'] ?? null;
         if ($externalMessageId && Message::where('external_message_id', $externalMessageId)->exists()) {
             return;
         }
 
-        $threadKey = $this->threadKey($channel->harbor_id, $waId);
-        $identity = ChannelIdentity::where('type', 'whatsapp')
+        // ── 2. Find or create conversation ────────────────────────────────────
+        $threadKey = $this->threadKey($channel->harbor_id, $rawWaId);
+        $identity  = ChannelIdentity::where('type', 'whatsapp')
             ->where('external_thread_id', $threadKey)
             ->first();
 
         $conversation = $identity?->conversation;
+
+        // Try to resume via a quoted/replied-to message.
         $contextMessageId = $message['context']['id'] ?? null;
         if (! $conversation && $contextMessageId) {
             $conversation = Message::where('external_message_id', $contextMessageId)
@@ -79,65 +105,122 @@ class ProcessWhatsAppWebhook implements ShouldQueue
             $contactName = $contacts[0]['profile']['name'] ?? null;
             $conversation = $service->createConversation([
                 'contact' => [
-                    'name' => $contactName,
-                    'whatsapp_user_id' => $waId,
-                    'phone' => $waId,
+                    'name'             => $contactName,
+                    'whatsapp_user_id' => $rawWaId,
+                    // Store the normalized phone so it matches users.phone
+                    'phone'            => $normalizedPhone,
                 ],
-                'channel_origin' => 'whatsapp',
-                'harbor_id' => $channel->harbor_id,
-                'language_preferred' => null,
-                'reuse' => true,
-                'allow_blocked_contacts' => true,
+                'channel_origin'          => 'whatsapp',
+                'harbor_id'               => $channel->harbor_id,
+                'language_preferred'      => null,
+                'reuse'                   => true,
+                'allow_blocked_contacts'  => true,
             ], $request);
         }
 
+        // ── 3. Link conversation to a registered User by phone ────────────────
+        // If the conversation is not yet linked to a user, try to find one by
+        // the normalized phone number so the thread appears in their dashboard.
+        if (! $conversation->user_id) {
+            $linkedUser = $this->resolveUserByPhone($normalizedPhone, $rawWaId);
+            if ($linkedUser) {
+                $conversation->user_id = $linkedUser->id;
+                // Also ensure the conversation is scoped to the user's location
+                // when no location was set yet.
+                if (! $conversation->location_id && $linkedUser->client_location_id) {
+                    $conversation->location_id = $linkedUser->client_location_id;
+                }
+                $conversation->save();
+
+                // Keep the contact in sync with the user record.
+                if ($conversation->contact && ! $conversation->contact->user_id) {
+                    $conversation->contact->user_id = $linkedUser->id;
+                    $conversation->contact->save();
+                }
+
+                Log::info('WhatsApp conversation linked to user', [
+                    'conversation_id' => $conversation->id,
+                    'user_id'         => $linkedUser->id,
+                    'phone'           => $normalizedPhone,
+                ]);
+            }
+        }
+
+        // ── 4. Upsert channel identity ─────────────────────────────────────────
         ChannelIdentity::updateOrCreate([
-            'conversation_id' => $conversation->id,
-            'type' => 'whatsapp',
+            'conversation_id'   => $conversation->id,
+            'type'              => 'whatsapp',
             'external_thread_id' => $threadKey,
         ], [
-            'external_user_id' => $waId,
-            'metadata' => array_filter([
+            'external_user_id' => $rawWaId,
+            'metadata'         => array_filter([
                 'display_phone_number' => $metadata['display_phone_number'] ?? null,
-                'phone_number_id' => $metadata['phone_number_id'] ?? null,
+                'phone_number_id'      => $metadata['phone_number_id']      ?? null,
             ], static fn ($value) => $value !== null),
         ]);
 
+        // ── 5. Store inbound message ───────────────────────────────────────────
         $text = $this->extractText($message);
         $type = $message['type'] ?? 'text';
 
         $saved = $service->addMessage($conversation, [
-            'sender_type' => 'visitor',
-            'text' => $text,
-            'language' => null,
-            'channel' => 'whatsapp',
+            'sender_type'       => 'visitor',
+            'text'              => $text,
+            'language'          => null,
+            'channel'           => 'whatsapp',
             'external_message_id' => $externalMessageId,
-            'message_type' => $type,
-            'metadata' => [
+            'message_type'      => $type,
+            'metadata'          => [
                 'whatsapp' => [
-                    'raw' => $message,
+                    'raw'              => $message,
+                    'normalized_phone' => $normalizedPhone,
                 ],
             ],
             'contact' => [
-                'whatsapp_user_id' => $waId,
+                'whatsapp_user_id' => $rawWaId,
+                'phone'            => $normalizedPhone,
             ],
             'allow_blocked_contacts' => true,
         ], $request, null);
 
         if ($text && $this->isOptOut($text)) {
-            $this->applyOptOut($conversation->contact, $waId);
+            $this->applyOptOut($conversation->contact, $rawWaId);
+            return; // Do not generate AI reply for opt-out messages.
         }
 
         if ($externalMessageId) {
-            $saved->status = 'received';
+            $saved->status        = 'received';
             $saved->delivery_state = 'received';
             $saved->save();
+        }
+
+        // ── 6. Generate AI reply and send it back via WhatsApp ─────────────────
+        // Only generate a reply when there is actual text to respond to.
+        // The AI message is stored with channel='whatsapp' so that
+        // ChatConversationService::addMessage() dispatches SendWhatsAppMessage.
+        if ($text) {
+            try {
+                $freshConversation = $conversation->fresh();
+                if ($freshConversation && $ai->shouldAutoReply($freshConversation)) {
+                    $ai->generateForVisitorMessage(
+                        $freshConversation,
+                        $saved,
+                        $request,
+                        ['whatsapp_channel' => 'whatsapp'] // hint: store reply as whatsapp channel
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::error('WhatsApp AI reply failed', [
+                    'conversation_id' => $conversation->id,
+                    'error'           => $e->getMessage(),
+                ]);
+            }
         }
     }
 
     private function handleStatus(array $entry): void
     {
-        $status = $entry['status'] ?? [];
+        $status   = $entry['status']   ?? [];
         $metadata = $entry['metadata'] ?? [];
         $externalId = $status['id'] ?? null;
         if (! $externalId) {
@@ -160,7 +243,7 @@ class ProcessWhatsAppWebhook implements ShouldQueue
             return;
         }
 
-        $message->status = $state;
+        $message->status        = $state;
         $message->delivery_state = $state;
         if ($state === 'delivered') {
             $message->delivered_at = $this->statusTimestamp($status['timestamp'] ?? null) ?? now();
@@ -171,9 +254,9 @@ class ProcessWhatsAppWebhook implements ShouldQueue
 
         $message->metadata = array_merge($message->metadata ?? [], [
             'whatsapp' => array_merge($message->metadata['whatsapp'] ?? [], [
-                'last_status' => $state,
+                'last_status'    => $state,
                 'status_payload' => $status,
-                'metadata' => $metadata,
+                'metadata'       => $metadata,
             ]),
         ]);
 
@@ -183,6 +266,23 @@ class ProcessWhatsAppWebhook implements ShouldQueue
             ]);
         }
         $message->save();
+    }
+
+    /**
+     * Resolve a registered User by their WhatsApp/phone number.
+     * Tries both the normalized E.164 form and the raw wa_id.
+     */
+    private function resolveUserByPhone(string $normalizedPhone, string $rawWaId): ?User
+    {
+        return User::query()
+            ->where(function ($query) use ($normalizedPhone, $rawWaId) {
+                $query->where('phone', $normalizedPhone);
+                if ($rawWaId !== $normalizedPhone) {
+                    $query->orWhere('phone', $rawWaId)
+                          ->orWhere('phone', '+' . $rawWaId);
+                }
+            })
+            ->first();
     }
 
     private function extractText(array $message): ?string
@@ -210,7 +310,7 @@ class ProcessWhatsAppWebhook implements ShouldQueue
             return null;
         }
 
-        $phoneNumberId = $metadata['phone_number_id'] ?? null;
+        $phoneNumberId      = $metadata['phone_number_id']      ?? null;
         $displayPhoneNumber = $metadata['display_phone_number'] ?? null;
 
         $channel = HarborChannel::query()
@@ -221,7 +321,6 @@ class ProcessWhatsAppWebhook implements ShouldQueue
                 if ($phoneNumberId) {
                     $query->where('metadata->phone_number_id', $phoneNumberId);
                 }
-
                 if ($displayPhoneNumber) {
                     $query->orWhere('from_number', $displayPhoneNumber);
                 }
@@ -233,8 +332,14 @@ class ProcessWhatsAppWebhook implements ShouldQueue
             ->where('channel', 'whatsapp')
             ->where('sender_type', '!=', 'visitor')
             ->whereIn('status', [null, 'queued', 'sent'])
-            ->when($channel, fn ($query) => $query->whereHas('conversation', fn ($conversationQuery) => $conversationQuery->where('location_id', $channel->harbor_id)))
-            ->whereHas('conversation.contact', fn ($query) => $query->where('whatsapp_user_id', $recipientId))
+            ->when($channel, fn ($query) => $query->whereHas(
+                'conversation',
+                fn ($q) => $q->where('location_id', $channel->harbor_id)
+            ))
+            ->whereHas(
+                'conversation.contact',
+                fn ($query) => $query->where('whatsapp_user_id', $recipientId)
+            )
             ->latest('created_at')
             ->first();
     }
@@ -250,7 +355,7 @@ class ProcessWhatsAppWebhook implements ShouldQueue
 
     private function threadKey(int $harborId, string $waId): string
     {
-        return 'whatsapp:'.$harborId.':'.$waId;
+        return 'whatsapp:' . $harborId . ':' . $waId;
     }
 
     private function isOptOut(string $text): bool
@@ -268,17 +373,17 @@ class ProcessWhatsAppWebhook implements ShouldQueue
     private function applyOptOut(?\App\Models\Contact $contact, string $waId): void
     {
         if ($contact) {
-            $contact->do_not_contact = true;
+            $contact->do_not_contact          = true;
             $contact->consent_service_messages = false;
             $contact->save();
         }
 
         BlockedContact::updateOrCreate([
-            'type' => 'whatsapp',
+            'type'  => 'whatsapp',
             'value' => $waId,
         ], [
-            'reason' => 'opt_out',
-            'blocked_until' => null,
+            'reason'         => 'opt_out',
+            'blocked_until'  => null,
         ]);
 
         Log::info('WhatsApp opt-out applied', ['wa_id' => $waId]);
