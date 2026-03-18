@@ -40,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.errors' => \App\Http\Middleware\EnsureAdminOrStaff::class,
             'bid.session' => \App\Http\Middleware\EnsureBidSession::class,
             'internal.secret' => \App\Http\Middleware\VerifyInternalSecret::class,
+            'auth.optional' => \App\Http\Middleware\OptionalSanctumAuth::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

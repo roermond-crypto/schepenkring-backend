@@ -32,6 +32,19 @@ class ChatAccessService
             return true;
         }
 
+        // Client users may only access conversations that belong to them
+        // (matched by user_id or by their email on the linked contact).
+        if ($user->isClient()) {
+            if ($conversation->user_id === $user->id) {
+                return true;
+            }
+            $conversation->loadMissing('contact');
+            if ($conversation->contact && $conversation->contact->email === $user->email) {
+                return true;
+            }
+            return false;
+        }
+
         return $this->locations->sharesLocation($user, $conversation->location_id);
     }
 

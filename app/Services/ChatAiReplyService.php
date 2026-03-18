@@ -53,10 +53,18 @@ class ChatAiReplyService
         $context = $this->context->build($conversation, $question, $resolvedLanguage);
         $result = $this->generateReplyPayload($conversation, $visitorMessage, $question, $context, $resolvedLanguage, $options);
 
+        // Determine the channel for the AI reply. For WhatsApp conversations the
+        // reply must be stored with channel='whatsapp' so that
+        // ChatConversationService::addMessage() dispatches SendWhatsAppMessage
+        // and the message is actually delivered back to the user.
+        $replyChannel = $options['whatsapp_channel']
+            ?? ($conversation->channel === 'whatsapp' ? 'whatsapp' : 'web');
+
         $message = $this->conversations->addMessage($conversation, [
             'sender_type' => 'ai',
             'text' => $result['reply'],
             'language' => $resolvedLanguage,
+            'channel' => $replyChannel,
             'message_type' => 'text',
             'status' => 'completed',
             'ai_confidence' => $result['confidence'],
