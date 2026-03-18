@@ -276,6 +276,7 @@ class ImagePipelineController extends Controller
 
     /**
      * POST /yachts/{yachtId}/images/reorder
+     * POST /yachts/{yachtId}/images/reorderß
      * Persist manual drag-and-drop image ordering.
      */
     public function reorder(Request $request, $yachtId): JsonResponse
