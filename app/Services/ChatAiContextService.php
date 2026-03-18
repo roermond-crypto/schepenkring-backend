@@ -32,9 +32,11 @@ class ChatAiContextService
             ?? 'en';
 
         $yacht = $this->resolveYacht($conversation);
+        $visibility = $this->isPublicWidgetConversation($conversation) ? 'public' : null;
         $knowledgeContext = array_filter([
             'language' => $language,
             'location_id' => $conversation->location_id,
+            'visibility' => $visibility,
             'brand' => $yacht?->manufacturer,
             'model' => $yacht?->model,
         ], static fn ($value) => $value !== null && $value !== '');
@@ -141,6 +143,15 @@ class ChatAiContextService
                     ->orWhere('external_url', $lookupUrl . '/');
             })
             ->first();
+    }
+
+    private function isPublicWidgetConversation(Conversation $conversation): bool
+    {
+        $channel = strtolower((string) ($conversation->channel ?? ''));
+        $origin = strtolower((string) ($conversation->channel_origin ?? ''));
+
+        return in_array($channel, ['web_widget'], true)
+            || in_array($origin, ['web_widget'], true);
     }
 
     /**

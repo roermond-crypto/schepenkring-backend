@@ -217,6 +217,10 @@ class CopilotFaqService
             $filter['location_id'] = ['$in' => $locationIds];
         }
 
+        if (! empty($context['visibility']) && is_string($context['visibility'])) {
+            $filter['visibility'] = ['$eq' => trim($context['visibility'])];
+        }
+
         return collect($this->memory->searchSimilar($query, $limit, $filter))
             ->map(function (array $match) {
                 $metadata = $match['metadata'] ?? [];

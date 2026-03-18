@@ -86,6 +86,13 @@ return [
 
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
+        'chat_model' => env('GEMINI_CHAT_MODEL', 'gemini-2.5-flash'),
+        'chat_timeout' => env('GEMINI_CHAT_TIMEOUT', 45),
+        'chat_max_output_tokens' => env('GEMINI_CHAT_MAX_OUTPUT_TOKENS', 450),
+    ],
+
+    'chat_ai' => [
+        'provider' => env('CHAT_AI_PROVIDER'),
     ],
 
     'pinecone' => [

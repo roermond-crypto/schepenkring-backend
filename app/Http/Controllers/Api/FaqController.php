@@ -151,6 +151,69 @@ class FaqController extends Controller
         return response()->json(['message' => 'deleted']);
     }
 
+    public function bulk(Request $request)
+    {
+        $user = $this->requireStaff($request);
+
+        $validated = $request->validate([
+            'action' => 'required|string|in:update_visibility,delete',
+            'faq_ids' => 'required|array|min:1|max:100',
+            'faq_ids.*' => 'integer|distinct|exists:faqs,id',
+            'location_id' => 'nullable|integer|exists:locations,id',
+            'visibility' => 'required_if:action,update_visibility|string|in:internal,staff,public',
+        ]);
+
+        $locationId = isset($validated['location_id']) ? (int) $validated['location_id'] : null;
+        if ($locationId) {
+            $this->authorizeLocation($user, $locationId);
+        }
+
+        $faqIds = array_values(array_unique(array_map('intval', $validated['faq_ids'])));
+
+        $query = $this->scopeFaqs(Faq::query(), $user)
+            ->whereIn('id', $faqIds)
+            ->whereNull('deprecated_at');
+
+        if ($locationId) {
+            $query->where('location_id', $locationId);
+        }
+
+        $faqs = $query->get();
+
+        if ($faqs->count() !== count($faqIds)) {
+            abort(403, 'Forbidden');
+        }
+
+        if ($validated['action'] === 'delete') {
+            foreach ($faqs as $faq) {
+                $this->training->deleteFaq($faq);
+            }
+
+            return response()->json([
+                'message' => 'FAQs deleted.',
+                'action' => 'delete',
+                'count' => $faqs->count(),
+            ]);
+        }
+
+        $visibility = (string) $validated['visibility'];
+
+        foreach ($faqs as $faq) {
+            $faq->forceFill([
+                'visibility' => $visibility,
+            ])->save();
+
+            $this->training->syncFaq($faq);
+        }
+
+        return response()->json([
+            'message' => 'FAQ visibility updated.',
+            'action' => 'update_visibility',
+            'count' => $faqs->count(),
+            'visibility' => $visibility,
+        ]);
+    }
+
     private function requireStaff(Request $request)
     {
         $user = $request->user();

@@ -71,6 +71,11 @@ class FaqTrainingService
         $faq->trained_by_user_id = $trainer?->id;
         $faq->save();
 
+        return $this->syncFaq($faq);
+    }
+
+    public function syncFaq(Faq $faq): Faq
+    {
         if ($this->memory->rememberFaq($faq)) {
             $faq->forceFill([
                 'last_indexed_at' => now(),
