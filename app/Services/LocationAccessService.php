@@ -17,11 +17,27 @@ class LocationAccessService
         }
 
         if ($user->isEmployee()) {
-            return $user->location_id ? [$user->location_id] : [];
+            // Load ALL location IDs from the location_user pivot so that
+            // employees linked to multiple locations can see all their chats.
+            // Previously this only returned the single computed location_id
+            // attribute (primaryEmployeeLocation), which meant employees with
+            // no pivot row or multiple locations saw zero conversations.
+            $ids = $user->locations()->pluck('locations.id')->map(fn ($id) => (int) $id)->all();
+
+            if (count($ids) > 0) {
+                return $ids;
+            }
+
+            // Fallback: if the pivot is empty but a legacy location_id is set
+            // (e.g. via a direct column), use that so nothing breaks.
+            $fallback = $user->getAttributeValue('location_id')
+                ?? $user->resolvedLocationId();
+
+            return $fallback ? [(int) $fallback] : [];
         }
 
         if ($user->isClient() && $user->client_location_id) {
-            return [$user->client_location_id];
+            return [(int) $user->client_location_id];
         }
 
         return [];

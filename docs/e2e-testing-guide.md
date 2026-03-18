@@ -439,7 +439,110 @@ multi-location sep. ✅ / ❌  — notes:
 
 ---
 
-## 6. Important Notes
+## 6. Chat Dashboard — Location Visibility Fix
+
+### Problem that was fixed
+
+Employee and admin users at `/dashboard/employee/chat` and `/dashboard/admin/chat` were seeing **zero conversations** even when conversations existed. The root cause was in `LocationAccessService::accessibleLocationIds()`:
+
+```php
+// OLD (broken) — only returned the single primary location
+if ($user->isEmployee()) {
+    return $user->location_id ? [$user->location_id] : [];
+}
+```
+
+`$user->location_id` is a computed attribute that returns only the **first** location from the `location_user` pivot. If the employee had no pivot row at all, it returned `null` → empty array → `whereRaw('1 = 0')` → no conversations visible.
+
+**Fix applied:** Now queries all rows from the `location_user` pivot table directly:
+
+```php
+$ids = $user->locations()->pluck('locations.id')->map(fn ($id) => (int) $id)->all();
+```
+
+### How to verify the fix works
+
+#### Step 1 — Check employee is linked to a location
+
+```bash
+php artisan tinker
+```
+
+```php
+$user = \App\Models\User::where('email', 'employee@example.com')->first();
+dump($user->locations()->pluck('locations.id', 'locations.name')->toArray());
+```
+
+**Expected:** At least one location ID returned.  
+**If empty:** The employee has no row in `location_user` — this is why they see no chats. Fix by linking them:
+
+```php
+$user->locations()->attach($locationId, ['role' => 'member']);
+```
+
+---
+
+#### Step 2 — Check conversations exist for that location
+
+```bash
+php artisan tinker
+```
+
+```php
+$locationId = 1; // replace with real ID
+dump(\App\Models\Conversation::where('location_id', $locationId)->count());
+dump(\App\Models\Conversation::whereNull('location_id')->count()); // should be 0
+```
+
+**If `location_id` is null on conversations:** Those conversations were created without a `harbor_id`. They will never appear in any location's dashboard. Fix by assigning them:
+
+```php
+// Assign orphaned conversations to the correct location
+\App\Models\Conversation::whereNull('location_id')->update(['location_id' => $locationId]);
+```
+
+---
+
+#### Step 3 — Verify the API returns conversations for the employee
+
+```bash
+# Replace TOKEN with a real Sanctum token for the employee user
+curl -H "Authorization: Bearer TOKEN" \
+     "https://your-domain.com/api/conversations" | jq '.data | length'
+```
+
+**Expected:** A number > 0.
+
+---
+
+#### Step 4 — Check the widget sends the correct harbor_id
+
+When the chat widget starts a conversation, it must pass `harbor_id` (or `location_id`) in the request body. If it doesn't, the conversation falls back to the first location in the DB (logged as a warning).
+
+Check for these warnings:
+
+```bash
+grep "no harbor_id provided" storage/logs/laravel.log | tail -20
+```
+
+If you see these warnings, the widget is not sending the location. Fix the widget to pass `harbor_id` matching the location where it is embedded.
+
+---
+
+### Chat dashboard result checklist
+
+```
+[ ] Employee linked to location in location_user pivot
+[ ] Conversations have correct location_id (not null)
+[ ] API returns conversations for employee user
+[ ] Widget sends harbor_id when creating conversations
+[ ] Admin chat shows all locations' conversations
+[ ] Employee chat shows only their location's conversations
+```
+
+---
+
+## 7. Important Notes
 
 - **Do not only test API response "200 OK"** — test the full chain on real devices
 - **Use a real phone** for both WhatsApp and Telnyx tests
