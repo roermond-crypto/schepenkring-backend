@@ -13,7 +13,10 @@ class BoatDocumentController extends Controller
 {
     public function index($yachtId)
     {
-        $documents = BoatDocument::where('boat_id', $yachtId)->get();
+        $documents = BoatDocument::where('boat_id', $yachtId)
+            ->orderByDesc('uploaded_at')
+            ->orderByDesc('id')
+            ->get();
         return response()->json($documents);
     }
 

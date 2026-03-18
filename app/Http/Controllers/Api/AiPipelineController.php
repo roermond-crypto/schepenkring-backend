@@ -4,19 +4,22 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 
+use App\Models\BoatDocument;
 use App\Models\Yacht;
 use App\Models\YachtAiExtraction;
 use App\Models\YachtImage;
 use App\Services\AiCorrectionLoggingService;
+use App\Services\FaqKnowledgeTextExtractor;
 use App\Services\PineconeMatcherService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class AiPipelineController extends Controller
 {
-    private const CACHE_POLICY_VERSION = 2;
+    private const CACHE_POLICY_VERSION = 3;
 
     /**
      * Flat Step 2 schema keys returned by the extraction pipeline.
@@ -385,6 +388,15 @@ class AiPipelineController extends Controller
         $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
         $hintText = trim((string) $request->input('hint_text', ''));
         $hintText = $hintText !== '' ? $hintText : null;
+        $referenceDocumentContext = $this->buildReferenceDocumentContext(
+            $request->integer('yacht_id') ?: null
+        );
+        $analysisHintText = $this->buildAnalysisHintText(
+            $hintText,
+            $referenceDocumentContext['prompt_text'] ?? null
+        );
+        $request->attributes->set('reference_document_context', $referenceDocumentContext);
+        $request->attributes->set('analysis_hint_text', $analysisHintText ?? '');
         $requestSignature = $this->buildInputSignature($request, $hintText, $speedMode);
         $cachedExtraction = $this->findCachedExtraction(
             $request->integer('yacht_id') ?: null,
@@ -401,13 +413,13 @@ class AiPipelineController extends Controller
         $formValues = $this->buildEmptyFormValues();
         $fieldConfidence = [];
         $fieldSources = [];
-        $warnings = [];
+        $warnings = array_values($referenceDocumentContext['warnings'] ?? []);
         $needsConfirmation = [];
         $visionImagesUsed = 0;
 
         // ─── STAGE 0: Local Text Parsing (always runs, no API) ────────
-        if (!empty($hintText)) {
-            $localParsed = $this->runLocalTextParse($hintText);
+        if (!empty($analysisHintText)) {
+            $localParsed = $this->runLocalTextParse($analysisHintText);
             if (!empty($localParsed)) {
                 $stagesRun[] = 'local_text_parse';
                 foreach ($localParsed as $key => $value) {
@@ -807,7 +819,7 @@ class AiPipelineController extends Controller
         // Track 2: Pinecone Pre-emptive Match (Hint only)
         // Track 3: OpenAI Pre-emptive Enrich (Hint only)
 
-        $responses = Http::pool(function ($pool) use ($apiKey, $request, $hintText) {
+        $responses = Http::pool(function ($pool) use ($apiKey, $request, $analysisHintText) {
             // Gemini Vision call
             $payload = $this->prepareGeminiVisionPayload($request, $apiKey);
             if ($payload) {
@@ -817,7 +829,7 @@ class AiPipelineController extends Controller
             }
 
             // OpenAI Enrichment (based on hint text)
-            if (!empty($hintText)) {
+            if (!empty($analysisHintText)) {
                 $openAiKey = config('services.openai.key');
                 if ($openAiKey) {
                     $pool->as('openai_enrich')->withHeaders(['Authorization' => 'Bearer ' . $openAiKey])
@@ -825,7 +837,7 @@ class AiPipelineController extends Controller
                         ->post('https://api.openai.com/v1/chat/completions', [
                             'model' => 'gpt-4o-mini',
                             'messages' => [
-                                ['role' => 'system', 'content' => $this->getOpenAiEnrichmentPrompt($hintText)],
+                                ['role' => 'system', 'content' => $this->getOpenAiEnrichmentPrompt($analysisHintText)],
                                 ['role' => 'user', 'content' => 'Extract boat specs from hint.']
                             ],
                             'response_format' => ['type' => 'json_object'],
@@ -834,14 +846,14 @@ class AiPipelineController extends Controller
             }
 
             // Pinecone Embedding (Stage 1 of Pinecone)
-            if (!empty($hintText)) {
+            if (!empty($analysisHintText)) {
                 $openAiKey = config('services.openai.key');
                 if ($openAiKey) {
                     $pool->as('pinecone_embed')->withToken($openAiKey)
                         ->timeout(15)
                         ->post('https://api.openai.com/v1/embeddings', [
                             'model' => 'text-embedding-3-small',
-                            'input' => $hintText,
+                            'input' => $analysisHintText,
                             'dimensions' => 1408,
                         ]);
                 }
@@ -1127,6 +1139,9 @@ class AiPipelineController extends Controller
             'empty_fields_count'      => $this->countEmptyFields($formValues),
             'speed_mode'              => $speedMode,
             'vision_images_used'      => $visionImagesUsed,
+            'reference_documents_used' => (int) ($referenceDocumentContext['document_count'] ?? 0),
+            'reference_document_visuals_used' => (int) ($referenceDocumentContext['vision_count'] ?? 0),
+            'reference_document_text_characters' => strlen((string) ($referenceDocumentContext['prompt_text'] ?? '')),
             'model_name'              => 'gemini-2.5-flash',
             'cache_hit'               => false,
             'cache_policy_version'    => self::CACHE_POLICY_VERSION,
@@ -1153,6 +1168,7 @@ class AiPipelineController extends Controller
                     'stages_run' => $stagesRun,
                     'warnings' => $warnings,
                     'speed_mode' => $speedMode,
+                    'reference_documents_used' => (int) ($referenceDocumentContext['document_count'] ?? 0),
                     'cache_policy_version' => self::CACHE_POLICY_VERSION,
                     'input_signature' => $requestSignature,
                 ],
@@ -1204,6 +1220,12 @@ class AiPipelineController extends Controller
         $model    = "gemini-2.5-flash";
         $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
         $speedMode = strtolower((string) $request->input('speed_mode', 'balanced'));
+        $analysisHintText = trim((string) $request->attributes->get(
+            'analysis_hint_text',
+            $request->input('hint_text', ''),
+        ));
+        $referenceDocumentContext = $request->attributes->get('reference_document_context');
+        $referenceDocumentContext = is_array($referenceDocumentContext) ? $referenceDocumentContext : [];
         $maxVisionImages = match ($speedMode) {
             'fast' => (int) config('services.ai_pipeline.max_vision_images_fast', 6),
             'deep' => (int) config('services.ai_pipeline.max_vision_images_deep', 16),
@@ -1270,16 +1292,33 @@ class AiPipelineController extends Controller
             }
         }
 
+        foreach (($referenceDocumentContext['vision_files'] ?? []) as $documentVisual) {
+            try {
+                if (!is_array($documentVisual) || empty($documentVisual['data'])) {
+                    continue;
+                }
+
+                $parts[] = [
+                    'inline_data' => [
+                        'mime_type' => $documentVisual['mime_type'] ?? 'image/jpeg',
+                        'data'      => $documentVisual['data'],
+                    ]
+                ];
+                $imageCount++;
+            } catch (\Exception $e) {
+                Log::warning("[AI Pipeline] Failed to read reference document image: " . $e->getMessage());
+            }
+        }
+
         if ($imageCount === 0) {
             return ['error' => 'No valid images found for analysis'];
         }
 
         // Hint text comes LAST (Gemini gives highest weight to final context)
-        $hintText = $request->input('hint_text', '');
-        if (!empty($hintText)) {
+        if (!empty($analysisHintText)) {
             $parts[] = ['text' => <<<HINT
-SELLER-PROVIDED TEXT DATA:
-"{$hintText}"
+SELLER-PROVIDED TEXT AND REFERENCE DOCUMENT DATA:
+"{$analysisHintText}"
 
 Extract data from this text into JSON fields. Text-sourced data gets confidence 0.90.
 For fields NOT mentioned in text, ONLY fill if clearly visible in images.
@@ -3156,26 +3195,41 @@ CONTEXT,
                     'original_kept_url',
                     'original_temp_url',
                 ]);
+            $documents = $this->getAiReferenceDocuments($yachtId);
 
-            if ($images->isEmpty()) {
+            if ($images->isEmpty() && $documents->isEmpty()) {
                 return null;
             }
 
             $payload['yacht_id'] = $yachtId;
-            $payload['images'] = $images->map(function (YachtImage $image) {
-                return [
-                    'id' => (int) $image->id,
-                    'status' => (string) $image->status,
-                    'sort_order' => (int) $image->sort_order,
-                    'updated_at' => $image->updated_at?->toISOString(),
-                    'asset' => (string) ($image->thumb_url
-                        ?: $image->optimized_master_url
-                        ?: $image->url
-                        ?: $image->original_kept_url
-                        ?: $image->original_temp_url
-                        ?: ''),
-                ];
-            })->all();
+            if ($images->isNotEmpty()) {
+                $payload['images'] = $images->map(function (YachtImage $image) {
+                    return [
+                        'id' => (int) $image->id,
+                        'status' => (string) $image->status,
+                        'sort_order' => (int) $image->sort_order,
+                        'updated_at' => $image->updated_at?->toISOString(),
+                        'asset' => (string) ($image->thumb_url
+                            ?: $image->optimized_master_url
+                            ?: $image->url
+                            ?: $image->original_kept_url
+                            ?: $image->original_temp_url
+                            ?: ''),
+                    ];
+                })->all();
+            }
+            if ($documents->isNotEmpty()) {
+                $payload['reference_documents'] = $documents->map(function (BoatDocument $document) {
+                    return [
+                        'id' => (int) $document->id,
+                        'document_type' => (string) ($document->document_type ?? ''),
+                        'file_type' => (string) ($document->file_type ?? ''),
+                        'file_path' => (string) $document->file_path,
+                        'uploaded_at' => (string) ($document->uploaded_at ?? ''),
+                        'updated_at' => $document->updated_at?->toISOString(),
+                    ];
+                })->all();
+            }
         } elseif ($request->hasFile('images')) {
             $files = [];
             foreach ($request->file('images') as $image) {
@@ -3364,6 +3418,183 @@ CONTEXT,
 
             if (str_starts_with($value, '/')) {
                 return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function getAiReferenceDocuments(int $yachtId)
+    {
+        return BoatDocument::query()
+            ->where('boat_id', $yachtId)
+            ->where('document_type', 'ai_reference')
+            ->orderByDesc('uploaded_at')
+            ->orderByDesc('id')
+            ->get([
+                'id',
+                'boat_id',
+                'file_path',
+                'file_type',
+                'document_type',
+                'uploaded_at',
+                'updated_at',
+            ]);
+    }
+
+    private function buildAnalysisHintText(?string $hintText, ?string $referenceDocumentText): ?string
+    {
+        $segments = [];
+
+        if (is_string($hintText) && trim($hintText) !== '') {
+            $segments[] = "SELLER NOTES:\n" . trim($hintText);
+        }
+
+        if (is_string($referenceDocumentText) && trim($referenceDocumentText) !== '') {
+            $segments[] = "REFERENCE DOCUMENT DATA:\n" . trim($referenceDocumentText);
+        }
+
+        if ($segments === []) {
+            return null;
+        }
+
+        return Str::limit(implode("\n\n", $segments), 8000, "\n[truncated]");
+    }
+
+    private function buildReferenceDocumentContext(?int $yachtId): array
+    {
+        $emptyContext = [
+            'document_count' => 0,
+            'vision_count' => 0,
+            'prompt_text' => null,
+            'vision_files' => [],
+            'warnings' => [],
+        ];
+
+        if (!$yachtId) {
+            return $emptyContext;
+        }
+
+        $documents = $this->getAiReferenceDocuments($yachtId);
+        if ($documents->isEmpty()) {
+            return $emptyContext;
+        }
+
+        $extractor = app(FaqKnowledgeTextExtractor::class);
+        $promptChunks = [];
+        $visionFiles = [];
+        $warnings = [];
+
+        foreach ($documents as $document) {
+            $path = $this->resolveStoredDocumentPath($document);
+            if (!$path || !file_exists($path)) {
+                $warnings[] = 'One reference document could not be read and was skipped.';
+                continue;
+            }
+
+            $extension = strtolower((string) ($document->file_type ?: pathinfo($path, PATHINFO_EXTENSION)));
+            $filename = basename((string) parse_url((string) $document->file_path, PHP_URL_PATH));
+            if ($filename === '') {
+                $filename = 'reference-document-' . $document->id . ($extension !== '' ? '.' . $extension : '');
+            }
+
+            $fallbackSummary = "Document: {$filename}" . ($extension !== '' ? " ({$extension})" : '');
+
+            if (in_array($extension, ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'], true)) {
+                try {
+                    $text = trim($extractor->extractFromPath($path, $extension));
+                    if ($text !== '') {
+                        $normalizedText = preg_replace('/\s+/', ' ', $text) ?? $text;
+                        $promptChunks[] = $fallbackSummary . "\n" . Str::limit(
+                            $normalizedText,
+                            1800,
+                            ' ...'
+                        );
+                        continue;
+                    }
+                } catch (\Throwable $error) {
+                    Log::warning('[AI Pipeline] Failed to extract reference document text', [
+                        'document_id' => $document->id,
+                        'path' => $document->file_path,
+                        'error' => $error->getMessage(),
+                    ]);
+                    $warnings[] = 'One reference document could not be parsed and was skipped.';
+                }
+            }
+
+            if (in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) && count($visionFiles) < 2) {
+                try {
+                    $visionFiles[] = [
+                        'mime_type' => mime_content_type($path) ?: 'image/jpeg',
+                        'data' => base64_encode(file_get_contents($path)),
+                    ];
+                } catch (\Throwable $error) {
+                    Log::warning('[AI Pipeline] Failed to load reference document image', [
+                        'document_id' => $document->id,
+                        'path' => $document->file_path,
+                        'error' => $error->getMessage(),
+                    ]);
+                    $warnings[] = 'One reference document image could not be read and was skipped.';
+                }
+            }
+
+            $promptChunks[] = $fallbackSummary;
+        }
+
+        return [
+            'document_count' => $documents->count(),
+            'vision_count' => count($visionFiles),
+            'prompt_text' => $promptChunks === []
+                ? null
+                : Str::limit(implode("\n\n---\n\n", $promptChunks), 6000, "\n[truncated]"),
+            'vision_files' => $visionFiles,
+            'warnings' => array_values(array_unique($warnings)),
+        ];
+    }
+
+    private function resolveStoredDocumentPath(BoatDocument $document): ?string
+    {
+        $value = trim((string) $document->file_path);
+        if ($value === '') {
+            return null;
+        }
+
+        $relativeCandidates = [];
+
+        if (preg_match('/^https?:\/\//i', $value) === 1) {
+            $prefixes = [
+                rtrim(url('storage'), '/') . '/',
+                rtrim((string) config('app.url'), '/') . '/storage/',
+            ];
+
+            foreach ($prefixes as $prefix) {
+                if (str_starts_with($value, $prefix)) {
+                    $relativeCandidates[] = substr($value, strlen($prefix));
+                }
+            }
+        } elseif (str_starts_with($value, '/storage/')) {
+            $relativeCandidates[] = substr($value, strlen('/storage/'));
+        } elseif (str_starts_with($value, 'storage/')) {
+            $relativeCandidates[] = substr($value, strlen('storage/'));
+        } else {
+            $relativeCandidates[] = ltrim($value, '/');
+        }
+
+        $fileCandidates = [];
+        foreach ($relativeCandidates as $relativeCandidate) {
+            if (!is_string($relativeCandidate) || trim($relativeCandidate) === '') {
+                continue;
+            }
+
+            $normalized = ltrim($relativeCandidate, '/');
+            $fileCandidates[] = storage_path('app/public/' . $normalized);
+            $fileCandidates[] = public_path('storage/' . $normalized);
+            $fileCandidates[] = public_path($normalized);
+        }
+
+        foreach ($fileCandidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '' && file_exists($candidate)) {
+                return $candidate;
             }
         }
 
@@ -5692,6 +5923,12 @@ USER;
     {
         $visionImages = [];
         $maxVisionImages = 5; // Reduced for speed in parallel track
+        $referenceDocumentContext = $request->attributes->get('reference_document_context');
+        $referenceDocumentContext = is_array($referenceDocumentContext) ? $referenceDocumentContext : [];
+        $analysisHintText = trim((string) $request->attributes->get(
+            'analysis_hint_text',
+            $request->input('hint_text', ''),
+        ));
 
         // 1. Get images from DB if yacht_id provided
         if ($request->has('yacht_id')) {
@@ -5720,6 +5957,17 @@ USER;
             }
         }
 
+        foreach (($referenceDocumentContext['vision_files'] ?? []) as $documentVisual) {
+            if (!is_array($documentVisual) || empty($documentVisual['data'])) {
+                continue;
+            }
+
+            $visionImages[] = [
+                'mime_type' => $documentVisual['mime_type'] ?? 'image/jpeg',
+                'data' => $documentVisual['data'],
+            ];
+        }
+
         if (empty($visionImages)) return null;
 
         $model = 'gemini-1.5-flash';
@@ -5727,7 +5975,7 @@ USER;
         $historicalFeedbackHint = $this->buildHistoricalFeedbackHint();
         
         $parts = [];
-        $prompt = $this->getGeminiSchema() . "\n\nUSER HINT: " . $request->input('hint_text');
+        $prompt = $this->getGeminiSchema() . "\n\nUSER HINT: " . $analysisHintText;
         if ($historicalFeedbackHint !== '') {
             $prompt .= "\n\n" . $historicalFeedbackHint;
         }

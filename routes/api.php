@@ -3,7 +3,8 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
-use App\Http\Controllers\Api\Admin\BoatAuctionController as AdminBoatAuctionController;
+use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
+use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
 use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Api\Auth\RegisterController;
 use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
+use App\Http\Controllers\Api\BoatFormConfigController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
 use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
@@ -149,6 +151,8 @@ Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'sto
 // Authenticated routes
 // ──────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('boat-form-config', [BoatFormConfigController::class, 'index']);
+
     // Yachts
     Route::apiResource('yachts', YachtController::class);
 
@@ -415,6 +419,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
+    Route::get('boat-fields', [AdminBoatFieldController::class, 'index']);
+    Route::post('boat-fields', [AdminBoatFieldController::class, 'store']);
+    Route::post('boat-fields/generate-help', [AdminBoatFieldController::class, 'generateHelp']);
+    Route::get('boat-fields/{boatField}', [AdminBoatFieldController::class, 'show']);
+    Route::put('boat-fields/{boatField}', [AdminBoatFieldController::class, 'update']);
+    Route::delete('boat-fields/{boatField}', [AdminBoatFieldController::class, 'destroy']);
+    Route::get('boat-fields/{boatField}/mappings', [AdminBoatFieldMappingController::class, 'index']);
+    Route::put('boat-fields/{boatField}/mappings', [AdminBoatFieldMappingController::class, 'update']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
