@@ -17,11 +17,26 @@ class LocationAccessService
         }
 
         if ($user->isEmployee()) {
-            return $user->location_id ? [$user->location_id] : [];
+            // Load ALL active location IDs from the location_user pivot so that
+            // employees linked to multiple locations can see all their chats.
+            // Only active assignments are returned — deactivated assignments
+            // are excluded so a suspended salesguy loses access immediately.
+            $ids = $user->activeLocations()->pluck('locations.id')->map(fn ($id) => (int) $id)->all();
+
+            if (count($ids) > 0) {
+                return $ids;
+            }
+
+            // Fallback: if the pivot is empty but a legacy location_id is set
+            // (e.g. via a direct column), use that so nothing breaks.
+            $fallback = $user->getAttributeValue('location_id')
+                ?? $user->resolvedLocationId();
+
+            return $fallback ? [(int) $fallback] : [];
         }
 
         if ($user->isClient() && $user->client_location_id) {
-            return [$user->client_location_id];
+            return [(int) $user->client_location_id];
         }
 
         return [];

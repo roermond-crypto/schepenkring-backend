@@ -15,7 +15,7 @@ class AdminUserLocationUpdateRequest extends ApiRequest
                 'nullable',
                 Rule::in(array_map(fn (LocationRole $role) => $role->value, LocationRole::cases())),
             ],
-            'locations' => ['nullable', 'array', 'max:1'],
+            'locations' => ['nullable', 'array', 'max:20'],
             'locations.*.location_id' => ['required_with:locations', 'integer', 'exists:locations,id'],
             'locations.*.role' => [
                 'required_with:locations',

@@ -863,12 +863,9 @@ class CopilotLearningService
 
     private function refreshSuggestionsIfDue(): void
     {
-        if ((bool) config('copilot.learning.auto_create_enabled', false)) {
-            $this->mineFromHistory();
-
-            return;
-        }
-
+        // Always throttle via cache lock regardless of auto_create_enabled.
+        // Previously, when auto_create_enabled=true the throttle was bypassed,
+        // causing mineFromHistory() to run on every single audit event ingestion.
         $interval = max(30, (int) config('copilot.learning.refresh_interval_seconds', 300));
         $cacheKey = 'copilot:learning:refresh-lock';
 
@@ -876,7 +873,7 @@ class CopilotLearningService
             return;
         }
 
-        $this->mineFromHistory();
+        $this->mineFromHistory(null, (bool) config('copilot.learning.auto_create_enabled', false));
     }
 
     /**

@@ -192,8 +192,16 @@ class VideoAutomationService
         }
 
         $candidate = trim($candidate);
-        if ($candidate === '' || preg_match('/^https?:\/\//i', $candidate) === 1) {
+        if ($candidate === '') {
             return null;
+        }
+
+        // Download remote URLs (Cloudinary, S3, CDN) to a local temp file so
+        // FFmpeg can read them. Previously these were silently rejected, which
+        // caused renderableImageCount() to return 0 for all boats whose images
+        // are stored on an external CDN.
+        if (preg_match('/^https?:\/\//i', $candidate) === 1) {
+            return $this->downloadToTemp($candidate);
         }
 
         if (file_exists($candidate)) {
@@ -203,5 +211,41 @@ class VideoAutomationService
         $storagePath = Storage::disk('public')->path(ltrim($candidate, '/'));
 
         return file_exists($storagePath) ? $storagePath : null;
+    }
+
+    /**
+     * Download a remote image URL to a local temp file for FFmpeg rendering.
+     * Caches the file for 1 hour to avoid re-downloading during the same job.
+     */
+    private function downloadToTemp(string $url): ?string
+    {
+        try {
+            $ext     = pathinfo(parse_url($url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION) ?: 'jpg';
+            $tmpPath = sys_get_temp_dir() . '/yacht_img_' . md5($url) . '.' . $ext;
+
+            // Reuse cached download if still fresh (within 1 hour)
+            if (file_exists($tmpPath) && filemtime($tmpPath) > time() - 3600) {
+                return $tmpPath;
+            }
+
+            $ctx      = stream_context_create(['http' => ['timeout' => 15]]);
+            $contents = @file_get_contents($url, false, $ctx);
+
+            // Skip broken or suspiciously small responses
+            if ($contents === false || strlen($contents) < 500) {
+                return null;
+            }
+
+            file_put_contents($tmpPath, $contents);
+
+            return $tmpPath;
+        } catch (\Throwable $e) {
+            Log::warning('Failed to download image for video rendering', [
+                'url'   => $url,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 }

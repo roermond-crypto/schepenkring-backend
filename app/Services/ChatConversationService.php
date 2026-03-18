@@ -41,7 +41,17 @@ class ChatConversationService
         $boatId = $payload['boat_id'] ?? null;
         $harborId = $payload['harbor_id'] ?? $payload['widget_harbor_id'] ?? null;
         if (! $harborId) {
-            $harborId = \App\Models\Location::query()->value('id') ?? 1;
+            // Do NOT silently fall back to the first location in the DB —
+            // that would assign conversations to a random location and make
+            // them invisible to the correct location's staff dashboard.
+            // Instead, use the first location only as a last resort and log it
+            // so the issue is visible during debugging.
+            $fallbackId = \App\Models\Location::query()->value('id');
+            Log::warning('ChatConversationService: no harbor_id provided, falling back to first location', [
+                'fallback_location_id' => $fallbackId,
+                'visitor_id' => $visitorId,
+            ]);
+            $harborId = $fallbackId ?? 1;
         }
         $harborId = (int) $harborId;
 
