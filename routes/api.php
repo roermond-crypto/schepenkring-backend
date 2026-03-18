@@ -127,9 +127,13 @@ Route::prefix('public')->group(function () {
 });
 
 // Chat widget (public)
+// auth.optional: attempts Sanctum token auth if a Bearer token is present, but
+// does NOT reject unauthenticated (guest) requests. This ensures that logged-in
+// dashboard users are recognised as themselves instead of "Anonymous" when they
+// start or continue a chat conversation.
 Route::post('chat/widget/init', [ChatWidgetController::class, 'init']);
-Route::post('chat/conversations', [ChatConversationController::class, 'store']);
-Route::post('chat/conversations/{id}/messages', [ChatMessageController::class, 'store']);
+Route::post('chat/conversations', [ChatConversationController::class, 'store'])->middleware('auth.optional');
+Route::post('chat/conversations/{id}/messages', [ChatMessageController::class, 'store'])->middleware('auth.optional');
 
 // Public analytics
 Route::post('analytics/track', [AnalyticsController::class, 'track']);
