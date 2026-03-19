@@ -217,11 +217,8 @@ class CopilotFaqService
             $filter['location_id'] = ['$in' => $locationIds];
         }
 
-        // Pass language filter to Pinecone so results are pre-scoped by language,
-        // matching the same language filter applied to the DB fallback query.
-        $language = $this->language->normalize($context['language'] ?? null);
-        if ($language !== null) {
-            $filter['language'] = ['$eq' => $language];
+        if (! empty($context['visibility']) && is_string($context['visibility'])) {
+            $filter['visibility'] = ['$eq' => trim($context['visibility'])];
         }
 
         return collect($this->memory->searchSimilar($query, $limit, $filter))

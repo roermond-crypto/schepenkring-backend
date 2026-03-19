@@ -5,10 +5,10 @@ namespace App\Services;
 use App\Models\Faq;
 use App\Models\FaqKnowledgeDocument;
 use App\Models\FaqKnowledgeItem;
+use App\Models\KnowledgeIngestionRun;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class FaqKnowledgeIngestionService
@@ -16,7 +16,8 @@ class FaqKnowledgeIngestionService
     public function __construct(
         private FaqKnowledgeTextExtractor $extractor,
         private FaqKnowledgeQaGeneratorService $generator,
-        private FaqTrainingService $training
+        private FaqTrainingService $training,
+        private KnowledgeGraphService $graph
     ) {
     }
 
@@ -46,6 +47,30 @@ class FaqKnowledgeIngestionService
                 'original_size' => $file->getSize(),
             ],
         ]);
+
+        $run = KnowledgeIngestionRun::create([
+            'source_type' => $document->source_type,
+            'source_table' => $document->getTable(),
+            'source_reference' => (string) $document->id,
+            'location_id' => $document->location_id,
+            'triggered_by_user_id' => $user->id,
+            'status' => 'processing',
+            'documents_count' => 1,
+            'entities_count' => 1,
+            'metadata' => [
+                'document_id' => $document->id,
+                'file_name' => $document->file_name,
+            ],
+            'started_at' => now(),
+        ]);
+
+        $document->forceFill([
+            'metadata' => array_merge($document->metadata ?? [], [
+                'ingestion_run_id' => $run->id,
+            ]),
+        ])->save();
+
+        $this->graph->syncDocument($document);
 
         try {
             $text = $this->extractor->extract($file);
@@ -96,10 +121,30 @@ class FaqKnowledgeIngestionService
                     'processing_error' => null,
                 ])->save();
             });
+
+            $document = $document->fresh();
+            $this->graph->syncDocument($document);
+            $run->forceFill([
+                'status' => 'completed',
+                'chunks_count' => count($chunks),
+                'entities_count' => 1,
+                'metadata' => array_merge($run->metadata ?? [], [
+                    'generated_qna_count' => $count,
+                ]),
+                'completed_at' => now(),
+            ])->save();
         } catch (\Throwable $e) {
             $document->forceFill([
                 'status' => 'failed',
                 'processing_error' => $e->getMessage(),
+            ])->save();
+
+            $this->graph->syncDocument($document->fresh());
+            $run->forceFill([
+                'status' => 'failed',
+                'failures_count' => 1,
+                'error_text' => $e->getMessage(),
+                'completed_at' => now(),
             ])->save();
 
             throw $e;

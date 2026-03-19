@@ -7,12 +7,14 @@ use App\Models\CopilotAction;
 use App\Models\CopilotActionSuggestion;
 use App\Models\CopilotAuditEvent;
 use App\Models\Faq;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class CopilotMemoryService
 {
+    public function __construct(private KnowledgeVectorStoreService $vectors)
+    {
+    }
+
     public function rememberAuditLog(AuditLog $log): bool
     {
         $path = (string) (($log->meta ?? [])['path'] ?? '');
@@ -180,163 +182,16 @@ class CopilotMemoryService
      */
     public function searchSimilar(string $text, int $topK = 5, array $filter = []): array
     {
-        if (! $this->isEnabled() || trim($text) === '') {
-            return [];
-        }
-
-        $vector = $this->embed($text);
-        if (! $vector) {
-            return [];
-        }
-
-        try {
-            $response = Http::withHeaders([
-                'Api-Key' => (string) config('services.pinecone.key'),
-                'Content-Type' => 'application/json',
-            ])->timeout(10)->post(rtrim((string) config('services.pinecone.host'), '/') . '/query', array_filter([
-                'vector' => $vector,
-                'topK' => $topK,
-                'includeMetadata' => true,
-                'namespace' => config('services.pinecone.namespace'),
-                'filter' => empty($filter) ? null : $filter,
-            ], static fn ($value) => $value !== null));
-
-            if ($response->failed()) {
-                Log::warning('Copilot memory search failed', [
-                    'status' => $response->status(),
-                    'body' => Str::limit($response->body(), 1000, '...'),
-                ]);
-                return [];
-            }
-
-            return collect($response->json('matches') ?? [])
-                ->map(function (array $match) {
-                    return [
-                        'id' => $match['id'] ?? null,
-                        'score' => (float) ($match['score'] ?? 0),
-                        'metadata' => $match['metadata'] ?? [],
-                    ];
-                })
-                ->all();
-        } catch (\Throwable $e) {
-            Log::warning('Copilot memory search exception', ['error' => $e->getMessage()]);
-            return [];
-        }
+        return $this->vectors->search($text, $topK, $filter);
     }
 
     private function remember(string $id, string $text, array $metadata = []): bool
     {
-        if (! $this->isEnabled()) {
-            return false;
-        }
-
-        $vector = $this->embed($text);
-        if (! $vector) {
-            return false;
-        }
-
-        try {
-            $response = Http::withHeaders([
-                'Api-Key' => (string) config('services.pinecone.key'),
-                'Content-Type' => 'application/json',
-            ])->timeout(10)->post(rtrim((string) config('services.pinecone.host'), '/') . '/vectors/upsert', [
-                'namespace' => config('services.pinecone.namespace', 'copilot'),
-                'vectors' => [[
-                    'id' => Str::limit($id, 200, ''),
-                    'values' => $vector,
-                    'metadata' => array_merge($metadata, [
-                        'text' => Str::limit($text, 1000, ''),
-                    ]),
-                ]],
-            ]);
-
-            if ($response->failed()) {
-                Log::warning('Copilot memory upsert failed', [
-                    'status' => $response->status(),
-                    'body' => Str::limit($response->body(), 1000, '...'),
-                ]);
-                return false;
-            }
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('Copilot memory upsert exception', ['error' => $e->getMessage()]);
-            return false;
-        }
+        return $this->vectors->upsertText($id, $text, $metadata);
     }
 
     private function forget(string $id): bool
     {
-        if (! $this->isEnabled()) {
-            return false;
-        }
-
-        try {
-            $response = Http::withHeaders([
-                'Api-Key' => (string) config('services.pinecone.key'),
-                'Content-Type' => 'application/json',
-            ])->timeout(10)->post(rtrim((string) config('services.pinecone.host'), '/') . '/vectors/delete', [
-                'namespace' => config('services.pinecone.namespace', 'copilot'),
-                'ids' => [Str::limit($id, 200, '')],
-            ]);
-
-            if ($response->failed()) {
-                Log::warning('Copilot memory delete failed', [
-                    'status' => $response->status(),
-                    'body' => Str::limit($response->body(), 1000, '...'),
-                ]);
-                return false;
-            }
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('Copilot memory delete exception', ['error' => $e->getMessage()]);
-            return false;
-        }
-    }
-
-    /**
-     * @return array<int, float>|null
-     */
-    private function embed(string $text): ?array
-    {
-        try {
-            $model = (string) config('services.openai.embedding_model', 'text-embedding-3-small');
-            $dimensions = (int) config('services.openai.embedding_dimensions', 1408);
-            $payload = [
-                'model' => $model,
-                'input' => $text,
-            ];
-
-            if ($dimensions > 0 && str_starts_with($model, 'text-embedding-3-')) {
-                $payload['dimensions'] = $dimensions;
-            }
-
-            $response = Http::withToken((string) config('services.openai.key'))
-                ->timeout((int) config('services.openai.embedding_timeout', 15))
-                ->post('https://api.openai.com/v1/embeddings', $payload);
-
-            if ($response->failed()) {
-                Log::warning('Copilot memory embedding failed', [
-                    'status' => $response->status(),
-                    'body' => Str::limit($response->body(), 1000, '...'),
-                ]);
-                return null;
-            }
-
-            $vector = $response->json('data.0.embedding');
-
-            return is_array($vector) ? $vector : null;
-        } catch (\Throwable $e) {
-            Log::warning('Copilot memory embedding exception', ['error' => $e->getMessage()]);
-            return null;
-        }
-    }
-
-    private function isEnabled(): bool
-    {
-        return (bool) config('services.pinecone.key')
-            && (bool) config('services.pinecone.host')
-            && (bool) config('services.openai.key');
+        return $this->vectors->delete($id);
     }
 }

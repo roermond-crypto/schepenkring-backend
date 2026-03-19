@@ -5,6 +5,8 @@ use App\Enums\UserType;
 use App\Models\Faq;
 use App\Models\FaqKnowledgeDocument;
 use App\Models\FaqKnowledgeItem;
+use App\Models\KnowledgeEntity;
+use App\Models\KnowledgeIngestionRun;
 use App\Models\Location;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -75,12 +77,24 @@ test('staff can upload a knowledge document and generate pending faq review item
 
     $document = FaqKnowledgeDocument::query()->first();
     $item = FaqKnowledgeItem::query()->first();
+    $documentEntity = KnowledgeEntity::query()
+        ->where('type', 'document')
+        ->where('source_table', 'faq_knowledge_documents')
+        ->where('source_id', $document?->id)
+        ->first();
+    $run = KnowledgeIngestionRun::query()->first();
 
     expect($document)->not->toBeNull();
     expect($document->source_type)->toBe('pdf_document');
     expect($item)->not->toBeNull();
     expect($item->status)->toBe('pending');
     expect($item->approved_faq_id)->toBeNull();
+    expect($documentEntity)->not->toBeNull();
+    expect($documentEntity->title)->toBe($document->file_name);
+    expect($run)->not->toBeNull();
+    expect($run->status)->toBe('completed');
+    expect($run->documents_count)->toBe(1);
+    expect($run->chunks_count)->toBe(1);
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), '/vectors/upsert'));
 });
@@ -159,11 +173,18 @@ test('approving a generated knowledge item creates a faq and upserts it to pinec
         ->assertJsonPath('item.approved_faq_id', 1);
 
     $faq = Faq::query()->first();
+    $faqEntity = KnowledgeEntity::query()
+        ->where('type', 'faq')
+        ->where('source_table', 'faqs')
+        ->where('source_id', $faq?->id)
+        ->first();
 
     expect($faq)->not->toBeNull();
     expect($faq->question)->toBe('Can a client change booking after payment?');
     expect($faq->source_type)->toBe('text_document');
     expect($item->fresh()->approved_faq_id)->toBe($faq->id);
+    expect($faqEntity)->not->toBeNull();
+    expect(data_get($faqEntity->metadata, 'source_type'))->toBe('text_document');
 
     Http::assertSent(fn ($request) => $request->url() === 'https://pinecone.test/vectors/upsert');
 });

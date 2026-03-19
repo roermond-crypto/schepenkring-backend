@@ -281,6 +281,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Location FAQ training
     Route::get('faqs', [FaqController::class, 'index']);
     Route::post('faqs', [FaqController::class, 'store']);
+    Route::post('faqs/bulk', [FaqController::class, 'bulk']);
     Route::get('faqs/knowledge/documents', [FaqKnowledgeController::class, 'documents']);
     Route::post('faqs/knowledge/documents', [FaqKnowledgeController::class, 'upload']);
     Route::get('faqs/knowledge/items', [FaqKnowledgeController::class, 'items']);

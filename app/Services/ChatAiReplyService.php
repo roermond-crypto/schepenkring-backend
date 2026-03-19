@@ -158,19 +158,73 @@ class ChatAiReplyService
         string $language,
         array $options
     ): array {
-        try {
-            return $this->openAiConfigured()
-                ? $this->callOpenAi($conversation, $visitorMessage, $question, $context, $language, $options)
-                : $this->fallbackReply($question, $context, $language);
-        } catch (Throwable $exception) {
+        if ($this->looksLikeGreetingOrSmallTalk($question)) {
+            return [
+                'reply' => $this->greetingFallback($context, $language),
+                'confidence' => 0.44,
+                'should_handoff' => false,
+                'handoff_reason' => '',
+                'used_sources' => $this->contextSources($context),
+                'provider' => 'fallback',
+                'model' => null,
+                'response_id' => null,
+                'usage' => null,
+            ];
+        }
+
+        $exceptions = [];
+
+        foreach ($this->providerSequence() as $provider) {
+            try {
+                return $this->callProvider(
+                    $provider,
+                    $conversation,
+                    $visitorMessage,
+                    $question,
+                    $context,
+                    $language,
+                    $options
+                );
+            } catch (Throwable $exception) {
+                $exceptions[] = $exception;
+            }
+        }
+
+        if ($exceptions !== []) {
+            $lastException = $exceptions[array_key_last($exceptions)];
+
             return array_merge(
                 $this->fallbackReply($question, $context, $language),
                 [
                     'provider' => 'fallback',
-                    'handoff_reason' => Str::limit($exception->getMessage(), 255, ''),
+                    'should_handoff' => true,
+                    'handoff_reason' => Str::limit($lastException->getMessage(), 255, ''),
                 ]
             );
         }
+
+        return $this->fallbackReply($question, $context, $language);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
+     */
+    private function callProvider(
+        string $provider,
+        Conversation $conversation,
+        Message $visitorMessage,
+        string $question,
+        array $context,
+        string $language,
+        array $options
+    ): array {
+        return match ($provider) {
+            'gemini' => $this->callGemini($conversation, $visitorMessage, $question, $context, $language, $options),
+            'openai' => $this->callOpenAi($conversation, $visitorMessage, $question, $context, $language, $options),
+            default => throw new \RuntimeException('Unsupported chat AI provider: ' . $provider),
+        };
     }
 
     /**
@@ -259,6 +313,77 @@ class ChatAiReplyService
 
     /**
      * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
+     */
+    private function callGemini(
+        Conversation $conversation,
+        Message $visitorMessage,
+        string $question,
+        array $context,
+        string $language,
+        array $options
+    ): array {
+        $response = Http::timeout((int) config('services.gemini.chat_timeout', 45))
+            ->post(sprintf(
+                'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s',
+                $this->geminiModel(),
+                urlencode((string) config('services.gemini.key'))
+            ), [
+                'system_instruction' => [
+                    'parts' => [[
+                        'text' => $this->instructions($language, $options['instruction'] ?? null),
+                    ]],
+                ],
+                'contents' => [[
+                    'role' => 'user',
+                    'parts' => [[
+                        'text' => json_encode([
+                            'task' => 'Answer the customer message using only the supplied system context and knowledge.',
+                            'customer_message' => $question,
+                            'requested_language' => $language,
+                            'system_context' => $context,
+                            'reply_constraints' => [
+                                'tone' => 'fluent, warm, concise, professional',
+                                'max_words' => 140,
+                                'no_markdown' => true,
+                            ],
+                        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    ]],
+                ]],
+                'generationConfig' => [
+                    'temperature' => 0.2,
+                    'maxOutputTokens' => (int) config('services.gemini.chat_max_output_tokens', 450),
+                    'responseMimeType' => 'application/json',
+                ],
+            ]);
+
+        if ($response->failed()) {
+            throw new \RuntimeException('Gemini chat reply failed: ' . $response->body());
+        }
+
+        $body = $response->json();
+        $content = $this->extractGeminiText($body);
+        $parsed = $this->decodeStructuredReply($content, 'Gemini');
+
+        return [
+            'reply' => trim((string) $parsed['reply']),
+            'confidence' => round(min(1, max(0, (float) ($parsed['confidence'] ?? 0.0))), 2),
+            'should_handoff' => (bool) ($parsed['should_handoff'] ?? false),
+            'handoff_reason' => Str::limit((string) ($parsed['handoff_reason'] ?? ''), 255, ''),
+            'used_sources' => array_values(array_filter(array_map(
+                static fn ($value) => is_scalar($value) ? (string) $value : null,
+                (array) ($parsed['used_sources'] ?? [])
+            ))),
+            'provider' => 'gemini',
+            'model' => data_get($body, 'modelVersion', $this->geminiModel()),
+            'response_id' => data_get($body, 'responseId'),
+            'usage' => data_get($body, 'usageMetadata'),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     private function fallbackReply(string $question, array $context, string $language): array
@@ -289,10 +414,7 @@ class ChatAiReplyService
                 'confidence' => 0.35,
                 'should_handoff' => true,
                 'handoff_reason' => 'schedule_request_requires_handoff',
-                'used_sources' => array_values(array_filter([
-                    data_get($context, 'location.id') ? 'location:' . data_get($context, 'location.id') : null,
-                    data_get($context, 'yacht.id') ? 'yacht:' . data_get($context, 'yacht.id') : null,
-                ])),
+                'used_sources' => $this->contextSources($context),
                 'provider' => 'fallback',
                 'model' => null,
                 'response_id' => null,
@@ -315,13 +437,11 @@ class ChatAiReplyService
         }
 
         return [
-            'reply' => $this->genericFallback($language),
+            'reply' => $this->genericFallback($context, $language),
             'confidence' => 0.2,
-            'should_handoff' => true,
-            'handoff_reason' => 'insufficient_grounded_context',
-            'used_sources' => array_values(array_filter([
-                data_get($context, 'location.id') ? 'location:' . data_get($context, 'location.id') : null,
-            ])),
+            'should_handoff' => false,
+            'handoff_reason' => '',
+            'used_sources' => $this->contextSources($context),
             'provider' => 'fallback',
             'model' => null,
             'response_id' => null,
@@ -423,9 +543,89 @@ PROMPT;
         return trim(implode("\n", $parts));
     }
 
+    /**
+     * @param  array<string, mixed>  $body
+     */
+    private function extractGeminiText(array $body): string
+    {
+        $parts = [];
+
+        foreach ((array) ($body['candidates'] ?? []) as $candidate) {
+            foreach ((array) data_get($candidate, 'content.parts', []) as $part) {
+                if (is_string($part['text'] ?? null)) {
+                    $parts[] = $part['text'];
+                }
+            }
+        }
+
+        return trim(implode("\n", $parts));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeStructuredReply(string $content, string $provider): array
+    {
+        $cleaned = trim((string) preg_replace('/```json\s*|\s*```/i', '', $content));
+
+        if ($cleaned !== '' && (! str_starts_with($cleaned, '{') || ! str_ends_with($cleaned, '}'))) {
+            $start = strpos($cleaned, '{');
+            $end = strrpos($cleaned, '}');
+
+            if ($start !== false && $end !== false && $end > $start) {
+                $cleaned = substr($cleaned, $start, $end - $start + 1);
+            }
+        }
+
+        $parsed = json_decode($cleaned, true);
+
+        if (! is_array($parsed) || ! is_string($parsed['reply'] ?? null)) {
+            throw new \RuntimeException($provider . ' chat reply did not return valid structured output.');
+        }
+
+        return $parsed;
+    }
+
     private function openAiConfigured(): bool
     {
         return (string) config('services.openai.key') !== '';
+    }
+
+    private function geminiConfigured(): bool
+    {
+        return (string) config('services.gemini.key') !== '';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function providerSequence(): array
+    {
+        $configured = array_values(array_filter([
+            $this->geminiConfigured() ? 'gemini' : null,
+            $this->openAiConfigured() ? 'openai' : null,
+        ]));
+
+        $preferred = strtolower(trim((string) config('services.chat_ai.provider', '')));
+        if ($preferred !== '' && in_array($preferred, $configured, true)) {
+            $others = array_values(array_filter(
+                $configured,
+                static fn (string $provider) => $provider !== $preferred
+            ));
+
+            return array_merge([$preferred], $others);
+        }
+
+        if ($this->geminiConfigured()) {
+            $others = array_values(array_filter(
+                $configured,
+                static fn (string $provider) => $provider !== 'gemini'
+            ));
+
+            return array_merge(['gemini'], $others);
+        }
+
+        return $configured;
     }
 
     private function model(): string
@@ -433,9 +633,40 @@ PROMPT;
         return (string) config('services.openai.chat_model', 'gpt-5-mini');
     }
 
+    private function geminiModel(): string
+    {
+        return (string) config('services.gemini.chat_model', 'gemini-2.5-flash');
+    }
+
     private function looksLikeSchedulingRequest(string $question): bool
     {
         return preg_match('/\b(schedule|appointment|viewing|visit|callback|call me|afspraak|bezichtiging|terugbellen|rendez-vous|visite)\b/i', $question) === 1;
+    }
+
+    private function looksLikeGreetingOrSmallTalk(string $question): bool
+    {
+        $normalized = mb_strtolower(trim($question));
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        return preg_match(
+            '/^(?:(?:hi+|hello+|hey+|heya|hallo|bonjour|salut|good\s+(?:morning|afternoon|evening))|(?:how\s+are\s+you(?:\s+doing)?|how\s*r\s*u|are\s+you\s+there|hoe\s+gaat\s+het|wie\s+geht\s+es|ca\s+va))[\s!.?]*$/iu',
+            $normalized
+        ) === 1;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<int, string>
+     */
+    private function contextSources(array $context): array
+    {
+        return array_values(array_filter([
+            data_get($context, 'location.id') ? 'location:' . data_get($context, 'location.id') : null,
+            data_get($context, 'yacht.id') ? 'yacht:' . data_get($context, 'yacht.id') : null,
+        ]));
     }
 
     /**
@@ -479,13 +710,58 @@ PROMPT;
         };
     }
 
-    private function genericFallback(string $language): string
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function greetingFallback(array $context, string $language): string
     {
+        $locationName = trim((string) data_get($context, 'location.name', ''));
+        $yachtName = trim((string) data_get($context, 'yacht.name', ''));
+
         return match ($language) {
-            'nl' => 'Dank voor uw bericht. Ik heb hier nog niet genoeg betrouwbare gegevens om precies te antwoorden, maar een medewerker van deze locatie kan het direct voor u oppakken.',
-            'de' => 'Danke fuer Ihre Nachricht. Ich habe hier noch nicht genug verlaessliche Daten fuer eine genaue Antwort, aber ein Mitarbeiter dieses Standorts kann direkt uebernehmen.',
-            'fr' => 'Merci pour votre message. Je n ai pas encore assez d informations fiables ici pour repondre precisement, mais un collaborateur de ce site peut reprendre cela directement.',
-            default => 'Thanks for your message. I do not have enough reliable data here to answer precisely yet, but a team member from this location can take it over directly.',
+            'nl' => $yachtName !== ''
+                ? "Hallo, ik help u graag met vragen over {$yachtName}, zoals specificaties, prijs, beschikbaarheid en bezichtigingen. Wat wilt u weten?"
+                : ($locationName !== ''
+                    ? "Hallo, ik help u graag met vragen over {$locationName}, beschikbare jachten, marina diensten, opslag, prijzen en bezichtigingen. Wat wilt u weten?"
+                    : 'Hallo, ik help u graag met vragen over onze jachten, marina diensten, opslag, prijzen en bezichtigingen. Wat wilt u weten?'),
+            'de' => $yachtName !== ''
+                ? "Hallo, ich helfe gern bei Fragen zu {$yachtName}, etwa zu Daten, Preis, Verfuegbarkeit und Besichtigungen. Was moechten Sie wissen?"
+                : ($locationName !== ''
+                    ? "Hallo, ich helfe gern bei Fragen zu {$locationName}, verfuegbaren Yachten, Marina-Services, Lagerung, Preisen und Besichtigungen. Was moechten Sie wissen?"
+                    : 'Hallo, ich helfe gern bei Fragen zu unseren Yachten, Marina-Services, Lagerung, Preisen und Besichtigungen. Was moechten Sie wissen?'),
+            'fr' => $yachtName !== ''
+                ? "Bonjour, je peux vous aider avec des questions sur {$yachtName}, comme les caracteristiques, le prix, la disponibilite et les visites. Que souhaitez-vous savoir ?"
+                : ($locationName !== ''
+                    ? "Bonjour, je peux vous aider avec des questions sur {$locationName}, les yachts disponibles, les services de marina, le stockage, les prix et les visites. Que souhaitez-vous savoir ?"
+                    : 'Bonjour, je peux vous aider avec des questions sur nos yachts, les services de marina, le stockage, les prix et les visites. Que souhaitez-vous savoir ?'),
+            default => $yachtName !== ''
+                ? "Hi, I can help with questions about {$yachtName}, including specifications, price, availability, and viewings. What would you like to know?"
+                : ($locationName !== ''
+                    ? "Hi, I can help with questions about {$locationName}, available yachts, marina services, storage, pricing, and viewings. What would you like to know?"
+                    : 'Hi, I can help with questions about our yachts, marina services, storage, pricing, and viewings. What would you like to know?'),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function genericFallback(array $context, string $language): string
+    {
+        $locationName = trim((string) data_get($context, 'location.name', ''));
+
+        return match ($language) {
+            'nl' => $locationName !== ''
+                ? "Dank voor uw bericht. Ik kon hiervoor nog geen betrouwbaar website-antwoord vinden voor {$locationName}. U kunt me vragen naar beschikbare jachten, marina diensten, opslag, prijzen of bezichtigingen, en een medewerker kan helpen als dat nodig is."
+                : 'Dank voor uw bericht. Ik kon hiervoor nog geen betrouwbaar website-antwoord vinden. U kunt me vragen naar beschikbare jachten, marina diensten, opslag, prijzen of bezichtigingen, en een medewerker kan helpen als dat nodig is.',
+            'de' => $locationName !== ''
+                ? "Danke fuer Ihre Nachricht. Ich konnte dafuer noch keine verlaessliche Website-Antwort fuer {$locationName} finden. Sie koennen mich zu verfuegbaren Yachten, Marina-Services, Lagerung, Preisen oder Besichtigungen fragen, und ein Mitarbeiter kann helfen, wenn noetig."
+                : 'Danke fuer Ihre Nachricht. Ich konnte dafuer noch keine verlaessliche Website-Antwort finden. Sie koennen mich zu verfuegbaren Yachten, Marina-Services, Lagerung, Preisen oder Besichtigungen fragen, und ein Mitarbeiter kann helfen, wenn noetig.',
+            'fr' => $locationName !== ''
+                ? "Merci pour votre message. Je n ai pas encore trouve de reponse fiable du site pour {$locationName}. Vous pouvez me poser des questions sur les yachts disponibles, les services de marina, le stockage, les prix ou les visites, et un collaborateur peut aider si besoin."
+                : 'Merci pour votre message. Je n ai pas encore trouve de reponse fiable du site. Vous pouvez me poser des questions sur les yachts disponibles, les services de marina, le stockage, les prix ou les visites, et un collaborateur peut aider si besoin.',
+            default => $locationName !== ''
+                ? "Thanks for your message. I could not find a trusted website answer for that yet for {$locationName}. You can ask me about available yachts, marina services, storage, pricing, or viewings, and a team member can help if needed."
+                : 'Thanks for your message. I could not find a trusted website answer for that yet. You can ask me about available yachts, marina services, storage, pricing, or viewings, and a team member can help if needed.',
         };
     }
 }

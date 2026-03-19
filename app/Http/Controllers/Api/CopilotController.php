@@ -61,8 +61,10 @@ class CopilotController extends Controller
         $response['language_detected_from_input'] = $resolvedLanguage['detected_from_input'];
         $response['locale_updated'] = $localeUpdated;
 
-        $this->logResolveEvent($request, $user->id, $validated['text'], $response);
-        $this->brain->captureCopilotResolution($user, $validated['text'], $response, $context);
+        if (! $this->isPreviewMode($context)) {
+            $this->logResolveEvent($request, $user->id, $validated['text'], $response);
+            $this->brain->captureCopilotResolution($user, $validated['text'], $response, $context);
+        }
 
         return response()
             ->json($response)
@@ -193,5 +195,13 @@ class CopilotController extends Controller
         ])->saveQuietly();
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function isPreviewMode(array $context): bool
+    {
+        return filter_var($context['preview_mode'] ?? false, FILTER_VALIDATE_BOOL);
     }
 }
