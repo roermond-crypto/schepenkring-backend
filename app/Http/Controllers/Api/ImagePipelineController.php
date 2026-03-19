@@ -93,8 +93,8 @@ class ImagePipelineController extends Controller
                     'sort_order'        => $currentCount + $index,
                 ]);
 
-                // Dispatch processing job (silent optimization in background)
-                ProcessYachtImageJob::dispatch($image->id);
+                // Queue the optimization after the HTTP response is sent so uploads return faster.
+                ProcessYachtImageJob::dispatchAfterResponse($image->id);
 
                 $uploaded[] = $image->fresh();
             } catch (\Throwable $e) {
@@ -276,6 +276,7 @@ class ImagePipelineController extends Controller
 
     /**
      * POST /yachts/{yachtId}/images/reorder
+     * POST /yachts/{yachtId}/images/reorderß
      * Persist manual drag-and-drop image ordering.
      */
     public function reorder(Request $request, $yachtId): JsonResponse

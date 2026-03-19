@@ -18,6 +18,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(BoatFieldSeeder::class);
+        $this->call(BoatFieldMappingSeeder::class);
+
         $location = Location::firstOrCreate([
             'code' => 'HQ',
         ], [
