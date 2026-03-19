@@ -11,6 +11,7 @@ class ChatAiContextService
 {
     public function __construct(
         private CopilotFaqService $faqService,
+        private KnowledgeContextRetrievalService $relatedKnowledge,
         private CopilotLanguage $language
     ) {
     }
@@ -41,11 +42,17 @@ class ChatAiContextService
             'model' => $yacht?->model,
         ], static fn ($value) => $value !== null && $value !== '');
 
-        $knowledge = $this->faqService->answer(
+        $faqKnowledge = $this->faqService->answer(
             $question,
             $conversation->location_id,
             $knowledgeContext,
             3
+        );
+
+        $relatedKnowledge = $this->relatedKnowledge->retrieve(
+            $question,
+            $conversation->location,
+            $yacht
         );
 
         $recentMessages = $conversation->messages()
@@ -69,10 +76,22 @@ class ChatAiContextService
         if ($yacht?->id) {
             $sources[] = 'yacht:' . $yacht->id;
         }
-        foreach ((array) data_get($knowledge, 'answers.0.sources', []) as $source) {
+        foreach ((array) data_get($faqKnowledge, 'answers.0.sources', []) as $source) {
             $faqId = $source['faq_id'] ?? $source['id'] ?? null;
             if ($faqId) {
                 $sources[] = 'faq:' . $faqId;
+            }
+        }
+        foreach ((array) data_get($relatedKnowledge, 'entities', []) as $entity) {
+            $sourceRef = $entity['source_ref'] ?? null;
+            $knowledgeEntityId = $entity['knowledge_entity_id'] ?? null;
+
+            if ($sourceRef) {
+                $sources[] = $sourceRef;
+            }
+
+            if ($knowledgeEntityId) {
+                $sources[] = 'knowledge_entity:' . $knowledgeEntityId;
             }
         }
 
@@ -105,7 +124,7 @@ class ChatAiContextService
                 'source_url' => $conversation->lead->source_url,
             ]) : null,
             'yacht' => $yacht ? $this->serializeYacht($yacht, $language) : null,
-            'knowledge' => $this->serializeKnowledge($knowledge),
+            'knowledge' => $this->serializeKnowledge($faqKnowledge, $relatedKnowledge),
             'recent_messages' => $recentMessages,
             'available_sources' => array_values(array_unique($sources)),
         ];
@@ -202,17 +221,18 @@ class ChatAiContextService
     }
 
     /**
-     * @param  array<string, mixed>  $knowledge
+     * @param  array<string, mixed>  $faqKnowledge
+     * @param  array<string, mixed>  $relatedKnowledge
      * @return array<string, mixed>
      */
-    private function serializeKnowledge(array $knowledge): array
+    private function serializeKnowledge(array $faqKnowledge, array $relatedKnowledge): array
     {
-        $answer = $knowledge['answers'][0] ?? null;
+        $answer = $faqKnowledge['answers'][0] ?? null;
         $hasTrustedAnswer = is_array($answer) && ! ($answer['used_fallback'] ?? false);
 
         return [
-            'strategy' => $knowledge['strategy'] ?? null,
-            'confidence' => $knowledge['confidence'] ?? 0.0,
+            'strategy' => $faqKnowledge['strategy'] ?? null,
+            'confidence' => $faqKnowledge['confidence'] ?? 0.0,
             'top_answer' => $hasTrustedAnswer ? $this->compactArray([
                 'question' => $answer['question'] ?? null,
                 'answer' => $answer['answer'] ?? null,
@@ -228,7 +248,10 @@ class ChatAiContextService
                     'location_id' => $source['location_id'] ?? null,
                 ]), (array) ($answer['sources'] ?? [])),
             ]) : null,
-            'trace' => $knowledge['trace'] ?? null,
+            'related_entities' => array_values((array) ($relatedKnowledge['entities'] ?? [])),
+            'related_matches' => array_values((array) ($relatedKnowledge['matches'] ?? [])),
+            'trace' => $faqKnowledge['trace'] ?? null,
+            'related_trace' => $relatedKnowledge['trace'] ?? null,
         ];
     }
 

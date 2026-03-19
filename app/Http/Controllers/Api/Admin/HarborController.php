@@ -13,19 +13,23 @@ use App\Models\User;
 use App\Models\Yacht;
 use App\Services\ActionSecurity;
 use App\Services\Ga4DataApiService;
+use App\Services\KnowledgeGraphService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class HarborController extends Controller
 {
     public function __construct(
         private Ga4DataApiService $ga4,
-        private ActionSecurity $security
+        private ActionSecurity $security,
+        private KnowledgeGraphService $knowledgeGraph
     )
     {
     }
@@ -74,6 +78,8 @@ class HarborController extends Controller
             'status' => $validated['status'] ?? 'ACTIVE',
         ]);
 
+        $this->syncLocationKnowledgeSafely($harbor);
+
         return response()->json([
             'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
         ], 201);
@@ -98,6 +104,7 @@ class HarborController extends Controller
         }
 
         $harbor->update($validated);
+        $this->syncLocationKnowledgeSafely($harbor);
 
         return response()->json([
             'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
@@ -109,6 +116,7 @@ class HarborController extends Controller
         $this->authorizeAdmin($request);
 
         $harbor->delete();
+        $this->removeLocationKnowledgeSafely($harbor);
 
         return response()->json([
             'message' => 'Location deleted.',
@@ -265,6 +273,30 @@ class HarborController extends Controller
         }
 
         return [$end->subDays(29)->startOfDay(), $end, '30d'];
+    }
+
+    private function syncLocationKnowledgeSafely(Location $location): void
+    {
+        try {
+            $this->knowledgeGraph->syncLocation($location->fresh());
+        } catch (\Throwable $e) {
+            Log::warning('Location knowledge sync failed after harbor update', [
+                'location_id' => $location->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function removeLocationKnowledgeSafely(Location $location): void
+    {
+        try {
+            $this->knowledgeGraph->removeLocation($location);
+        } catch (\Throwable $e) {
+            Log::warning('Location knowledge cleanup failed after harbor delete', [
+                'location_id' => $location->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function buildSnapshotCounts(Collection $harborIds): array

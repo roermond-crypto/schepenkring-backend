@@ -4,6 +4,8 @@ use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\CopilotAuditEvent;
 use App\Models\Faq;
+use App\Models\KnowledgeEntity;
+use App\Models\KnowledgeRelationship;
 use App\Models\Location;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -94,6 +96,26 @@ test('copilot feedback stores a corrected faq and deprecates the bad answer', fu
     expect(Faq::query()->findOrFail($newFaqId)->tags)->toBe(['booking', 'payment']);
     expect($wrongFaq->fresh()->deprecated_at)->not->toBeNull();
     expect($wrongFaq->fresh()->superseded_by_faq_id)->toBe($newFaqId);
+
+    $oldEntity = KnowledgeEntity::query()
+        ->where('type', 'faq')
+        ->where('source_table', 'faqs')
+        ->where('source_id', $wrongFaq->id)
+        ->first();
+    $newEntity = KnowledgeEntity::query()
+        ->where('type', 'faq')
+        ->where('source_table', 'faqs')
+        ->where('source_id', $newFaqId)
+        ->first();
+    $relationship = KnowledgeRelationship::query()
+        ->where('relationship_type', 'superseded_by')
+        ->first();
+
+    expect($oldEntity)->not->toBeNull();
+    expect($newEntity)->not->toBeNull();
+    expect($relationship)->not->toBeNull();
+    expect($relationship->from_entity_id)->toBe($oldEntity->id);
+    expect($relationship->to_entity_id)->toBe($newEntity->id);
 
     $feedbackEvent = CopilotAuditEvent::query()
         ->where('source', 'learning')

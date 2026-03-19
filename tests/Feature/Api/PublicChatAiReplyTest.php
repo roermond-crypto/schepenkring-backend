@@ -222,6 +222,99 @@ test('public lead creation can use gemini for grounded website chat replies', fu
     });
 });
 
+test('public chat context includes related knowledge entities for the current yacht and harbor', function () {
+    config()->set('services.openai.key', 'test-openai');
+    config()->set('services.chat_ai.provider', 'openai');
+    config()->set('services.openai.chat_model', 'gpt-5-mini');
+
+    $location = Location::create([
+        'name' => 'Medemblik Marina',
+        'code' => 'MED',
+        'status' => 'ACTIVE',
+        'chat_widget_welcome_text' => 'Ask NauticSecure AI about this harbor and yacht.',
+    ]);
+
+    $yacht = Yacht::create([
+        'location_id' => $location->id,
+        'boat_name' => 'Grand Soleil 40',
+        'manufacturer' => 'Grand Soleil',
+        'model' => '40',
+        'year' => 2020,
+        'status' => 'available',
+        'price' => 289000,
+        'location_city' => 'Medemblik',
+        'external_url' => 'https://schepen-kring.nl/yachts/grand-soleil-40',
+        'short_description_en' => 'Fast cruiser with a secure cockpit and responsive helm.',
+    ]);
+
+    Faq::create([
+        'location_id' => $location->id,
+        'question' => 'Is berth assistance available?',
+        'answer' => 'Yes, berth assistance is available during opening hours.',
+        'category' => 'Services',
+        'language' => 'en',
+        'visibility' => 'public',
+        'source_type' => 'faq',
+    ]);
+
+    app(\App\Services\KnowledgeGraphService::class)->syncLocation($location);
+    app(\App\Services\KnowledgeGraphService::class)->syncYacht($yacht);
+
+    Http::fake([
+        'https://api.openai.com/v1/responses' => Http::response([
+            'id' => 'resp_chat_related_entities',
+            'model' => 'gpt-5-mini',
+            'output' => [[
+                'type' => 'message',
+                'role' => 'assistant',
+                'status' => 'completed',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => json_encode([
+                        'reply' => 'Yes, berth assistance is available and this yacht is listed in Medemblik Marina.',
+                        'confidence' => 0.89,
+                        'should_handoff' => false,
+                        'handoff_reason' => '',
+                        'used_sources' => [
+                            'yacht:' . $yacht->id,
+                            'location:' . $location->id,
+                        ],
+                    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                ]],
+            ]],
+            'usage' => [
+                'input_tokens' => 410,
+                'output_tokens' => 80,
+                'total_tokens' => 490,
+            ],
+        ], 200),
+    ]);
+
+    $this->postJson('/api/public/leads', [
+        'location_id' => $location->id,
+        'source_url' => $yacht->external_url,
+        'name' => 'Mila Sailor',
+        'email' => 'mila@example.test',
+        'message' => 'Is berth assistance available?',
+        'client_message_id' => 'lead-ai-related-1',
+        'visitor_id' => 'visitor-related-1',
+    ])->assertCreated();
+
+    Http::assertSent(function ($request) use ($location, $yacht) {
+        if ($request->url() !== 'https://api.openai.com/v1/responses') {
+            return false;
+        }
+
+        $payload = (string) data_get($request->data(), 'input.0.content.0.text');
+
+        return str_contains($payload, '"related_entities"')
+            && str_contains($payload, '"source_ref":"yacht:' . $yacht->id . '"')
+            && str_contains($payload, '"to_source_ref":"location:' . $location->id . '"')
+            && str_contains($payload, $location->name)
+            && str_contains($payload, '"type":"located_at"');
+    });
+});
+
 test('public chat only grounds answers with public faq entries', function () {
     config()->set('services.openai.key', 'test-openai');
     config()->set('services.chat_ai.provider', 'openai');

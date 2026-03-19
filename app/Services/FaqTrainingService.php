@@ -12,7 +12,8 @@ class FaqTrainingService
 {
     public function __construct(
         private CopilotMemoryService $memory,
-        private CopilotLanguage $language
+        private CopilotLanguage $language,
+        private KnowledgeGraphService $graph
     ) {
     }
 
@@ -82,7 +83,10 @@ class FaqTrainingService
             ])->saveQuietly();
         }
 
-        return $faq->fresh();
+        $faq = $faq->fresh();
+        $this->graph->syncFaq($faq);
+
+        return $faq;
     }
 
     /**
@@ -166,11 +170,13 @@ class FaqTrainingService
         ])->saveQuietly();
 
         $this->memory->forgetFaq($faq);
+        $this->graph->markFaqDeprecated($faq->fresh(), $replacement?->fresh());
     }
 
     public function deleteFaq(Faq $faq): void
     {
         $this->memory->forgetFaq($faq);
+        $this->graph->removeFaq($faq);
         $faq->delete();
     }
 

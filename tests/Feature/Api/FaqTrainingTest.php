@@ -4,6 +4,7 @@ use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\Conversation;
 use App\Models\Faq;
+use App\Models\KnowledgeEntity;
 use App\Models\Location;
 use App\Models\Message;
 use App\Models\User;
@@ -73,10 +74,18 @@ test('staff thumbs up trains a location faq and upserts it to pinecone', functio
         ->assertJsonPath('faq.answer', 'We are open until 8 PM every day.');
 
     $faq = Faq::query()->where('location_id', $location->id)->where('question', 'How late are you open?')->first();
+    $entity = KnowledgeEntity::query()
+        ->where('type', 'faq')
+        ->where('source_table', 'faqs')
+        ->where('source_id', $faq?->id)
+        ->first();
 
     expect($faq)->not->toBeNull();
     expect($faq->trained_by_user_id)->toBe($employee->id);
     expect($answer->fresh()->metadata['faq_id'] ?? null)->toBe($faq->id);
+    expect($entity)->not->toBeNull();
+    expect($entity->title)->toBe('How late are you open?');
+    expect(data_get($entity->metadata, 'visibility'))->toBe('internal');
 
     Http::assertSent(fn ($request) => str_contains($request->url(), '/vectors/upsert'));
 });
