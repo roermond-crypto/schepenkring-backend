@@ -40,7 +40,10 @@ class KnowledgeVectorStoreService
             ]);
 
             if ($response->failed()) {
-                Log::warning('Knowledge vector store upsert failed', ['status' => $response->status()]);
+                Log::warning('Knowledge vector store upsert failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
 
                 return false;
             }
@@ -85,7 +88,10 @@ class KnowledgeVectorStoreService
             ], static fn ($value) => $value !== null));
 
             if ($response->failed()) {
-                Log::warning('Knowledge vector store search failed', ['status' => $response->status()]);
+                Log::warning('Knowledge vector store search failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
 
                 return [];
             }
@@ -120,7 +126,10 @@ class KnowledgeVectorStoreService
             ]);
 
             if ($response->failed()) {
-                Log::warning('Knowledge vector store delete failed', ['status' => $response->status()]);
+                Log::warning('Knowledge vector store delete failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
 
                 return false;
             }
@@ -154,7 +163,10 @@ class KnowledgeVectorStoreService
                 ]);
 
             if ($response->failed()) {
-                Log::warning('Knowledge vector store embedding failed', ['status' => $response->status()]);
+                Log::warning('Knowledge vector store embedding failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
 
                 return null;
             }
