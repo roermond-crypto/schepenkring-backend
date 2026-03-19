@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\RetryableOpenAiVideoException;
 use App\Models\Video;
 use App\Models\Yacht;
 use App\Services\FFmpegService;
@@ -22,7 +23,7 @@ class RenderMarketingVideo implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 300;
-    public int $tries = 30;
+    public int $tries = 90;
     public array $backoff = [60, 180, 300, 600];
 
     private int $videoId;
@@ -190,21 +191,35 @@ class RenderMarketingVideo implements ShouldQueue
             return;
         }
 
-        if ($video->provider_job_id) {
-            $this->logInfo('openai_poll_started', [
+        try {
+            if ($video->provider_job_id) {
+                $this->logInfo('openai_poll_started', [
+                    'provider_job_id' => $video->provider_job_id,
+                ], $video, $yacht);
+
+                $providerPayload = $openAiVideos->retrieve($video->provider_job_id);
+            } else {
+                $this->logInfo('openai_submission_started', [
+                    'model' => config('video_automation.openai.model', 'sora-2'),
+                    'size' => config('video_automation.openai.size', '720x1280'),
+                    'seconds' => config('video_automation.openai.seconds', '8'),
+                    'image_count' => count($imagePaths),
+                ], $video, $yacht);
+
+                $providerPayload = $openAiVideos->submit($yacht, $imagePaths, $workDir);
+            }
+        } catch (RetryableOpenAiVideoException $e) {
+            $this->cleanup($workDir);
+            $this->logWarning('openai_transient_error', [
                 'provider_job_id' => $video->provider_job_id,
+                'status_code' => $e->statusCode(),
+                'error' => $e->getMessage(),
             ], $video, $yacht);
-
-            $providerPayload = $openAiVideos->retrieve($video->provider_job_id);
-        } else {
-            $this->logInfo('openai_submission_started', [
-                'model' => config('video_automation.openai.model', 'sora-2'),
-                'size' => config('video_automation.openai.size', '720x1280'),
-                'seconds' => config('video_automation.openai.seconds', '8'),
-                'image_count' => count($imagePaths),
-            ], $video, $yacht);
-
-            $providerPayload = $openAiVideos->submit($yacht, $imagePaths, $workDir);
+            $this->releaseForPolling($video, $yacht, $openAiVideos->transientRetryDelaySeconds($this->attempts()), [
+                'provider_job_id' => $video->provider_job_id,
+                'retry_reason' => 'transient_openai_error',
+            ]);
+            return;
         }
 
         $providerStatus = $openAiVideos->status($providerPayload);
@@ -254,7 +269,21 @@ class RenderMarketingVideo implements ShouldQueue
             'destination_path' => $downloadPath,
         ], $video, $yacht);
 
-        $openAiVideos->download($providerJobId, $downloadPath);
+        try {
+            $openAiVideos->download($providerJobId, $downloadPath);
+        } catch (RetryableOpenAiVideoException $e) {
+            $this->cleanup($workDir);
+            $this->logWarning('openai_download_retry_scheduled', [
+                'provider_job_id' => $providerJobId,
+                'status_code' => $e->statusCode(),
+                'error' => $e->getMessage(),
+            ], $video, $yacht);
+            $this->releaseForPolling($video, $yacht, $openAiVideos->transientRetryDelaySeconds($this->attempts()), [
+                'provider_job_id' => $providerJobId,
+                'retry_reason' => 'transient_openai_download_error',
+            ]);
+            return;
+        }
 
         $this->logInfo('openai_download_finished', [
             'destination_path' => $downloadPath,

@@ -102,9 +102,9 @@ class SignhostController extends Controller
         ]);
     }
 
-    // Compatibility: NauticSecure deal endpoints
-    public function generateDealContract(
-        int $dealId,
+    // Compatibility: NauticSecure yacht endpoints
+    public function generateYachtContract(
+        int $yachtId,
         SignhostGenerateContractRequest $request,
         GenerateContractAction $action,
         CreateSignhostRequestAction $createAction
@@ -112,8 +112,8 @@ class SignhostController extends Controller
     {
         $validated = $request->validated();
         $payload = array_merge($validated, [
-            'entity_type' => 'Deal',
-            'entity_id' => $dealId,
+            'entity_type' => 'Yacht',
+            'entity_id' => $yachtId,
         ]);
 
         $signRequest = $action->execute($request->user(), $payload);
@@ -137,11 +137,11 @@ class SignhostController extends Controller
         return response()->json($response);
     }
 
-    public function createDealSignhost(int $dealId, SignhostRequestCreateRequest $request, CreateSignhostRequestAction $action)
+    public function createYachtSignhost(int $yachtId, SignhostRequestCreateRequest $request, CreateSignhostRequestAction $action)
     {
         $payload = array_merge($request->validated(), [
-            'entity_type' => 'Deal',
-            'entity_id' => $dealId,
+            'entity_type' => 'Yacht',
+            'entity_id' => $yachtId,
         ]);
 
         $signRequest = $action->execute(
@@ -156,11 +156,11 @@ class SignhostController extends Controller
         ]);
     }
 
-    public function dealStatus(int $dealId, Request $request, GetSignhostStatusAction $action)
+    public function yachtStatus(int $yachtId, Request $request, GetSignhostStatusAction $action)
     {
         $payload = [
-            'entity_type' => 'Deal',
-            'entity_id' => $dealId,
+            'entity_type' => 'Yacht',
+            'entity_id' => $yachtId,
         ];
 
         $signRequest = $action->execute($request->user(), $payload);
@@ -170,11 +170,11 @@ class SignhostController extends Controller
         ]);
     }
 
-    public function dealDocuments(int $dealId, Request $request, ListSignhostDocumentsAction $action)
+    public function yachtDocuments(int $yachtId, Request $request, ListSignhostDocumentsAction $action)
     {
         $payload = [
-            'entity_type' => 'Deal',
-            'entity_id' => $dealId,
+            'entity_type' => 'Yacht',
+            'entity_id' => $yachtId,
         ];
 
         $documents = $action->execute($request->user(), $payload);
@@ -184,11 +184,11 @@ class SignhostController extends Controller
         ]);
     }
 
-    public function dealSignUrl(int $dealId, Request $request, GetSignhostStatusAction $action)
+    public function yachtSignUrl(int $yachtId, Request $request, GetSignhostStatusAction $action)
     {
         $payload = [
-            'entity_type' => 'Deal',
-            'entity_id' => $dealId,
+            'entity_type' => 'Yacht',
+            'entity_id' => $yachtId,
         ];
 
         $signRequest = $action->execute($request->user(), $payload);
@@ -208,7 +208,7 @@ class SignhostController extends Controller
 
         return [
             'id' => $signRequest->id,
-            'deal_id' => $signRequest->entity_id,
+            'yacht_id' => $signRequest->entity_id,
             'signhost_transaction_id' => $signRequest->signhost_transaction_id,
             'status' => $this->mapLegacyStatus($signRequest->status),
             'signing_url_buyer' => $buyerUrl,

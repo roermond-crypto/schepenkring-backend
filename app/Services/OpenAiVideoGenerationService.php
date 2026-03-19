@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Exceptions\RetryableOpenAiVideoException;
 use App\Models\Yacht;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Intervention\Image\Laravel\Facades\Image;
@@ -24,6 +27,11 @@ class OpenAiVideoGenerationService
     public function pollDelaySeconds(): int
     {
         return max(5, (int) config('video_automation.openai.poll_seconds', 20));
+    }
+
+    public function transientRetryDelaySeconds(int $attempt): int
+    {
+        return min(120, max($this->pollDelaySeconds(), 15 * max(1, $attempt)));
     }
 
     /**
@@ -55,17 +63,22 @@ class OpenAiVideoGenerationService
      */
     public function retrieve(string $providerJobId): array
     {
-        $response = Http::withToken((string) config('services.openai.key'))
-            ->acceptJson()
-            ->timeout($this->timeout())
-            ->get(self::BASE_URL . '/' . rawurlencode($providerJobId));
+        try {
+            $response = Http::withToken((string) config('services.openai.key'))
+                ->acceptJson()
+                ->timeout($this->timeout())
+                ->get(self::BASE_URL . '/' . rawurlencode($providerJobId));
+        } catch (ConnectionException $e) {
+            throw new RetryableOpenAiVideoException(
+                'OpenAI video status request connection failed: ' . $e->getMessage(),
+                null,
+                0,
+                $e
+            );
+        }
 
         if ($response->failed()) {
-            throw new \RuntimeException(sprintf(
-                'OpenAI video status request failed [%d]: %s',
-                $response->status(),
-                $response->body()
-            ));
+            $this->throwForFailedResponse('OpenAI video status request', $response);
         }
 
         return $response->json();
@@ -73,19 +86,25 @@ class OpenAiVideoGenerationService
 
     public function download(string $providerJobId, string $destinationPath): void
     {
-        $response = Http::withToken((string) config('services.openai.key'))
-            ->timeout(max($this->timeout(), 300))
-            ->withOptions(['sink' => $destinationPath])
-            ->get(self::BASE_URL . '/' . rawurlencode($providerJobId) . '/content');
+        try {
+            $response = Http::withToken((string) config('services.openai.key'))
+                ->timeout(max($this->timeout(), 300))
+                ->withOptions(['sink' => $destinationPath])
+                ->get(self::BASE_URL . '/' . rawurlencode($providerJobId) . '/content');
+        } catch (ConnectionException $e) {
+            @unlink($destinationPath);
+
+            throw new RetryableOpenAiVideoException(
+                'OpenAI video download connection failed: ' . $e->getMessage(),
+                null,
+                0,
+                $e
+            );
+        }
 
         if ($response->failed()) {
             @unlink($destinationPath);
-
-            throw new \RuntimeException(sprintf(
-                'OpenAI video download failed [%d]: %s',
-                $response->status(),
-                $response->body()
-            ));
+            $this->throwForFailedResponse('OpenAI video download', $response);
         }
     }
 
@@ -232,6 +251,33 @@ class OpenAiVideoGenerationService
         }
 
         return null;
+    }
+
+    private function throwForFailedResponse(string $prefix, Response $response): never
+    {
+        $message = sprintf(
+            '%s failed [%d]: %s',
+            $prefix,
+            $response->status(),
+            $response->body()
+        );
+
+        if ($this->isRetryableResponse($response)) {
+            throw new RetryableOpenAiVideoException($message, $response->status());
+        }
+
+        throw new \RuntimeException($message);
+    }
+
+    private function isRetryableResponse(Response $response): bool
+    {
+        if (in_array($response->status(), [408, 409, 425, 429, 500, 502, 503, 504], true)) {
+            return true;
+        }
+
+        $errorType = data_get($response->json(), 'error.type');
+
+        return in_array($errorType, ['server_error', 'rate_limit_error'], true);
     }
 
     private function buildPrompt(Yacht $yacht): string
