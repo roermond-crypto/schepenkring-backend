@@ -35,10 +35,10 @@ class CopilotAiRouterService
 
         $provider = config('copilot.ai_provider', 'openai');
         if ($provider === 'gemini') {
-            return (bool) env('GEMINI_API_KEY');
+            return (bool) config('services.gemini.key');
         }
 
-        return (bool) env('OPENAI_API_KEY');
+        return (bool) config('services.openai.key');
     }
 
     private function buildPrompt(string $input, array $actions, array $context): string
@@ -78,7 +78,7 @@ PROMPT;
 
     private function callOpenAi(string $input, array $actions, array $context): ?array
     {
-        $apiKey = env('OPENAI_API_KEY');
+        $apiKey = config('services.openai.key');
         if (!$apiKey) {
             return null;
         }
@@ -108,13 +108,13 @@ PROMPT;
 
     private function callGemini(string $input, array $actions, array $context): ?array
     {
-        $apiKey = env('GEMINI_API_KEY');
+        $apiKey = config('services.gemini.key');
         if (!$apiKey) {
             return null;
         }
 
         $prompt = $this->buildPrompt($input, $actions, $context);
-        $model = env('COPILOT_AI_MODEL', 'gemini-2.5-flash');
+        $model = config('copilot.ai_model', 'gemini-2.5-flash');
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
 
         $response = Http::timeout(30)->post($url, [

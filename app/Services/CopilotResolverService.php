@@ -8,6 +8,7 @@ use App\Models\Boat;
 use App\Models\Location;
 use App\Models\User;
 use App\Support\CopilotLanguage;
+use Illuminate\Support\Facades\Log;
 
 class CopilotResolverService
 {
@@ -467,12 +468,11 @@ class CopilotResolverService
 
         $knowledge = $this->faqService->answer($input, $locationScope, $context, 3);
         $answers = array_map(function (array $answer) {
-            $answer['actions'] = $answer['actions'] ?? $this->relatedActions(
-                trim(implode(' ', array_filter([
-                    $answer['question'] ?? null,
-                    $answer['answer'] ?? null,
-                ])))
-            );
+            $text = trim(implode(' ', array_filter([
+                $answer['question'] ?? null,
+                $answer['answer'] ?? null,
+            ])));
+            $answer['actions'] = $answer['actions'] ?? ($text !== '' ? $this->relatedActions($text) : []);
 
             return $answer;
         }, $knowledge['answers'] ?? []);
@@ -508,7 +508,7 @@ class CopilotResolverService
                     }
                 }
             } catch (\Throwable $e) {
-                \Log::warning("Historical chat lookup failed: " . $e->getMessage());
+                Log::warning("Historical chat lookup failed: " . $e->getMessage());
             }
         }
 
@@ -562,11 +562,7 @@ class CopilotResolverService
 
     private function copilotLanguage(): CopilotLanguage
     {
-        if (isset($this->language) && $this->language instanceof CopilotLanguage) {
-            return $this->language;
-        }
-
-        return app(CopilotLanguage::class);
+        return $this->language;
     }
 
     private function shouldBuildAnswers(string $input): bool

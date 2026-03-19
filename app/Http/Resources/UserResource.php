@@ -19,6 +19,9 @@ class UserResource extends JsonResource
                     'name' => $location->name,
                     'code' => $location->code,
                     'role' => $location->pivot?->role,
+                    'active' => isset($location->pivot->active)
+                        ? (bool) $location->pivot->active
+                        : true, // default true if column not yet present
                 ];
             })->values();
         });
@@ -57,8 +60,18 @@ class UserResource extends JsonResource
             'client_location_id' => $this->client_location_id,
             'client_location' => $clientLocation,
             'locations' => $locations,
-            'has_location_assignment' => $this->location_id !== null,
-            'can_access_board' => $this->isAdmin() || ($this->isEmployee() && $this->location_id !== null),
+            // Use the loaded locations collection when available to avoid
+            // an extra query via the computed location_id attribute.
+            'has_location_assignment' => $this->isClient()
+                ? $this->client_location_id !== null
+                : ($this->relationLoaded('locations')
+                    ? $this->locations->isNotEmpty()
+                    : $this->location_id !== null),
+            'can_access_board' => $this->isAdmin() || ($this->isEmployee() && (
+                $this->relationLoaded('locations')
+                    ? $this->locations->isNotEmpty()
+                    : $this->location_id !== null
+            )),
             'timezone' => $this->timezone,
             'locale' => $this->locale,
             'address_line1' => $this->address_line1,

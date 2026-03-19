@@ -14,12 +14,22 @@ class RegisterRequest extends ApiRequest
             'phone' => ['nullable', 'string', 'max:25'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'location_id' => ['required', 'integer', 'exists:locations,id'],
+            // Must explicitly accept terms & conditions before registering.
+            'terms_accepted' => ['required', 'accepted'],
             'website' => ['nullable', 'max:0'],
             'type' => ['prohibited'],
             'status' => ['prohibited'],
             'role' => ['prohibited'],
             'roles' => ['prohibited'],
             'permissions' => ['prohibited'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'terms_accepted.required' => 'You must accept the terms and conditions to register.',
+            'terms_accepted.accepted'  => 'You must accept the terms and conditions to register.',
         ];
     }
 }

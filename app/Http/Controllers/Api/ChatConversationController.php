@@ -30,7 +30,21 @@ class ChatConversationController extends Controller
             ->orderByDesc('last_message_at')
             ->orderByDesc('updated_at');
 
-        $query = $access->scopeConversations($query, $user, $request->boolean('assigned_only'));
+        // Client users should only see their own conversations, not all
+        // conversations at their location (which would be a privacy violation).
+        if ($user->isClient()) {
+            $query->where(function ($sub) use ($user) {
+                $sub->where('user_id', $user->id)
+                    ->orWhereHas('contact', function ($q) use ($user) {
+                        $q->where('email', $user->email);
+                    });
+            });
+            if ($user->client_location_id) {
+                $query->where('location_id', $user->client_location_id);
+            }
+        } else {
+            $query = $access->scopeConversations($query, $user, $request->boolean('assigned_only'));
+        }
 
         $locationId = $request->integer('location_id') ?: $request->integer('harbor_id');
         if ($locationId) {
@@ -115,6 +129,14 @@ class ChatConversationController extends Controller
 
         if (! empty($payload['location_id']) && empty($payload['harbor_id'])) {
             $payload['harbor_id'] = (int) $payload['location_id'];
+        }
+
+        // If a logged-in client user does not supply a harbor_id, automatically
+        // use their assigned location so the conversation is always linked to
+        // the correct harbor and the "not connected to a location" error is avoided.
+        $user = $request->user();
+        if (empty($payload['harbor_id']) && $user?->isClient() && $user->client_location_id) {
+            $payload['harbor_id'] = (int) $user->client_location_id;
         }
 
         if (!empty($payload['session_jwt'])) {

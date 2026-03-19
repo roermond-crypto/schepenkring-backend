@@ -28,7 +28,7 @@ class Location extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class)
-            ->withPivot('role')
+            ->withPivot('role', 'active')
             ->withTimestamps();
     }
 
@@ -40,9 +40,18 @@ class Location extends Model
     public function employees(): BelongsToMany
     {
         return $this->belongsToMany(User::class)
-            ->withPivot('role')
+            ->withPivot('role', 'active')
             ->withTimestamps()
             ->where('users.type', UserType::EMPLOYEE->value);
+    }
+
+    public function activeEmployees(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class)
+            ->withPivot('role', 'active')
+            ->withTimestamps()
+            ->where('users.type', UserType::EMPLOYEE->value)
+            ->wherePivot('active', true);
     }
 
     public function yachts(): HasMany
