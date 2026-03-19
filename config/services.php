@@ -71,12 +71,21 @@ return [
         'chat_model' => env('OPENAI_CHAT_MODEL', 'gpt-5-mini'),
         'chat_timeout' => env('OPENAI_CHAT_TIMEOUT', 45),
         'chat_max_output_tokens' => env('OPENAI_CHAT_MAX_OUTPUT_TOKENS', 450),
+        'embedding_model' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+        'embedding_dimensions' => env('OPENAI_EMBEDDING_DIMENSIONS', 1408),
+        'embedding_timeout' => env('OPENAI_EMBEDDING_TIMEOUT', 15),
         'translation_model' => env('OPENAI_TRANSLATION_MODEL', 'gpt-4o-mini'),
         'translation_timeout' => env('OPENAI_TRANSLATION_TIMEOUT', 30),
         'insights_model' => env('OPENAI_INSIGHTS_MODEL', 'gpt-5'),
         'insights_timeout' => env('OPENAI_INSIGHTS_TIMEOUT', 90),
         'insights_max_output_tokens' => env('OPENAI_INSIGHTS_MAX_OUTPUT_TOKENS', 2500),
         'insights_reasoning_effort' => env('OPENAI_INSIGHTS_REASONING_EFFORT', 'medium'),
+    ],
+
+    'sentry' => [
+        'org' => env('SENTRY_ORG'),
+        'project' => env('SENTRY_PROJECT'),
+        'auth_token' => env('SENTRY_AUTH_TOKEN'),
     ],
 
     'pinecone' => [

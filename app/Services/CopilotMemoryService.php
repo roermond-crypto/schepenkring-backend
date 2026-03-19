@@ -202,7 +202,10 @@ class CopilotMemoryService
             ], static fn ($value) => $value !== null));
 
             if ($response->failed()) {
-                Log::warning('Copilot memory search failed', ['status' => $response->status()]);
+                Log::warning('Copilot memory search failed', [
+                    'status' => $response->status(),
+                    'body' => Str::limit($response->body(), 1000, '...'),
+                ]);
                 return [];
             }
 
@@ -248,7 +251,10 @@ class CopilotMemoryService
             ]);
 
             if ($response->failed()) {
-                Log::warning('Copilot memory upsert failed', ['status' => $response->status()]);
+                Log::warning('Copilot memory upsert failed', [
+                    'status' => $response->status(),
+                    'body' => Str::limit($response->body(), 1000, '...'),
+                ]);
                 return false;
             }
 
@@ -275,7 +281,10 @@ class CopilotMemoryService
             ]);
 
             if ($response->failed()) {
-                Log::warning('Copilot memory delete failed', ['status' => $response->status()]);
+                Log::warning('Copilot memory delete failed', [
+                    'status' => $response->status(),
+                    'body' => Str::limit($response->body(), 1000, '...'),
+                ]);
                 return false;
             }
 
@@ -292,15 +301,26 @@ class CopilotMemoryService
     private function embed(string $text): ?array
     {
         try {
+            $model = (string) config('services.openai.embedding_model', 'text-embedding-3-small');
+            $dimensions = (int) config('services.openai.embedding_dimensions', 1408);
+            $payload = [
+                'model' => $model,
+                'input' => $text,
+            ];
+
+            if ($dimensions > 0 && str_starts_with($model, 'text-embedding-3-')) {
+                $payload['dimensions'] = $dimensions;
+            }
+
             $response = Http::withToken((string) config('services.openai.key'))
-                ->timeout(15)
-                ->post('https://api.openai.com/v1/embeddings', [
-                    'model' => 'text-embedding-3-small',
-                    'input' => $text,
-                ]);
+                ->timeout((int) config('services.openai.embedding_timeout', 15))
+                ->post('https://api.openai.com/v1/embeddings', $payload);
 
             if ($response->failed()) {
-                Log::warning('Copilot memory embedding failed', ['status' => $response->status()]);
+                Log::warning('Copilot memory embedding failed', [
+                    'status' => $response->status(),
+                    'body' => Str::limit($response->body(), 1000, '...'),
+                ]);
                 return null;
             }
 

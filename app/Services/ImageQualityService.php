@@ -15,7 +15,7 @@ class ImageQualityService
     public function score(string $imagePath): array
     {
         try {
-            if (extension_loaded('imagick')) {
+            if ($this->canUseImagick()) {
                 return $this->scoreWithImagick($imagePath);
             }
 
@@ -216,5 +216,12 @@ class ImageQualityService
             'blurry'     => false,
             'low_res'    => false,
         ];
+    }
+
+    protected function canUseImagick(): bool
+    {
+        return extension_loaded('imagick')
+            && class_exists(\Imagick::class)
+            && method_exists(\Imagick::class, 'getImageStatistics');
     }
 }

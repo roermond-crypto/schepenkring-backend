@@ -14,12 +14,18 @@ class PineconeMatcherService
     private ?string $pineconeKey;
     private ?string $pineconeHost;
     private ?string $openAiKey;
+    private string $embeddingModel;
+    private int $embeddingDimensions;
+    private int $embeddingTimeout;
 
     public function __construct()
     {
         $this->pineconeKey  = config('services.pinecone.key');
         $this->pineconeHost = config('services.pinecone.host');
         $this->openAiKey    = config('services.openai.key');
+        $this->embeddingModel = (string) config('services.openai.embedding_model', 'text-embedding-3-small');
+        $this->embeddingDimensions = (int) config('services.openai.embedding_dimensions', 1408);
+        $this->embeddingTimeout = (int) config('services.openai.embedding_timeout', 15);
     }
 
     /**
@@ -63,12 +69,8 @@ class PineconeMatcherService
 
             // Step 1: Generate embedding via OpenAI
             $embedResponse = Http::withToken($this->openAiKey)
-                ->timeout(15)
-                ->post('https://api.openai.com/v1/embeddings', [
-                    'model'      => 'text-embedding-3-small',
-                    'input'      => $searchText,
-                    'dimensions' => 1408,
-                ]);
+                ->timeout($this->embeddingTimeout)
+                ->post('https://api.openai.com/v1/embeddings', $this->embeddingPayload($searchText));
 
             if (!$embedResponse->successful()) {
                 Log::warning('[PineconeMatcher] Embedding failed: ' . $embedResponse->status());
@@ -250,12 +252,8 @@ class PineconeMatcherService
 
             // Step 1: Generate embedding
             $embedResponse = Http::withToken($this->openAiKey)
-                ->timeout(15)
-                ->post('https://api.openai.com/v1/embeddings', [
-                    'model'      => 'text-embedding-3-small',
-                    'input'      => $searchText,
-                    'dimensions' => 1408,
-                ]);
+                ->timeout($this->embeddingTimeout)
+                ->post('https://api.openai.com/v1/embeddings', $this->embeddingPayload($searchText));
 
             if (!$embedResponse->successful()) {
                 Log::warning('[PineconeMatcher] Embedding failed: ' . $embedResponse->status());
@@ -377,5 +375,19 @@ class PineconeMatcherService
         ];
 
         return implode(' ', array_filter($parts));
+    }
+
+    private function embeddingPayload(string $input): array
+    {
+        $payload = [
+            'model' => $this->embeddingModel,
+            'input' => $input,
+        ];
+
+        if ($this->embeddingDimensions > 0 && str_starts_with($this->embeddingModel, 'text-embedding-3-')) {
+            $payload['dimensions'] = $this->embeddingDimensions;
+        }
+
+        return $payload;
     }
 }
