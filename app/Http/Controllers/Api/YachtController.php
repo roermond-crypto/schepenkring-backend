@@ -9,8 +9,9 @@ use App\Models\YachtAiExtraction;
 use App\Models\User;
 use App\Services\AiCorrectionLoggingService;
 use App\Services\BoatTaskAutomationService;
-use App\Services\SyncYachtTasksService;
+use App\Services\KnowledgeGraphService;
 use App\Services\LocationAccessService;
+use App\Services\SyncYachtTasksService;
 use App\Services\VideoAutomationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -37,7 +38,8 @@ class YachtController extends Controller
     public function __construct(
         private readonly LocationAccessService $locationAccess,
         private readonly AiCorrectionLoggingService $correctionLogging,
-        private readonly VideoAutomationService $videoAutomation
+        private readonly VideoAutomationService $videoAutomation,
+        private readonly KnowledgeGraphService $knowledgeGraph
     )
     {
     }
@@ -160,6 +162,7 @@ class YachtController extends Controller
             if ($this->shouldBootstrapDraft($request, $isUpdate)) {
                 $draft = $this->createBootstrapDraft($request, $actor, $offlineUuid);
                 DB::commit();
+                $this->syncYachtKnowledgeSafely($draft);
 
                 return response()->json($draft, 201);
             }
@@ -296,7 +299,14 @@ class YachtController extends Controller
 
             DB::commit();
 
-            $yacht = $savedYacht->load(['images', 'availabilityRules']);
+            $yacht = $savedYacht->load([
+                'images',
+                'availabilityRules',
+                'location:id,name,code,status,chat_widget_enabled,chat_widget_welcome_text,chat_widget_theme',
+                'owner:id,client_location_id',
+            ]);
+
+            $this->syncYachtKnowledgeSafely($yacht);
 
             // Fire task automation for newly created yachts
             if (! $isUpdate && $yacht->boat_type) {
@@ -610,6 +620,7 @@ class YachtController extends Controller
         }
 
         $yacht->delete();
+        $this->removeYachtKnowledgeSafely($yacht);
 
         return response()->json(['message' => 'Vessel removed from fleet.']);
     }
@@ -721,6 +732,30 @@ class YachtController extends Controller
             Log::warning('[VideoAutomation] Non-critical failure: '.$e->getMessage(), [
                 'yacht_id' => $yacht->id,
                 'is_new' => $isNew,
+            ]);
+        }
+    }
+
+    private function syncYachtKnowledgeSafely(Yacht $yacht): void
+    {
+        try {
+            $this->knowledgeGraph->syncYacht($yacht);
+        } catch (\Throwable $e) {
+            Log::warning('Yacht knowledge sync failed after yacht save', [
+                'yacht_id' => $yacht->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function removeYachtKnowledgeSafely(Yacht $yacht): void
+    {
+        try {
+            $this->knowledgeGraph->removeYacht($yacht);
+        } catch (\Throwable $e) {
+            Log::warning('Yacht knowledge cleanup failed after yacht delete', [
+                'yacht_id' => $yacht->id,
+                'error' => $e->getMessage(),
             ]);
         }
     }

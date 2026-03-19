@@ -9,6 +9,7 @@ use App\Models\KnowledgeBrainQuestion;
 use App\Models\KnowledgeBrainSuggestion;
 use App\Models\Location;
 use App\Models\User;
+use App\Models\CopilotAuditEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 
@@ -50,6 +51,37 @@ test('copilot no-match queries are captured as knowledge brain missing questions
     expect($suggestion->type)->toBe('missing_question');
     expect($suggestion->question_id)->toBe($question->id);
     expect($suggestion->status)->toBe('pending');
+});
+
+test('copilot preview-mode queries do not create knowledge brain or audit records', function () {
+    $location = Location::create([
+        'name' => 'Preview Harbor',
+        'code' => 'PRV',
+        'status' => 'ACTIVE',
+    ]);
+
+    $admin = User::factory()->create([
+        'type' => UserType::ADMIN,
+        'status' => UserStatus::ACTIVE,
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->postJson('/api/copilot/resolve', [
+        'text' => 'Do you offer winter storage?',
+        'source' => 'chatpage',
+        'context' => [
+            'location_id' => $location->id,
+            'language' => 'en',
+            'visibility' => 'public',
+            'preview_mode' => true,
+        ],
+    ])
+        ->assertOk();
+
+    expect(KnowledgeBrainQuestion::query()->count())->toBe(0);
+    expect(KnowledgeBrainSuggestion::query()->count())->toBe(0);
+    expect(CopilotAuditEvent::query()->count())->toBe(0);
 });
 
 test('admin knowledge brain dashboard returns overview metrics and training status', function () {

@@ -4,10 +4,16 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Location;
+use App\Services\KnowledgeGraphService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class LocationWidgetSettingsController extends Controller
 {
+    public function __construct(private KnowledgeGraphService $knowledgeGraph)
+    {
+    }
+
     /**
      * Get widget settings for a location.
      */
@@ -39,6 +45,15 @@ class LocationWidgetSettingsController extends Controller
             'chat_widget_welcome_text' => $request->welcome_text,
             'chat_widget_theme' => $request->theme ?? 'ocean',
         ]);
+
+        try {
+            $this->knowledgeGraph->syncLocation($location->fresh());
+        } catch (\Throwable $e) {
+            Log::warning('Location knowledge sync failed after widget settings update', [
+                'location_id' => $location->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'message' => 'Widget settings updated successfully',

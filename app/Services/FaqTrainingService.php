@@ -12,7 +12,8 @@ class FaqTrainingService
 {
     public function __construct(
         private CopilotMemoryService $memory,
-        private CopilotLanguage $language
+        private CopilotLanguage $language,
+        private KnowledgeGraphService $graph
     ) {
     }
 
@@ -71,13 +72,21 @@ class FaqTrainingService
         $faq->trained_by_user_id = $trainer?->id;
         $faq->save();
 
+        return $this->syncFaq($faq);
+    }
+
+    public function syncFaq(Faq $faq): Faq
+    {
         if ($this->memory->rememberFaq($faq)) {
             $faq->forceFill([
                 'last_indexed_at' => now(),
             ])->saveQuietly();
         }
 
-        return $faq->fresh();
+        $faq = $faq->fresh();
+        $this->graph->syncFaq($faq);
+
+        return $faq;
     }
 
     /**
@@ -161,11 +170,13 @@ class FaqTrainingService
         ])->saveQuietly();
 
         $this->memory->forgetFaq($faq);
+        $this->graph->markFaqDeprecated($faq->fresh(), $replacement?->fresh());
     }
 
     public function deleteFaq(Faq $faq): void
     {
         $this->memory->forgetFaq($faq);
+        $this->graph->removeFaq($faq);
         $faq->delete();
     }
 
