@@ -77,6 +77,9 @@ class ChatAiReplyService
                 'should_handoff' => $result['should_handoff'],
                 'handoff_reason' => $result['handoff_reason'],
                 'used_sources' => $result['used_sources'],
+                'intent_action' => $result['intent_action'] ?? null,
+                'intent_payload' => $result['intent_payload'] ?? null,
+                'booking_id' => null, // Will be filled below if booking is created
                 'context_summary' => [
                     'has_yacht' => $context['yacht'] !== null,
                     'has_location' => $context['location'] !== null,
@@ -89,6 +92,29 @@ class ChatAiReplyService
             'skip_rate_limit' => true,
             'allow_blocked_contacts' => true,
         ], $request);
+
+        // Execute booking intent if confirmed
+        if (($result['intent_action'] ?? null) === 'create_booking' && $context['location']) {
+            $payload = $result['intent_payload'] ?? [];
+            if (!empty($payload['date']) && !empty($payload['time'])) {
+                $booking = \App\Models\Booking::create([
+                    'location_id' => $context['location']['id'],
+                    'boat_id' => $context['yacht']['id'] ?? null,
+                    'type' => 'viewing',
+                    'status' => 'confirmed',
+                    'date' => $payload['date'],
+                    'time' => $payload['time'],
+                    'name' => $conversation->contact_name ?? 'Auto Generated',
+                    'email' => $conversation->contact_email ?? null,
+                    'source' => 'ai_chat',
+                ]);
+                
+                $metadata = $message->metadata ?? [];
+                $metadata['booking_id'] = $booking->id;
+                $message->metadata = $metadata;
+                $message->save();
+            }
+        }
 
         if ($result['should_handoff'] && $conversation->status === 'open') {
             $conversation->status = 'pending';
@@ -276,6 +302,8 @@ class ChatAiReplyService
                 static fn ($value) => is_scalar($value) ? (string) $value : null,
                 (array) ($parsed['used_sources'] ?? [])
             ))),
+            'intent_action' => $parsed['intent_action'] ?? null,
+            'intent_payload' => $parsed['intent_payload'] ?? null,
             'provider' => 'openai',
             'model' => $body['model'] ?? $this->model(),
             'response_id' => $body['id'] ?? null,
@@ -435,9 +463,11 @@ Rules:
 - Use only the supplied system context, yacht data, location data, recent conversation history, and knowledge snippets.
 - Never invent pricing, availability, specifications, policy terms, appointments, or promises that are not present in the context.
 - If context is incomplete, say that briefly and offer a human follow-up.
-- If the customer asks to schedule a viewing, asks for a callback, or needs an action a human must perform, set should_handoff to true.
+- If the customer asks to schedule a viewing, asks for a callback, or needs an action a human must perform, try to handle booking if possible, but set should_handoff to true if you are unsure.
 - Do not mention internal JSON, internal IDs, or that you are reading system context.
 - Keep the reply concise, fluent, and suitable for a customer-facing chat widget.
+- If the user explicitly confirms a booking date/time you proposed, set intent_action to "create_booking" and supply the intent_payload with {"date": "YYYY-MM-DD", "time": "HH:MM"}.
+- Always confirm with the user before setting intent_action to "create_booking". Use a short confirmation summary first.
 - Return valid JSON that matches the schema exactly.
 {$instruction}
 PROMPT;
@@ -481,6 +511,15 @@ PROMPT;
                         'type' => 'string',
                     ],
                 ],
+                'intent_action' => [
+                    'type' => ['string', 'null'],
+                    'enum' => ['create_booking', 'check_availability', 'cancel_booking', null],
+                    'description' => 'The action the backend should take if recognized.',
+                ],
+                'intent_payload' => [
+                    'type' => ['object', 'null'],
+                    'description' => 'A JSON-encoded string representing the payload for the action. e.g. {"date": "2026-03-24", "time": "14:00"}',
+                ]
             ],
         ];
     }

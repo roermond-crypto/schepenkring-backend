@@ -36,13 +36,19 @@ class RenderMarketingVideo implements ShouldQueue
 
     public function handle(VideoAutomationService $automation): void
     {
-        // Stub implementation to keep the API contract intact.
-        Log::info('RenderMarketingVideo stub executed', ['video_id' => $this->videoId]);
+        $startedAt = microtime(true);
+
+        $this->logInfo('started');
         $video = Video::find($this->videoId);
         if (!$video) {
-            Log::error("Marketing video {$this->videoId} not found");
+            $this->logError('video_not_found');
             return;
         }
+
+        $this->logInfo('video_loaded', [
+            'status' => $video->status,
+            'yacht_id' => $video->yacht_id,
+        ], $video);
 
         $yacht = $video->yacht;
         if (!$yacht) {
@@ -50,13 +56,20 @@ class RenderMarketingVideo implements ShouldQueue
             return;
         }
 
+        $this->logInfo('yacht_loaded', [
+            'boat_name' => $yacht->boat_name,
+            'location_city' => $yacht->location_city,
+        ], $video, $yacht);
+
         $ffmpeg = new FFmpegService();
         if (!$ffmpeg->isAvailable()) {
             $this->failJob($video, 'FFmpeg is not installed or not accessible');
             return;
         }
 
+        $this->logInfo('ffmpeg_available', [], $video, $yacht);
         $video->update(['status' => 'processing']);
+        $this->logInfo('video_marked_processing', ['status' => 'processing'], $video, $yacht);
 
         try {
             $imagePaths = $this->collectImages($yacht, $automation);
@@ -68,6 +81,9 @@ class RenderMarketingVideo implements ShouldQueue
             $workDir = sys_get_temp_dir() . '/marketing_video_' . $video->id;
             if (!is_dir($workDir)) {
                 mkdir($workDir, 0777, true);
+                $this->logInfo('workdir_created', ['work_dir' => $workDir], $video, $yacht);
+            } else {
+                $this->logInfo('workdir_exists', ['work_dir' => $workDir], $video, $yacht);
             }
 
             $slideshowPath = "{$workDir}/slideshow.mp4";
@@ -76,12 +92,39 @@ class RenderMarketingVideo implements ShouldQueue
             $overlayLines = $this->buildOverlayLines($yacht);
             $secondsPerImage = (int) config('video_automation.seconds_per_image', 2);
 
+            $this->logInfo('render_slideshow_started', [
+                'image_count' => count($imagePaths),
+                'seconds_per_image' => $secondsPerImage,
+                'overlay_lines' => $overlayLines,
+                'output_path' => $slideshowPath,
+            ], $video, $yacht);
             $ffmpeg->renderVerticalSlideshow($imagePaths, $slideshowPath, $secondsPerImage, $overlayLines);
+
+            $this->logInfo('render_slideshow_finished', [
+                'output_path' => $slideshowPath,
+                'exists' => file_exists($slideshowPath),
+                'bytes' => file_exists($slideshowPath) ? filesize($slideshowPath) : null,
+            ], $video, $yacht);
+
+            $this->logInfo('thumbnail_started', [
+                'source_path' => $slideshowPath,
+                'thumbnail_path' => $thumbPath,
+            ], $video, $yacht);
             $ffmpeg->createThumbnail($slideshowPath, $thumbPath, 1);
+
+            $this->logInfo('thumbnail_finished', [
+                'thumbnail_path' => $thumbPath,
+                'exists' => file_exists($thumbPath),
+                'bytes' => file_exists($thumbPath) ? filesize($thumbPath) : null,
+            ], $video, $yacht);
 
             $storagePath = "videos/marketing/yacht-{$yacht->id}-" . time() . '.mp4';
             $thumbStoragePath = "videos/marketing/yacht-{$yacht->id}-" . time() . '-thumb.jpg';
 
+            $this->logInfo('storage_started', [
+                'video_storage_path' => $storagePath,
+                'thumbnail_storage_path' => $thumbStoragePath,
+            ], $video, $yacht);
             Storage::disk('public')->put($storagePath, file_get_contents($slideshowPath));
             Storage::disk('public')->put($thumbStoragePath, file_get_contents($thumbPath));
 
@@ -90,7 +133,18 @@ class RenderMarketingVideo implements ShouldQueue
             $fileSize = filesize($storageFullPath) ?: null;
             $checksum = hash_file('sha256', $storageFullPath);
 
+            $this->logInfo('storage_finished', [
+                'video_storage_path' => $storagePath,
+                'thumbnail_storage_path' => $thumbStoragePath,
+                'duration_seconds' => $duration,
+                'file_size_bytes' => $fileSize,
+                'checksum' => $checksum,
+            ], $video, $yacht);
+
             $caption = app(VideoCaptionService::class)->buildCaption($yacht);
+            $this->logInfo('caption_built', [
+                'caption_length' => mb_strlen($caption),
+            ], $video, $yacht);
 
             $video->update([
                 'status' => 'ready',
@@ -105,34 +159,67 @@ class RenderMarketingVideo implements ShouldQueue
                 'generated_at' => now(),
             ]);
 
+            $this->logInfo('video_marked_ready', [
+                'video_path' => $storagePath,
+                'thumbnail_path' => $thumbStoragePath,
+            ], $video->fresh(), $yacht);
+
             $this->cleanup($workDir);
 
-            if ($this->shouldAutoSchedule($yacht)) {
+            $shouldAutoSchedule = $this->shouldAutoSchedule($yacht);
+            $this->logInfo('auto_schedule_evaluated', [
+                'should_auto_schedule' => $shouldAutoSchedule,
+            ], $video, $yacht);
+
+            if ($shouldAutoSchedule) {
                 $scheduler = app(VideoSchedulerService::class);
+                $publishers = $this->publishersFor($yacht);
+
+                $this->logInfo('auto_schedule_started', [
+                    'publishers' => $publishers,
+                ], $video, $yacht);
                 $scheduler->scheduleNextAvailable(
                     $video,
                     config('video_automation.schedule_time', '10:30'),
                     (bool) config('video_automation.skip_weekends', false),
-                    $this->publishersFor($yacht),
+                    $publishers,
                     config('services.yext.account_id'),
                     config('services.yext.entity_id')
                 );
+                $this->logInfo('auto_schedule_finished', [
+                    'publishers' => $publishers,
+                ], $video, $yacht);
             }
 
-            if (config('video_automation.auto_notify_owner_whatsapp', true)) {
+            $shouldNotifyWhatsapp = (bool) config('video_automation.auto_notify_owner_whatsapp', true);
+            $this->logInfo('whatsapp_notify_evaluated', [
+                'should_notify_whatsapp' => $shouldNotifyWhatsapp,
+            ], $video, $yacht);
+
+            if ($shouldNotifyWhatsapp) {
                 SendBoatVideoWhatsappJob::dispatch($video->id)->onQueue('whatsapp');
+                $this->logInfo('whatsapp_notification_queued', [
+                    'queue' => 'whatsapp',
+                ], $video, $yacht);
             }
 
-            Log::info('Marketing video rendered', ['video_id' => $video->id, 'yacht_id' => $yacht->id]);
+            $this->logInfo('completed', [
+                'elapsed_seconds' => round(microtime(true) - $startedAt, 3),
+            ], $video, $yacht);
         } catch (\Throwable $e) {
             $this->failJob($video, $e->getMessage());
-            Log::error("Marketing video failed for yacht {$yacht->id}: {$e->getMessage()}");
+            $this->logError('failed', [
+                'elapsed_seconds' => round(microtime(true) - $startedAt, 3),
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ], $video, $yacht);
         }
     }
 
     private function collectImages(Yacht $yacht, VideoAutomationService $automation): array
     {
         $paths = $automation->collectRenderableImagePaths($yacht);
+        $rawCount = count($paths);
 
         $max = (int) config('video_automation.max_images', 15);
         $min = (int) config('video_automation.min_images', 8);
@@ -145,6 +232,14 @@ class RenderMarketingVideo implements ShouldQueue
                 $idx++;
             }
         }
+
+        $this->logInfo('images_collected', [
+            'raw_count' => $rawCount,
+            'selected_count' => count($paths),
+            'max_images' => $max,
+            'min_images' => $min,
+            'sample_paths' => array_slice($paths, 0, 3),
+        ], null, $yacht);
 
         return $paths;
     }
@@ -174,12 +269,24 @@ class RenderMarketingVideo implements ShouldQueue
     private function cleanup(string $workDir): void
     {
         if (!is_dir($workDir)) {
+            $this->logInfo('cleanup_skipped', ['work_dir' => $workDir, 'reason' => 'missing_directory']);
             return;
         }
-        foreach (glob("{$workDir}/*") as $file) {
+
+        $files = glob("{$workDir}/*") ?: [];
+        $this->logInfo('cleanup_started', [
+            'work_dir' => $workDir,
+            'file_count' => count($files),
+        ]);
+
+        foreach ($files as $file) {
             @unlink($file);
         }
         @rmdir($workDir);
+
+        $this->logInfo('cleanup_finished', [
+            'work_dir' => $workDir,
+        ]);
     }
 
     private function failJob(Video $video, string $error): void
@@ -188,6 +295,10 @@ class RenderMarketingVideo implements ShouldQueue
             'status' => 'failed',
             'error_message' => $error,
         ]);
+
+        $this->logError('marked_failed', [
+            'error' => $error,
+        ], $video, $video->yacht);
     }
 
     private function shouldAutoSchedule(Yacht $yacht): bool
@@ -214,5 +325,31 @@ class RenderMarketingVideo implements ShouldQueue
         }
 
         return config('video_automation.default_publishers', []);
+    }
+
+    private function logInfo(string $step, array $context = [], ?Video $video = null, ?Yacht $yacht = null): void
+    {
+        Log::info("[RenderMarketingVideo] {$step}", $this->logContext($context, $video, $yacht));
+    }
+
+    private function logError(string $step, array $context = [], ?Video $video = null, ?Yacht $yacht = null): void
+    {
+        Log::error("[RenderMarketingVideo] {$step}", $this->logContext($context, $video, $yacht));
+    }
+
+    private function logContext(array $context = [], ?Video $video = null, ?Yacht $yacht = null): array
+    {
+        $jobId = $this->job && method_exists($this->job, 'getJobId')
+            ? $this->job->getJobId()
+            : null;
+
+        return array_filter(array_merge([
+            'job_id' => $jobId,
+            'attempt' => $this->attempts(),
+            'video_id' => $video?->id ?? $this->videoId,
+            'video_status' => $video?->status,
+            'yacht_id' => $yacht?->id ?? $video?->yacht_id,
+            'queue' => 'video-rendering',
+        ], $context), static fn ($value) => $value !== null);
     }
 }

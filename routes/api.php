@@ -116,6 +116,8 @@ Route::prefix('auth')->group(function () {
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
+    Route::get('locations/{id}/availability', [\App\Http\Controllers\Api\BookingController::class, 'availability']);
+    Route::post('bookings', [\App\Http\Controllers\Api\BookingController::class, 'store'])->middleware('auth.optional');
     Route::post('chat/translate', [ChatTranslationController::class, 'translatePublic']);
 
     Route::post('bids/register', [BidWidgetController::class, 'register']);
