@@ -50,6 +50,7 @@ class BookingController extends Controller
             'email' => 'nullable|email',
             'source' => 'nullable|string',
             'notes' => 'nullable|string',
+            'conversation_id' => 'nullable|uuid|exists:conversations,id',
         ]);
 
         // If user is authenticated, resolve identity
@@ -62,6 +63,37 @@ class BookingController extends Controller
         $validated['status'] = 'confirmed'; // Auto-confirming by default for unified logic
 
         $booking = Booking::create($validated);
+
+        if (!empty($validated['conversation_id'])) {
+            try {
+                $conversation = \App\Models\Conversation::find($validated['conversation_id']);
+                if ($conversation) {
+                    $boatName = '';
+                    if (!empty($validated['boat_id'])) {
+                        $boat = \App\Models\Yacht::find($validated['boat_id']);
+                        if ($boat) {
+                            $boatName = " for " . $boat->boat_name;
+                        }
+                    }
+                    $typeStr = $validated['type'] ?? 'viewing';
+                    $dateFormatted = Carbon::parse($validated['date'])->format('F jS');
+                    $timeFormatted = $validated['time'];
+                    $nameStr = $validated['name'] ?? 'A visitor';
+                    
+                    $text = "{$nameStr} requested a {$typeStr} booking{$boatName} on {$dateFormatted} at {$timeFormatted}.";
+
+                    $service = app(\App\Services\ChatConversationService::class);
+                    $service->addMessage($conversation, [
+                        'sender_type' => 'system',
+                        'message_type' => 'event',
+                        'text' => $text,
+                        'metadata' => ['booking_id' => $booking->id]
+                    ], $request, $request->user());
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Failed to attach booking to conversation: ' . $e->getMessage());
+            }
+        }
 
         return response()->json([
             'message' => 'Booking confirmed',

@@ -319,6 +319,12 @@ class YachtController extends Controller
 
             $this->triggerAutomaticVideoFlows($yacht, ! $isUpdate);
 
+            $oldStatusStr = strtolower((string) ($beforeSnapshot['status'] ?? 'draft'));
+            $newStatusStr = strtolower((string) ($yacht->status ?? ''));
+            if ($oldStatusStr !== $newStatusStr && in_array($newStatusStr, ['active', 'for sale'], true)) {
+                $this->triggerSignhostContract($yacht, $actor);
+            }
+
             return response()->json($yacht, $isUpdate ? 200 : 201);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -732,6 +738,48 @@ class YachtController extends Controller
             Log::warning('[VideoAutomation] Non-critical failure: '.$e->getMessage(), [
                 'yacht_id' => $yacht->id,
                 'is_new' => $isNew,
+            ]);
+        }
+    }
+
+    private function triggerSignhostContract(Yacht $yacht, ?User $actor): void
+    {
+        try {
+            $generateAction = app(\App\Actions\Signhost\GenerateContractAction::class);
+            $createAction = app(\App\Actions\Signhost\CreateSignhostRequestAction::class);
+
+            $payload = [
+                'location_id' => $yacht->ref_harbor_id ?? $yacht->location_id ?? 1,
+                'entity_type' => 'Yacht',
+                'entity_id' => $yacht->id,
+                'title' => 'Brokerage Agreement - ' . $yacht->boat_name,
+            ];
+
+            $actionActor = $actor && !$actor->isClient() ? $actor : User::byRole('admin')->first();
+            if (!$actionActor) {
+                return;
+            }
+
+            $signRequest = $generateAction->execute($actionActor, $payload);
+
+            $owner = $yacht->user_id ? User::find($yacht->user_id) : null;
+            if ($owner && $owner->email) {
+                $ownerName = $owner->name ?? trim(($owner->first_name ?? '') . ' ' . ($owner->last_name ?? '')) ?: 'Yacht Owner';
+
+                $createAction->execute($actionActor, [
+                    'sign_request_id' => $signRequest->id,
+                    'recipients' => [
+                        [
+                            'email' => $owner->email,
+                            'name' => $ownerName,
+                            'role' => 'seller',
+                        ],
+                    ],
+                ], 'yacht-auto-contract-' . $yacht->id . '-' . time());
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[SignhostAutoContract] Non-critical failure: '.$e->getMessage(), [
+                'yacht_id' => $yacht->id,
             ]);
         }
     }
