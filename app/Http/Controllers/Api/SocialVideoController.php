@@ -220,6 +220,11 @@ class SocialVideoController extends Controller
         $video->update([
             'status' => 'queued',
             'error_message' => null,
+            'generation_provider' => config('video_automation.provider', 'openai_sora'),
+            'provider_job_id' => null,
+            'provider_status' => null,
+            'provider_progress' => null,
+            'provider_payload' => null,
         ]);
 
         RenderMarketingVideo::dispatch($video->id)->onQueue('video-rendering');

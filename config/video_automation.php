@@ -4,10 +4,12 @@ return [
     'enabled' => env('VIDEO_AUTOMATION_ENABLED', true),
     'auto_on_create' => env('VIDEO_AUTOMATION_ON_CREATE', true),
     'auto_on_publish' => env('VIDEO_AUTOMATION_ON_PUBLISH', true),
+    'provider' => env('VIDEO_AUTOMATION_PROVIDER', 'openai_sora'),
 
     // Treat these as "published" statuses (case-insensitive).
     'publish_statuses' => array_filter(array_map('trim', explode(',', env('VIDEO_AUTOMATION_PUBLISH_STATUSES', 'active,for sale,for bid,published')))),
 
+    // FFmpeg slideshow settings.
     'min_images' => (int) env('VIDEO_AUTOMATION_MIN_IMAGES', 8),
     'max_images' => (int) env('VIDEO_AUTOMATION_MAX_IMAGES', 15),
     'seconds_per_image' => (int) env('VIDEO_AUTOMATION_SECONDS_PER_IMAGE', 2),
@@ -28,5 +30,14 @@ return [
         'source' => env('VIDEO_AUTOMATION_UTM_SOURCE', 'yext'),
         'medium' => env('VIDEO_AUTOMATION_UTM_MEDIUM', 'social'),
         'campaign' => env('VIDEO_AUTOMATION_UTM_CAMPAIGN', 'boat_video'),
+    ],
+
+    'openai' => [
+        'model' => env('VIDEO_AUTOMATION_OPENAI_MODEL', 'sora-2'),
+        'size' => env('VIDEO_AUTOMATION_OPENAI_SIZE', '720x1280'),
+        'seconds' => (string) env('VIDEO_AUTOMATION_OPENAI_SECONDS', '8'),
+        'poll_seconds' => (int) env('VIDEO_AUTOMATION_OPENAI_POLL_SECONDS', 20),
+        'timeout' => (int) env('VIDEO_AUTOMATION_OPENAI_TIMEOUT', 120),
+        'use_reference_image' => env('VIDEO_AUTOMATION_OPENAI_USE_REFERENCE_IMAGE', true),
     ],
 ];
