@@ -434,11 +434,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('boat-fields', [AdminBoatFieldController::class, 'index']);
     Route::post('boat-fields', [AdminBoatFieldController::class, 'store']);
     Route::post('boat-fields/generate-help', [AdminBoatFieldController::class, 'generateHelp']);
+    Route::post('boat-fields/fill-help-defaults', [AdminBoatFieldController::class, 'fillMissingHelpDefaults']);
+    Route::post('boat-fields/generate-help-bulk', [AdminBoatFieldController::class, 'generateMissingHelpBulk']);
     Route::get('boat-fields/{boatField}', [AdminBoatFieldController::class, 'show']);
     Route::put('boat-fields/{boatField}', [AdminBoatFieldController::class, 'update']);
     Route::delete('boat-fields/{boatField}', [AdminBoatFieldController::class, 'destroy']);
     Route::get('boat-fields/{boatField}/mappings', [AdminBoatFieldMappingController::class, 'index']);
     Route::put('boat-fields/{boatField}/mappings', [AdminBoatFieldMappingController::class, 'update']);
+    Route::post('boat-fields/{boatField}/mappings/generate-ai', [AdminBoatFieldMappingController::class, 'generateAiSuggestions']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
