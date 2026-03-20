@@ -10,8 +10,9 @@ return new class extends Migration
     {
         Schema::create('ai_daily_insights', function (Blueprint $table) {
             $table->id();
-            $table->timestamp('period_start');
-            $table->timestamp('period_end');
+            // DATETIME is safer than TIMESTAMP here for strict MySQL installs.
+            $table->dateTime('period_start');
+            $table->dateTime('period_end');
             $table->string('product')->nullable();
             $table->string('environment', 50);
             $table->string('timezone', 100)->default('UTC');

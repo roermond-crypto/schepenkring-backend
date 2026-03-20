@@ -91,6 +91,7 @@ Route::prefix('auth')->group(function () {
 // ── CRM Public Chat Widget ──────────
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
+    Route::get('/', [PublicConversationMessageController::class, 'show']);
     Route::post('messages', [PublicConversationMessageController::class, 'store']);
     Route::post('ask', [PublicConversationMessageController::class, 'ask']);
     Route::patch('lead', [PublicConversationMessageController::class, 'updateLead']);

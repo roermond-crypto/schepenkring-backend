@@ -132,6 +132,38 @@ test('chat api queues outbound whatsapp messages like NautiSecure', function () 
     Queue::assertPushed(SendWhatsAppMessage::class);
 });
 
+test('chat api accepts body payloads for support messages', function () {
+    $admin = User::factory()->create([
+        'type' => UserType::ADMIN,
+        'status' => UserStatus::ACTIVE,
+    ]);
+
+    $location = Location::create([
+        'name' => 'Utrecht Harbor',
+        'code' => 'UTC',
+        'status' => 'ACTIVE',
+    ]);
+
+    $conversation = Conversation::create([
+        'location_id' => $location->id,
+        'channel' => 'web_widget',
+        'channel_origin' => 'web_widget',
+        'status' => 'open',
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $response = $this->postJson("/api/chat/conversations/{$conversation->id}/messages", [
+        'body' => 'Message sent as body payload',
+        'client_message_id' => 'body-payload-001',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('text', 'Message sent as body payload')
+        ->assertJsonPath('body', 'Message sent as body payload')
+        ->assertJsonPath('sender_type', 'admin');
+});
+
 test('chat api queues outbound call messages like NautiSecure', function () {
     Queue::fake();
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\KnowledgeEntity;
 use App\Models\Location;
 use App\Models\Yacht;
+use Illuminate\Support\Facades\Schema;
 
 class KnowledgeContextRetrievalService
 {
@@ -25,6 +26,21 @@ class KnowledgeContextRetrievalService
         ?Yacht $yacht = null,
         int $limit = 4
     ): array {
+        if (! $this->knowledgeGraphTablesAvailable()) {
+            return [
+                'entities' => [],
+                'matches' => [],
+                'trace' => [
+                    'strategy' => 'knowledge_graph_unavailable',
+                    'vector_enabled' => $this->vectors->isEnabled(),
+                    'knowledge_tables_available' => false,
+                    'seed_entity_ids' => [],
+                    'matched_entity_ids' => [],
+                    'location_scope' => $location?->id,
+                ],
+            ];
+        }
+
         $entities = [];
 
         $seedLocation = $location
@@ -116,6 +132,7 @@ class KnowledgeContextRetrievalService
             'trace' => [
                 'strategy' => $rawMatches === [] ? 'graph_seed_only' : 'graph_seed_plus_vector_search',
                 'vector_enabled' => $this->vectors->isEnabled(),
+                'knowledge_tables_available' => true,
                 'seed_entity_ids' => array_values(array_map(
                     fn (KnowledgeEntity $entity) => $entity->id,
                     array_values(array_filter([$seedLocation, $seedYacht]))
@@ -228,5 +245,11 @@ class KnowledgeContextRetrievalService
     private function compactArray(array $data): array
     {
         return array_filter($data, static fn ($value) => ! in_array($value, [null, '', []], true));
+    }
+
+    private function knowledgeGraphTablesAvailable(): bool
+    {
+        return Schema::hasTable('knowledge_entities')
+            && Schema::hasTable('knowledge_relationships');
     }
 }

@@ -16,7 +16,8 @@ return new class extends Migration
             $table->foreignId('impersonator_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('impersonated_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('token_id')->nullable()->constrained('personal_access_tokens')->nullOnDelete();
-            $table->timestamp('started_at');
+            // DATETIME avoids TIMESTAMP default issues on strict MySQL setups.
+            $table->dateTime('started_at');
             $table->timestamp('ended_at')->nullable();
             $table->string('ip_address', 45)->nullable();
             $table->text('user_agent')->nullable();

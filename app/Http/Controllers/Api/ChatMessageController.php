@@ -34,6 +34,7 @@ class ChatMessageController extends Controller
         $payload = $request->validate([
             'sender_type' => 'nullable|string|in:visitor,admin,ai,system',
             'text' => 'nullable|string',
+            'body' => 'nullable|string',
             'language' => 'nullable|string|max:5',
             'channel' => 'nullable|string|max:20',
             'external_message_id' => 'nullable|string|max:100',
@@ -56,8 +57,11 @@ class ChatMessageController extends Controller
             'session_jwt' => 'nullable|string',
         ]);
 
+        $normalizedText = $payload['text'] ?? $payload['body'] ?? null;
+        $payload['text'] = $normalizedText;
+
         $messageType = $payload['message_type'] ?? 'text';
-        if (empty($payload['text']) && empty($payload['attachments']) && $messageType !== 'call') {
+        if (empty($normalizedText) && empty($payload['attachments']) && $messageType !== 'call') {
             return response()->json(['message' => 'Message text or attachments required'], 422);
         }
 
@@ -84,7 +88,7 @@ class ChatMessageController extends Controller
 
         $explicitLanguage = array_key_exists('language', $payload) && !empty($payload['language']);
         $resolvedLanguage = $language->resolve(
-            (string) ($payload['text'] ?? ''),
+            (string) ($normalizedText ?? ''),
             $payload['language'] ?? $payload['contact']['language_preferred'] ?? $conversation->language_preferred,
             $request->header('Accept-Language'),
             $user?->locale ?? $conversation->language_preferred ?? $conversation->contact?->language_preferred
