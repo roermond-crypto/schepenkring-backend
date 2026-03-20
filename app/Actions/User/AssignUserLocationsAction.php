@@ -111,7 +111,19 @@ class AssignUserLocationsAction
     private function normalizeEmployeeLocations(User $target, array $data): array
     {
         if (! empty($data['locations'])) {
-            return array_slice(array_values($data['locations']), 0, 1);
+            // Support multiple locations — previously this was limited to 1
+            // which prevented salesguys from being assigned to multiple locations.
+            $normalized = [];
+            foreach (array_values($data['locations']) as $entry) {
+                if (empty($entry['location_id'])) {
+                    continue;
+                }
+                $normalized[] = [
+                    'location_id' => (int) $entry['location_id'],
+                    'role' => $entry['role'] ?? LocationRole::LOCATION_EMPLOYEE->value,
+                ];
+            }
+            return $normalized;
         }
 
         $locationIdWasProvided = array_key_exists('location_id', $data);

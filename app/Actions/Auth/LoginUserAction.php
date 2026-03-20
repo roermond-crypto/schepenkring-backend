@@ -45,6 +45,18 @@ class LoginUserAction
             ]);
         }
 
+        if (! $user->hasVerifiedEmail()) {
+            $this->security->log('auth.login', RiskLevel::MEDIUM, $user, $user, [
+                'email' => $data['email'],
+                'reason' => 'email_not_verified',
+            ], [
+                'result' => AuditResult::FAIL->value,
+            ]);
+            throw ValidationException::withMessages([
+                'email' => 'Please verify your email address before logging in.',
+            ]);
+        }
+
         $user->forceFill([
             'last_login_at' => now(),
         ])->save();
