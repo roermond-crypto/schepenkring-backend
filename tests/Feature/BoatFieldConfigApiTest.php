@@ -11,6 +11,7 @@ use App\Models\User;
 use Database\Seeders\BoatFieldMappingSeeder;
 use Database\Seeders\BoatFieldSeeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -269,6 +270,308 @@ class BoatFieldConfigApiTest extends TestCase
             ->assertJsonPath('data.0.mappings_count', 1)
             ->assertJsonPath('data.0.value_observations_count', 2)
             ->assertJsonPath('data.0.value_observations_total', 20);
+    }
+
+    public function test_admin_can_generate_ai_mapping_drafts_across_all_sources(): void
+    {
+        config()->set('services.openai.key', 'test-openai-key');
+
+        $admin = User::factory()->create([
+            'type' => UserType::ADMIN,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $field = BoatField::create([
+            'internal_key' => 'cooking_fuel',
+            'labels_json' => ['en' => 'Cooking Fuel', 'nl' => 'Kookbrandstof'],
+            'options_json' => [
+                ['value' => 'gas', 'label' => 'Gas'],
+                ['value' => 'electric', 'label' => 'Electric'],
+                ['value' => 'diesel', 'label' => 'Diesel'],
+            ],
+            'field_type' => 'select',
+            'block_key' => 'comfort',
+            'step_key' => 'specs',
+            'sort_order' => 10,
+            'storage_relation' => 'comfort',
+            'storage_column' => 'cooking_fuel',
+            'ai_relevance' => true,
+            'is_active' => true,
+        ]);
+
+        BoatFieldMapping::create([
+            'field_id' => $field->id,
+            'source' => 'scrape',
+            'external_value' => 'gas cooker',
+            'normalized_value' => 'gas',
+            'match_type' => 'exact',
+        ]);
+
+        BoatFieldValueObservation::create([
+            'field_id' => $field->id,
+            'source' => 'yachtshift',
+            'external_value' => 'diesel stove',
+            'observed_count' => 4,
+        ]);
+
+        BoatFieldValueObservation::create([
+            'field_id' => $field->id,
+            'source' => 'scrape',
+            'external_value' => 'gas cooker',
+            'observed_count' => 6,
+        ]);
+
+        BoatFieldValueObservation::create([
+            'field_id' => $field->id,
+            'source' => 'future_import',
+            'external_value' => 'elektrisch',
+            'observed_count' => 3,
+        ]);
+
+        $yachtId = DB::table('yachts')->insertGetId([
+            'vessel_id' => 'MAP-001',
+            'boat_name' => 'Mapping Draft Test',
+            'source' => 'manual',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('yacht_comfort')->insert([
+            'yacht_id' => $yachtId,
+            'cooking_fuel' => 'gas',
+        ]);
+
+        Http::fake([
+            'https://api.openai.com/v1/chat/completions' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => json_encode([
+                            'yachtshift' => [
+                                [
+                                    'external_value' => 'diesel stove',
+                                    'normalized_value' => 'diesel',
+                                ],
+                            ],
+                            'scrape' => [],
+                            'future_import' => [
+                                [
+                                    'external_value' => 'elektrisch',
+                                    'normalized_value' => 'electric',
+                                ],
+                            ],
+                        ]),
+                    ],
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->postJson("/api/admin/boat-fields/{$field->id}/mappings/generate-ai");
+
+        $response->assertOk()
+            ->assertJsonPath('data.field_id', $field->id)
+            ->assertJsonPath('data.created_mappings', 2)
+            ->assertJsonPath('data.created_by_source.yachtshift', 1)
+            ->assertJsonPath('data.created_by_source.scrape', 0)
+            ->assertJsonPath('data.created_by_source.future_import', 1);
+
+        $this->assertDatabaseHas('boat_field_mappings', [
+            'field_id' => $field->id,
+            'source' => 'yachtshift',
+            'external_value' => 'diesel stove',
+            'normalized_value' => 'diesel',
+            'match_type' => 'exact',
+        ]);
+
+        $this->assertDatabaseHas('boat_field_mappings', [
+            'field_id' => $field->id,
+            'source' => 'future_import',
+            'external_value' => 'elektrisch',
+            'normalized_value' => 'electric',
+            'match_type' => 'exact',
+        ]);
+
+        $this->assertDatabaseHas('boat_field_mappings', [
+            'field_id' => $field->id,
+            'source' => 'scrape',
+            'external_value' => 'gas cooker',
+            'normalized_value' => 'gas',
+            'match_type' => 'exact',
+        ]);
+
+        $this->assertSame(3, BoatFieldMapping::query()->where('field_id', $field->id)->count());
+
+        Http::assertSent(function ($request) {
+            if ($request->url() !== 'https://api.openai.com/v1/chat/completions') {
+                return false;
+            }
+
+            $content = (string) data_get($request->data(), 'messages.1.content', '');
+            $payload = json_decode($content, true);
+
+            return data_get($request->data(), 'model') === 'gpt-4o-mini'
+                && data_get($payload, 'all_observations.yachtshift.0.external_value') === 'diesel stove'
+                && data_get($payload, 'all_observations.scrape.0.external_value') === 'gas cooker'
+                && data_get($payload, 'all_observations.future_import.0.external_value') === 'elektrisch'
+                && data_get($payload, 'observations_to_map.yachtshift.0.external_value') === 'diesel stove'
+                && data_get($payload, 'observations_to_map.scrape', []) === []
+                && data_get($payload, 'observations_to_map.future_import.0.external_value') === 'elektrisch'
+                && collect(data_get($payload, 'db_existing_values', []))->pluck('value')->contains('gas')
+                && collect(data_get($payload, 'normalized_candidates', []))->pluck('value')->contains('electric');
+        });
+    }
+
+    public function test_admin_can_fill_missing_help_defaults_for_all_fields(): void
+    {
+        $admin = User::factory()->create([
+            'type' => UserType::ADMIN,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $missingHelpField = BoatField::create([
+            'internal_key' => 'cooker',
+            'labels_json' => ['en' => 'Cooker', 'nl' => 'Kooktoestel'],
+            'field_type' => 'text',
+            'block_key' => 'comfort',
+            'step_key' => 'specs',
+            'sort_order' => 10,
+            'storage_relation' => 'comfort',
+            'storage_column' => 'cooker',
+            'ai_relevance' => true,
+            'is_active' => true,
+        ]);
+
+        $partialHelpField = BoatField::create([
+            'internal_key' => 'freezer',
+            'labels_json' => ['en' => 'Freezer', 'nl' => 'Vriezer'],
+            'help_json' => ['en' => 'Keep the custom English text.'],
+            'field_type' => 'tri_state',
+            'block_key' => 'comfort',
+            'step_key' => 'specs',
+            'sort_order' => 20,
+            'storage_relation' => 'comfort',
+            'storage_column' => 'freezer',
+            'ai_relevance' => true,
+            'is_active' => true,
+        ]);
+
+        $completeHelpField = BoatField::create([
+            'internal_key' => 'microwave',
+            'labels_json' => ['en' => 'Microwave'],
+            'help_json' => [
+                'nl' => 'Bestaande NL hulptekst.',
+                'en' => 'Existing EN help text.',
+                'de' => 'Bestehender DE Hilfetext.',
+            ],
+            'field_type' => 'tri_state',
+            'block_key' => 'comfort',
+            'step_key' => 'specs',
+            'sort_order' => 30,
+            'storage_relation' => 'comfort',
+            'storage_column' => 'microwave',
+            'ai_relevance' => true,
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson('/api/admin/boat-fields/fill-help-defaults');
+
+        $response->assertOk()
+            ->assertJsonPath('data.updated_fields', 2)
+            ->assertJsonPath('data.skipped_fields', 1)
+            ->assertJsonPath('data.overwrite', false);
+
+        $missingHelpField->refresh();
+        $partialHelpField->refresh();
+        $completeHelpField->refresh();
+
+        $this->assertNotEmpty(trim((string) data_get($missingHelpField->help_json, 'nl')));
+        $this->assertNotEmpty(trim((string) data_get($missingHelpField->help_json, 'en')));
+        $this->assertNotEmpty(trim((string) data_get($missingHelpField->help_json, 'de')));
+
+        $this->assertSame(
+            'Keep the custom English text.',
+            data_get($partialHelpField->help_json, 'en'),
+        );
+        $this->assertNotEmpty(trim((string) data_get($partialHelpField->help_json, 'nl')));
+        $this->assertNotEmpty(trim((string) data_get($partialHelpField->help_json, 'de')));
+
+        $this->assertSame(
+            'Existing EN help text.',
+            data_get($completeHelpField->help_json, 'en'),
+        );
+    }
+
+    public function test_admin_can_generate_missing_help_with_ai_in_bulk(): void
+    {
+        $admin = User::factory()->create([
+            'type' => UserType::ADMIN,
+        ]);
+        Sanctum::actingAs($admin);
+
+        $cooker = BoatField::create([
+            'internal_key' => 'cooker',
+            'labels_json' => ['en' => 'Cooker'],
+            'field_type' => 'text',
+            'block_key' => 'comfort',
+            'step_key' => 'specs',
+            'sort_order' => 10,
+            'storage_relation' => 'comfort',
+            'storage_column' => 'cooker',
+            'ai_relevance' => true,
+            'is_active' => true,
+        ]);
+
+        $freezer = BoatField::create([
+            'internal_key' => 'freezer',
+            'labels_json' => ['en' => 'Freezer'],
+            'help_json' => ['en' => 'Keep my existing English help.'],
+            'field_type' => 'tri_state',
+            'block_key' => 'comfort',
+            'step_key' => 'specs',
+            'sort_order' => 20,
+            'storage_relation' => 'comfort',
+            'storage_column' => 'freezer',
+            'ai_relevance' => true,
+            'is_active' => true,
+        ]);
+
+        Http::fake([
+            'https://api.openai.com/v1/chat/completions' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'content' => json_encode([
+                            'cooker' => [
+                                'nl' => 'AI NL cooker help.',
+                                'en' => 'AI EN cooker help.',
+                                'de' => 'AI DE cooker help.',
+                            ],
+                            'freezer' => [
+                                'nl' => 'AI NL freezer help.',
+                                'en' => 'AI EN freezer help.',
+                                'de' => 'AI DE freezer help.',
+                            ],
+                        ]),
+                    ],
+                ]],
+            ], 200),
+        ]);
+
+        $response = $this->postJson('/api/admin/boat-fields/generate-help-bulk');
+
+        $response->assertOk()
+            ->assertJsonPath('data.updated_fields', 2)
+            ->assertJsonPath('data.skipped_fields', 0)
+            ->assertJsonPath('data.overwrite', false);
+
+        $cooker->refresh();
+        $freezer->refresh();
+
+        $this->assertSame('AI EN cooker help.', data_get($cooker->help_json, 'en'));
+        $this->assertSame(
+            'Keep my existing English help.',
+            data_get($freezer->help_json, 'en'),
+        );
+        $this->assertSame('AI NL freezer help.', data_get($freezer->help_json, 'nl'));
+        $this->assertSame('AI DE freezer help.', data_get($freezer->help_json, 'de'));
     }
 
     public function test_boat_field_seeder_populates_dynamic_specs_blocks(): void

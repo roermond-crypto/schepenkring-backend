@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\BoatField;
 use App\Models\BoatFieldMapping;
+use App\Services\BoatFieldMappingSuggestionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -121,6 +122,38 @@ class BoatFieldMappingController extends Controller
                 'field_id' => $boatField->id,
                 'source' => $source,
                 'mappings' => $mappings,
+            ],
+        ]);
+    }
+
+    public function generateAiSuggestions(
+        BoatField $boatField,
+        BoatFieldMappingSuggestionService $mappingSuggestionService,
+    ): JsonResponse {
+        $result = $mappingSuggestionService->generateAndPersist($boatField);
+
+        $mappingCountsBySource = $boatField->mappings()
+            ->selectRaw('source, COUNT(*) as mappings_count')
+            ->groupBy('source')
+            ->pluck('mappings_count', 'source');
+
+        $observationSummaryBySource = $boatField->valueObservations()
+            ->selectRaw('source, COUNT(*) as observed_values_count, COALESCE(SUM(observed_count), 0) as observed_total, MAX(last_seen_at) as last_seen_at')
+            ->groupBy('source')
+            ->get()
+            ->keyBy('source');
+
+        return response()->json([
+            'message' => 'AI mapping suggestions generated successfully.',
+            'data' => [
+                ...$result,
+                'source_summary' => collect(BoatFieldMapping::SOURCES)
+                    ->map(fn (string $source) => $this->buildSourceSummaryRow(
+                        $source,
+                        $mappingCountsBySource,
+                        $observationSummaryBySource,
+                    ))
+                    ->values(),
             ],
         ]);
     }

@@ -10,6 +10,7 @@ use App\Services\BoatFieldHelpGeneratorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 
 class BoatFieldController extends Controller
@@ -131,6 +132,171 @@ class BoatFieldController extends Controller
         return response()->json([
             'data' => [
                 'help_json' => $generatedHelp,
+            ],
+        ]);
+    }
+
+    public function fillMissingHelpDefaults(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'overwrite' => 'nullable|boolean',
+        ]);
+
+        $overwrite = (bool) ($validated['overwrite'] ?? false);
+        $updatedFields = 0;
+        $skippedFields = 0;
+
+        BoatField::query()
+            ->orderBy('id')
+            ->chunkById(100, function ($fields) use ($overwrite, &$updatedFields, &$skippedFields) {
+                foreach ($fields as $field) {
+                    $existingHelp = is_array($field->help_json) ? $field->help_json : [];
+                    $resolvedHelp = Arr::only($field->helpTexts(), ['nl', 'en', 'de']);
+                    $nextHelp = $existingHelp;
+                    $changed = false;
+
+                    foreach ($resolvedHelp as $locale => $defaultText) {
+                        $currentText = trim((string) ($existingHelp[$locale] ?? ''));
+
+                        if (! $overwrite && $currentText !== '') {
+                            continue;
+                        }
+
+                        $normalizedDefault = trim((string) $defaultText);
+                        if ($normalizedDefault === '') {
+                            continue;
+                        }
+
+                        if ($currentText !== $normalizedDefault) {
+                            $nextHelp[$locale] = $normalizedDefault;
+                            $changed = true;
+                        }
+                    }
+
+                    if (! $changed) {
+                        $skippedFields++;
+                        continue;
+                    }
+
+                    $field->forceFill([
+                        'help_json' => $nextHelp,
+                    ])->save();
+
+                    $updatedFields++;
+                }
+            });
+
+        return response()->json([
+            'data' => [
+                'overwrite' => $overwrite,
+                'updated_fields' => $updatedFields,
+                'skipped_fields' => $skippedFields,
+            ],
+        ]);
+    }
+
+    public function generateMissingHelpBulk(Request $request, BoatFieldHelpGeneratorService $helpGenerator): JsonResponse
+    {
+        $validated = $request->validate([
+            'overwrite' => 'nullable|boolean',
+        ]);
+
+        $overwrite = (bool) ($validated['overwrite'] ?? false);
+        $candidateFields = BoatField::query()
+            ->orderBy('id')
+            ->get()
+            ->filter(function (BoatField $field) use ($overwrite) {
+                if ($overwrite) {
+                    return true;
+                }
+
+                $existingHelp = is_array($field->help_json) ? $field->help_json : [];
+
+                foreach (['nl', 'en', 'de'] as $locale) {
+                    if (trim((string) ($existingHelp[$locale] ?? '')) === '') {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+
+        if ($candidateFields->isEmpty()) {
+            return response()->json([
+                'data' => [
+                    'overwrite' => $overwrite,
+                    'updated_fields' => 0,
+                    'skipped_fields' => 0,
+                ],
+            ]);
+        }
+
+        $updatedFields = 0;
+        $skippedFields = 0;
+
+        foreach ($candidateFields->chunk(20) as $chunk) {
+            $generatedByFieldKey = $helpGenerator->generateMany(
+                $chunk
+                    ->map(fn (BoatField $field) => [
+                        'internal_key' => $field->internal_key,
+                        'labels_json' => $field->labels_json ?? [],
+                        'field_type' => $field->field_type,
+                        'block_key' => $field->block_key,
+                        'step_key' => $field->step_key,
+                        'options_json' => $field->options_json ?? [],
+                    ])
+                    ->all(),
+            );
+
+            foreach ($chunk as $field) {
+                $existingHelp = is_array($field->help_json) ? $field->help_json : [];
+                $generatedHelp = $generatedByFieldKey[$field->internal_key] ?? null;
+
+                if (! is_array($generatedHelp)) {
+                    $skippedFields++;
+                    continue;
+                }
+
+                $nextHelp = $existingHelp;
+                $changed = false;
+
+                foreach (['nl', 'en', 'de'] as $locale) {
+                    $currentText = trim((string) ($existingHelp[$locale] ?? ''));
+                    $generatedText = trim((string) ($generatedHelp[$locale] ?? ''));
+
+                    if ($generatedText === '') {
+                        continue;
+                    }
+
+                    if (! $overwrite && $currentText !== '') {
+                        continue;
+                    }
+
+                    if ($currentText !== $generatedText) {
+                        $nextHelp[$locale] = $generatedText;
+                        $changed = true;
+                    }
+                }
+
+                if (! $changed) {
+                    $skippedFields++;
+                    continue;
+                }
+
+                $field->forceFill([
+                    'help_json' => $nextHelp,
+                ])->save();
+
+                $updatedFields++;
+            }
+        }
+
+        return response()->json([
+            'data' => [
+                'overwrite' => $overwrite,
+                'updated_fields' => $updatedFields,
+                'skipped_fields' => $skippedFields,
             ],
         ]);
     }

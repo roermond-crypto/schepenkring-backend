@@ -71,6 +71,8 @@ return [
         'chat_model' => env('OPENAI_CHAT_MODEL', 'gpt-5-mini'),
         'chat_timeout' => env('OPENAI_CHAT_TIMEOUT', 45),
         'chat_max_output_tokens' => env('OPENAI_CHAT_MAX_OUTPUT_TOKENS', 450),
+        'mapping_model' => env('OPENAI_MAPPING_MODEL', 'gpt-4o-mini'),
+        'mapping_timeout' => env('OPENAI_MAPPING_TIMEOUT', 120),
         'translation_model' => env('OPENAI_TRANSLATION_MODEL', 'gpt-4o-mini'),
         'translation_timeout' => env('OPENAI_TRANSLATION_TIMEOUT', 30),
         'insights_model' => env('OPENAI_INSIGHTS_MODEL', 'gpt-5'),
