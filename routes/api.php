@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
 use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
+use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
 use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
@@ -116,6 +117,8 @@ Route::prefix('auth')->group(function () {
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
+    Route::get('locations/{id}/availability', [\App\Http\Controllers\Api\BookingController::class, 'availability']);
+    Route::post('bookings', [\App\Http\Controllers\Api\BookingController::class, 'store'])->middleware('auth.optional');
     Route::post('chat/translate', [ChatTranslationController::class, 'translatePublic']);
 
     Route::post('bids/register', [BidWidgetController::class, 'register']);
@@ -312,11 +315,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('signhost/cancel', [SignhostController::class, 'cancel']);
     Route::get('signhost/status', [SignhostController::class, 'status']);
     Route::get('signhost/documents', [SignhostController::class, 'documents']);
-    Route::post('deals/{dealId}/contract/generate', [SignhostController::class, 'generateDealContract']);
-    Route::post('deals/{dealId}/signhost/create', [SignhostController::class, 'createDealSignhost']);
-    Route::get('deals/{dealId}/signhost/status', [SignhostController::class, 'dealStatus']);
-    Route::get('deals/{dealId}/signhost/documents', [SignhostController::class, 'dealDocuments']);
-    Route::get('deals/{dealId}/signhost/url', [SignhostController::class, 'dealSignUrl']);
+    Route::post('yachts/{yachtId}/contract/generate', [SignhostController::class, 'generateYachtContract']);
+    Route::post('yachts/{yachtId}/signhost/create', [SignhostController::class, 'createYachtSignhost']);
+    Route::get('yachts/{yachtId}/signhost/status', [SignhostController::class, 'yachtStatus']);
+    Route::get('yachts/{yachtId}/signhost/documents', [SignhostController::class, 'yachtDocuments']);
+    Route::get('yachts/{yachtId}/signhost/url', [SignhostController::class, 'yachtSignUrl']);
 
     // Tasks
     Route::get('public/users/employees', [TaskUserController::class, 'employees']);
@@ -400,6 +403,10 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('insights/latest', [AdminInsightController::class, 'latest']);
     Route::get('insights/{insight}', [AdminInsightController::class, 'show']);
     Route::post('insights/generate', [AdminInsightController::class, 'generate']);
+
+    // Bookings
+    Route::get('bookings', [AdminBookingController::class, 'index']);
+    Route::get('bookings/{id}', [AdminBookingController::class, 'show']);
 
     // Harbors
     Route::get('harbors', [AdminHarborController::class, 'index']);

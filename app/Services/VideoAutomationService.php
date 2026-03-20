@@ -166,6 +166,7 @@ class VideoAutomationService
             'status' => 'queued',
             'template_type' => $templateType ?: config('video_automation.template_type'),
             'generation_trigger' => $trigger,
+            'generation_provider' => config('video_automation.provider', 'openai_sora'),
             'whatsapp_status' => config('video_automation.auto_notify_owner_whatsapp', true) ? 'pending' : 'skipped',
         ]);
 
@@ -197,9 +198,9 @@ class VideoAutomationService
         }
 
         // Download remote URLs (Cloudinary, S3, CDN) to a local temp file so
-        // FFmpeg can read them. Previously these were silently rejected, which
-        // caused renderableImageCount() to return 0 for all boats whose images
-        // are stored on an external CDN.
+        // the video pipeline can read them. Previously these were silently
+        // rejected, which caused renderableImageCount() to return 0 for boats
+        // whose images are stored on an external CDN.
         if (preg_match('/^https?:\/\//i', $candidate) === 1) {
             return $this->downloadToTemp($candidate);
         }
@@ -214,7 +215,7 @@ class VideoAutomationService
     }
 
     /**
-     * Download a remote image URL to a local temp file for FFmpeg rendering.
+     * Download a remote image URL to a local temp file for video rendering.
      * Caches the file for 1 hour to avoid re-downloading during the same job.
      */
     private function downloadToTemp(string $url): ?string

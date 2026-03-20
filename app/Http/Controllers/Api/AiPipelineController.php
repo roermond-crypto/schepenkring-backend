@@ -2723,12 +2723,8 @@ SCHEMA;
 
             // Step 1: Generate embedding
             $embedResponse = Http::withToken($openAiKey)
-                ->timeout(15)
-                ->post('https://api.openai.com/v1/embeddings', [
-                    'model' => 'text-embedding-3-small',
-                    'input' => $searchText,
-                    'dimensions' => 1408,
-                ]);
+                ->timeout((int) config('services.openai.embedding_timeout', 15))
+                ->post('https://api.openai.com/v1/embeddings', $this->embeddingPayload($searchText));
 
             if (!$embedResponse->successful()) {
                 Log::warning('[AI Pipeline] Pinecone embedding failed: ' . $embedResponse->status());
@@ -4833,12 +4829,8 @@ USER;
         }
 
         $embedResponse = Http::withToken($openAiKey)
-            ->timeout(15)
-            ->post('https://api.openai.com/v1/embeddings', [
-                'model' => 'text-embedding-3-small',
-                'input' => $searchText,
-                'dimensions' => 1408,
-            ]);
+            ->timeout((int) config('services.openai.embedding_timeout', 15))
+            ->post('https://api.openai.com/v1/embeddings', $this->embeddingPayload($searchText));
 
         if (!$embedResponse->successful()) {
             return [];
@@ -6047,5 +6039,21 @@ USER;
         $text = preg_replace('/```json\s*|\s*```/', '', $text);
         $text = trim($text);
         return $text;
+    }
+
+    private function embeddingPayload(string $input): array
+    {
+        $model = (string) config('services.openai.embedding_model', 'text-embedding-3-small');
+        $dimensions = (int) config('services.openai.embedding_dimensions', 1408);
+        $payload = [
+            'model' => $model,
+            'input' => $input,
+        ];
+
+        if ($dimensions > 0 && str_starts_with($model, 'text-embedding-3-')) {
+            $payload['dimensions'] = $dimensions;
+        }
+
+        return $payload;
     }
 }

@@ -14,6 +14,11 @@ class Video extends Model
         'status',
         'template_type',
         'generation_trigger',
+        'generation_provider',
+        'provider_job_id',
+        'provider_status',
+        'provider_progress',
+        'provider_payload',
         'video_path',
         'video_url',
         'thumbnail_path',
@@ -32,6 +37,8 @@ class Video extends Model
     ];
 
     protected $casts = [
+        'provider_progress' => 'integer',
+        'provider_payload' => 'array',
         'duration_seconds' => 'integer',
         'file_size_bytes' => 'integer',
         'generated_at' => 'datetime',
