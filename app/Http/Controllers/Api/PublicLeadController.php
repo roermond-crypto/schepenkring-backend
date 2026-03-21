@@ -3,12 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Location;
 use App\Models\Yacht;
 use App\Services\ChatAiReplyService;
-use App\Services\ChatContactService;
 use App\Services\ChatConversationService;
 use App\Support\CopilotLanguage;
 use Illuminate\Http\Request;
@@ -20,7 +18,6 @@ class PublicLeadController extends Controller
     public function store(
         Request $request,
         ChatConversationService $chat,
-        ChatContactService $contacts,
         ChatAiReplyService $ai,
         CopilotLanguage $language
     )
@@ -37,7 +34,7 @@ class PublicLeadController extends Controller
             'visitor_id' => 'nullable|string'
         ]);
 
-        return DB::transaction(function () use ($validated, $request, $chat, $contacts, $ai, $language) {
+        return DB::transaction(function () use ($validated, $request, $chat, $ai, $language) {
             $yacht = $this->resolveYacht($validated);
             $yachtId = $yacht?->id;
             $locationId = $this->resolveLocationId($validated, $yacht);
@@ -48,43 +45,49 @@ class PublicLeadController extends Controller
                 ]);
             }
 
-            $contact = $contacts->resolveContact([
+            $contactPayload = [
                 'name' => $validated['name'] ?? null,
                 'email' => $validated['email'] ?? null,
                 'phone' => $validated['phone'] ?? null,
-            ], null);
+            ];
 
-            $lead = Lead::create([
-                'location_id' => $locationId,
-                'yacht_id' => $yachtId,
-                'source' => 'web_widget',
-                'source_url' => $validated['source_url'] ?? null,
-                'name' => $validated['name'] ?? null,
-                'email' => $validated['email'] ?? null,
-                'phone' => $validated['phone'] ?? null,
-                'status' => 'new'
-            ]);
-
-            $conversation = Conversation::create([
-                'location_id' => $locationId,
-                'boat_id' => $yachtId,
-                'contact_id' => $contact?->id,
+            $conversation = $chat->createConversation([
                 'visitor_id' => $validated['visitor_id'] ?? null,
-                'channel' => 'web_widget',
+                'contact' => $contactPayload,
+                'boat_id' => $yachtId,
+                'harbor_id' => $locationId,
+                'page_url' => $validated['source_url'] ?? null,
                 'channel_origin' => 'web_widget',
                 'ai_mode' => 'auto',
-                'lead_id' => $lead->id,
-                'status' => 'open',
-                'page_url' => $validated['source_url'] ?? null,
-            ]);
+                'reuse' => true,
+                'skip_rate_limit' => true,
+            ], $request);
 
-            $lead->update(['conversation_id' => $conversation->id]);
+            $lead = $conversation->lead;
+
+            if (! $lead) {
+                $lead = Lead::create([
+                    'location_id' => $locationId,
+                    'yacht_id' => $yachtId,
+                    'source' => 'web_widget',
+                    'source_url' => $validated['source_url'] ?? null,
+                    'name' => $validated['name'] ?? null,
+                    'email' => $validated['email'] ?? null,
+                    'phone' => $validated['phone'] ?? null,
+                    'status' => 'new',
+                ]);
+
+                $conversation->lead_id = $lead->id;
+                $conversation->save();
+
+                $lead->update(['conversation_id' => $conversation->id]);
+            }
 
             $resolvedLanguage = $language->resolve(
                 $validated['message'],
-                $contact?->language_preferred,
+                $conversation->contact?->language_preferred,
                 $request->header('Accept-Language'),
-                $contact?->language_preferred
+                $conversation->contact?->language_preferred
             );
 
             $message = $chat->addMessage($conversation, [
@@ -93,6 +96,7 @@ class PublicLeadController extends Controller
                 'language' => $resolvedLanguage['language'],
                 'client_message_id' => $validated['client_message_id'],
                 'delivery_state' => 'sent',
+                'contact' => $contactPayload,
             ], $request);
 
             $chat->syncLanguageContext($conversation, $resolvedLanguage, null, 'visitor', true);

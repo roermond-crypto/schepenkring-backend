@@ -8,6 +8,7 @@ use App\Models\Location;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
@@ -85,6 +86,42 @@ test('admin locations endpoint shows assigned employees for each location', func
         ->assertJsonPath('data.0.employees.0.id', $employee->id)
         ->assertJsonPath('data.0.employees.0.name', 'Dock Employee')
         ->assertJsonPath('data.0.employees.0.location_role', LocationRole::LOCATION_MANAGER->value);
+});
+
+test('admin locations endpoint still works when location_user active column is missing', function () {
+    Schema::table('location_user', function ($table) {
+        $table->dropIndex('location_user_location_id_active_index');
+        $table->dropColumn('active');
+    });
+
+    $admin = User::factory()->create([
+        'type' => UserType::ADMIN,
+        'status' => UserStatus::ACTIVE,
+    ]);
+
+    $location = Location::create([
+        'name' => 'Legacy Harbor',
+        'code' => 'LGY',
+        'status' => 'ACTIVE',
+    ]);
+
+    $employee = User::factory()->create([
+        'type' => UserType::EMPLOYEE,
+        'status' => UserStatus::ACTIVE,
+        'name' => 'Legacy Employee',
+    ]);
+
+    $employee->locations()->attach($location->id, [
+        'role' => LocationRole::LOCATION_MANAGER->value,
+    ]);
+
+    Sanctum::actingAs($admin);
+
+    $this->getJson('/api/admin/locations')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $location->id)
+        ->assertJsonPath('data.0.employee_count', 1)
+        ->assertJsonPath('data.0.employees.0.name', 'Legacy Employee');
 });
 
 test('employee chat inbox is scoped to their location and includes ai replies', function () {

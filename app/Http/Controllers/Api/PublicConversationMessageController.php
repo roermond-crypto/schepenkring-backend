@@ -14,6 +14,31 @@ use Illuminate\Support\Facades\Crypt;
 
 class PublicConversationMessageController extends Controller
 {
+    public function show($conversationId, Request $request)
+    {
+        $conversation = Conversation::with([
+            'contact',
+            'lead',
+            'messages' => function ($query) {
+                $query->with(['attachments', 'employee:id,name,email'])
+                    ->orderBy('created_at', 'asc')
+                    ->limit(200);
+            },
+        ])->findOrFail($conversationId);
+
+        $validated = $request->validate([
+            'visitor_id' => 'nullable|string|max:64',
+            'session_jwt' => 'nullable|string',
+        ]);
+
+        $this->assertConversationAccess($conversation, $validated);
+
+        return response()->json([
+            'conversation' => $conversation,
+            'messages' => $conversation->messages,
+        ]);
+    }
+
     public function store(
         $conversationId,
         Request $request,

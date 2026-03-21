@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class Location extends Model
 {
@@ -27,9 +28,7 @@ class Location extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)
-            ->withPivot('role', 'active')
-            ->withTimestamps();
+        return $this->userRelation();
     }
 
     public function clients(): HasMany
@@ -39,19 +38,20 @@ class Location extends Model
 
     public function employees(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)
-            ->withPivot('role', 'active')
-            ->withTimestamps()
+        return $this->userRelation()
             ->where('users.type', UserType::EMPLOYEE->value);
     }
 
     public function activeEmployees(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)
-            ->withPivot('role', 'active')
-            ->withTimestamps()
-            ->where('users.type', UserType::EMPLOYEE->value)
-            ->wherePivot('active', true);
+        $relation = $this->userRelation()
+            ->where('users.type', UserType::EMPLOYEE->value);
+
+        if (self::locationUserSupportsActiveFlag()) {
+            $relation->wherePivot('active', true);
+        }
+
+        return $relation;
     }
 
     public function yachts(): HasMany
@@ -67,5 +67,27 @@ class Location extends Model
     public function knowledgeSuggestions(): HasMany
     {
         return $this->hasMany(KnowledgeBrainSuggestion::class);
+    }
+
+    private function userRelation(): BelongsToMany
+    {
+        $relation = $this->belongsToMany(User::class)
+            ->withPivot('role')
+            ->withTimestamps();
+
+        if (self::locationUserSupportsActiveFlag()) {
+            $relation->withPivot('active');
+        }
+
+        return $relation;
+    }
+
+    private static function locationUserSupportsActiveFlag(): bool
+    {
+        try {
+            return Schema::hasColumn('location_user', 'active');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }

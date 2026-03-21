@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
@@ -144,22 +145,45 @@ class User extends Authenticatable implements MustVerifyEmail
     // ── Relations ──────────────────────────────────────────
     public function locations(): BelongsToMany
     {
-        return $this->belongsToMany(Location::class)
-            ->withPivot('role', 'active')
-            ->withTimestamps();
+        return $this->locationRelation();
     }
 
     public function activeLocations(): BelongsToMany
     {
-        return $this->belongsToMany(Location::class)
-            ->withPivot('role', 'active')
-            ->withTimestamps()
-            ->wherePivot('active', true);
+        $relation = $this->locationRelation();
+
+        if (self::locationUserSupportsActiveFlag()) {
+            $relation->wherePivot('active', true);
+        }
+
+        return $relation;
     }
 
     public function clientLocation(): BelongsTo
     {
         return $this->belongsTo(Location::class, 'client_location_id');
+    }
+
+    private function locationRelation(): BelongsToMany
+    {
+        $relation = $this->belongsToMany(Location::class)
+            ->withPivot('role')
+            ->withTimestamps();
+
+        if (self::locationUserSupportsActiveFlag()) {
+            $relation->withPivot('active');
+        }
+
+        return $relation;
+    }
+
+    private static function locationUserSupportsActiveFlag(): bool
+    {
+        try {
+            return Schema::hasColumn('location_user', 'active');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function primaryEmployeeLocation(): ?Location
