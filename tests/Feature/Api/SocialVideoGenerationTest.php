@@ -67,6 +67,92 @@ test('staff can queue a generated social video from yacht images', function () {
         ]);
 });
 
+test('staff can queue a generated social video from explicit approved image ids', function () {
+    Queue::fake();
+    Storage::fake('public');
+
+    $location = Location::create([
+        'name' => 'Explicit Source Marina',
+        'code' => 'ESM',
+        'status' => 'ACTIVE',
+    ]);
+
+    $employee = socialVideoStaffForLocation($location);
+    $yacht = socialVideoYacht($location->id);
+
+    Storage::disk('public')->put('approved/master/source-a.jpg', 'image-a');
+    Storage::disk('public')->put('approved/master/source-b.jpg', 'image-b');
+
+    $firstImage = YachtImage::create([
+        'yacht_id' => $yacht->id,
+        'optimized_master_url' => 'approved/master/source-a.jpg',
+        'status' => 'approved',
+        'sort_order' => 1,
+    ]);
+
+    $secondImage = YachtImage::create([
+        'yacht_id' => $yacht->id,
+        'optimized_master_url' => 'approved/master/source-b.jpg',
+        'status' => 'approved',
+        'sort_order' => 2,
+    ]);
+
+    Sanctum::actingAs($employee);
+
+    $response = $this->postJson('/api/social/videos/generate', [
+        'yacht_id' => $yacht->id,
+        'approved_image_ids' => [$secondImage->id],
+        'use_approved_images_only' => true,
+    ]);
+
+    $response->assertAccepted()
+        ->assertJsonPath('video.yacht_id', $yacht->id)
+        ->assertJsonPath('video.source_image_ids_json.0', $secondImage->id)
+        ->assertJsonPath('renderable_image_count', 1);
+
+    $this->assertDatabaseHas('videos', [
+        'yacht_id' => $yacht->id,
+        'source_image_ids_json' => json_encode([$secondImage->id]),
+    ]);
+
+    expect(Video::query()->count())->toBe(1);
+    expect($firstImage->id)->not->toBe($secondImage->id);
+});
+
+test('generate social video rejects selected images that are not approved for the yacht', function () {
+    Queue::fake();
+    Storage::fake('public');
+
+    $location = Location::create([
+        'name' => 'Approval Guard Marina',
+        'code' => 'AGM',
+        'status' => 'ACTIVE',
+    ]);
+
+    $employee = socialVideoStaffForLocation($location);
+    $yacht = socialVideoYacht($location->id);
+
+    Storage::disk('public')->put('approved/master/guard-image.jpg', 'image');
+
+    $unapprovedImage = YachtImage::create([
+        'yacht_id' => $yacht->id,
+        'optimized_master_url' => 'approved/master/guard-image.jpg',
+        'status' => 'ready_for_review',
+        'sort_order' => 1,
+    ]);
+
+    Sanctum::actingAs($employee);
+
+    $this->postJson('/api/social/videos/generate', [
+        'yacht_id' => $yacht->id,
+        'approved_image_ids' => [$unapprovedImage->id],
+        'use_approved_images_only' => true,
+    ])->assertUnprocessable()
+        ->assertJsonPath('message', 'Selected images must belong to the requested yacht and be approved.');
+
+    expect(Video::query()->count())->toBe(0);
+});
+
 test('generate social video returns existing queued video by default', function () {
     Queue::fake();
     Storage::fake('public');

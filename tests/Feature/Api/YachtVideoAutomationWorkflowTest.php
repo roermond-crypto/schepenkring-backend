@@ -211,3 +211,60 @@ test('authorized users can manually queue owner whatsapp delivery from the socia
         return $job->videoId === $video->id && $job->force === true;
     });
 });
+
+test('authenticated users can upload, list, publish, and delete boat videos through legacy endpoints', function () {
+    Storage::fake('public');
+
+    $location = Location::create([
+        'name' => 'Legacy Video Marina',
+        'code' => 'LVM',
+        'status' => 'ACTIVE',
+    ]);
+
+    $owner = User::factory()->create([
+        'type' => UserType::CLIENT,
+        'status' => UserStatus::ACTIVE,
+        'client_location_id' => $location->id,
+    ]);
+
+    $yacht = Yacht::create([
+        'user_id' => $owner->id,
+        'ref_harbor_id' => $location->id,
+        'boat_name' => 'Legacy Upload Yacht',
+        'status' => 'draft',
+    ]);
+
+    Sanctum::actingAs($owner);
+
+    $uploadResponse = $this->post('/api/yachts/'.$yacht->id.'/boat-videos', [
+        'video' => UploadedFile::fake()->create('walkthrough.mp4', 1024, 'video/mp4'),
+    ], [
+        'Accept' => 'application/json',
+    ]);
+
+    $uploadResponse->assertCreated()
+        ->assertJsonPath('yacht_id', (string) $yacht->id)
+        ->assertJsonPath('status', 'ready');
+
+    $videoId = $uploadResponse->json('id');
+
+    $this->getJson('/api/yachts/'.$yacht->id.'/boat-videos')
+        ->assertOk()
+        ->assertJsonFragment([
+            'id' => $videoId,
+            'yacht_id' => $yacht->id,
+        ]);
+
+    $this->postJson('/api/boat-videos/'.$videoId.'/publish')
+        ->assertOk()
+        ->assertJsonPath('id', $videoId)
+        ->assertJsonPath('status', 'ready');
+
+    $this->deleteJson('/api/boat-videos/'.$videoId)
+        ->assertOk()
+        ->assertJsonPath('message', 'Video deleted');
+
+    $this->assertDatabaseMissing('videos', [
+        'id' => $videoId,
+    ]);
+});

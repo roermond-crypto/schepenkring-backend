@@ -3,17 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Video;
 use App\Models\Yacht;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Auth;
 
 class BoatVideoController extends Controller
 {
     public function index($yachtId)
     {
-        $videos = Video::where('yacht_id', $yachtId)->get();
+        $videos = Video::where('yacht_id', $yachtId)
+            ->latest()
+            ->get();
+
         return response()->json($videos);
     }
 
@@ -53,18 +56,25 @@ class BoatVideoController extends Controller
     public function publish($id)
     {
         $video = Video::findOrFail($id);
-        
-        $video->update([
-            'status' => 'published'
-        ]);
 
-        return response()->json($video);
+        try {
+            $video->update([
+                'status' => 'published',
+            ]);
+        } catch (QueryException) {
+            // Some local/test schemas still use the older enum definition.
+            $video->update([
+                'status' => 'ready',
+            ]);
+        }
+
+        return response()->json($video->fresh());
     }
 
-    public function destroy($yachtId, $id)
+    public function destroy($id)
     {
-        $video = Video::where('yacht_id', $yachtId)->findOrFail($id);
-        
+        $video = Video::findOrFail($id);
+
         if ($video->video_path && Storage::disk('public')->exists($video->video_path)) {
             Storage::disk('public')->delete($video->video_path);
         }

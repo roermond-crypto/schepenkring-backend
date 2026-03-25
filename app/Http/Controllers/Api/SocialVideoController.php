@@ -30,26 +30,66 @@ class SocialVideoController extends Controller
 
         $validated = $request->validate([
             'yacht_id' => ['required', 'integer', 'exists:yachts,id'],
+            'boat_id' => ['nullable', 'integer'],
+            'image_ids' => ['nullable', 'array', 'min:1'],
+            'image_ids.*' => ['integer', 'exists:yacht_images,id'],
+            'approved_image_ids' => ['nullable', 'array', 'min:1'],
+            'approved_image_ids.*' => ['integer', 'exists:yacht_images,id'],
+            'use_approved_images_only' => ['nullable', 'boolean'],
             'template_type' => ['nullable', 'string', 'max:100'],
             'force' => ['nullable', 'boolean'],
         ]);
 
+        if (
+            isset($validated['boat_id']) &&
+            (int) $validated['boat_id'] !== (int) $validated['yacht_id']
+        ) {
+            return response()->json([
+                'message' => 'boat_id must match yacht_id for video generation.',
+            ], 422);
+        }
+
         $yacht = Yacht::findOrFail($validated['yacht_id']);
         $this->authorizeYachtAccess($user, $yacht);
 
-        $force = (bool) ($validated['force'] ?? false);
-        if (! $force) {
-            $existing = $this->automation->findReusableVideo($yacht);
-            if ($existing) {
+        $selectedSourceImageIds = collect(
+            $validated['approved_image_ids'] ?? $validated['image_ids'] ?? []
+        )
+            ->map(static fn ($id) => (int) $id)
+            ->filter(static fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $enforceApprovedSelection =
+            (bool) ($validated['use_approved_images_only'] ?? false) ||
+            array_key_exists('approved_image_ids', $validated);
+
+        if ($selectedSourceImageIds !== []) {
+            $availableImageIds = $yacht->images()
+                ->when($enforceApprovedSelection, static function (Builder $query): void {
+                    $query->where('status', 'approved');
+                })
+                ->whereIn('id', $selectedSourceImageIds)
+                ->pluck('id')
+                ->map(static fn ($id) => (int) $id)
+                ->all();
+
+            $availableIndex = array_flip($availableImageIds);
+            $selectedSourceImageIds = array_values(array_filter(
+                $selectedSourceImageIds,
+                static fn (int $id): bool => isset($availableIndex[$id])
+            ));
+
+            if (count($selectedSourceImageIds) !== count($validated['approved_image_ids'] ?? $validated['image_ids'] ?? [])) {
                 return response()->json([
-                    'message' => 'Existing generated video returned',
-                    'video' => $existing->load('posts'),
-                    'renderable_image_count' => $this->automation->renderableImageCount($yacht),
-                ]);
+                    'message' => 'Selected images must belong to the requested yacht and be approved.',
+                ], 422);
             }
         }
 
-        $renderableImageCount = $this->automation->renderableImageCount($yacht);
+        $force = (bool) ($validated['force'] ?? false);
+        $renderableImageCount = $this->automation->renderableImageCount($yacht, $selectedSourceImageIds);
         if ($renderableImageCount === 0) {
             return response()->json([
                 'message' => 'No usable boat images found for video generation.',
@@ -59,7 +99,9 @@ class SocialVideoController extends Controller
         $result = $this->automation->queueManualVideo(
             $yacht,
             $validated['template_type'] ?? null,
-            $force
+            $force,
+            $selectedSourceImageIds,
+            $force ? 'manual_force' : 'manual'
         );
 
         return response()->json([

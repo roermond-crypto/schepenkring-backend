@@ -96,7 +96,7 @@ class RenderMarketingVideo implements ShouldQueue
 
                 $this->logInfo('ffmpeg_available', [], $video, $yacht);
                 $workDir = $this->ensureWorkDir($video, $yacht);
-                $imagePaths = $this->collectImages($yacht, $automation);
+                $imagePaths = $this->collectImages($video, $yacht, $automation);
 
                 if ($imagePaths === []) {
                     $this->cleanup($workDir);
@@ -135,7 +135,7 @@ class RenderMarketingVideo implements ShouldQueue
 
             if ($provider === $openAiVideos->providerName()) {
                 $workDir = $this->ensureWorkDir($video, $yacht);
-                $imagePaths = $this->collectImages($yacht, $automation);
+                $imagePaths = $this->collectImages($video, $yacht, $automation);
 
                 if ($imagePaths === []) {
                     $this->cleanup($workDir);
@@ -493,9 +493,12 @@ class RenderMarketingVideo implements ShouldQueue
     /**
      * @param  array<int, string>  $paths
      */
-    private function collectImages(Yacht $yacht, VideoAutomationService $automation): array
+    private function collectImages(Video $video, Yacht $yacht, VideoAutomationService $automation): array
     {
-        $paths = $automation->collectRenderableImagePaths($yacht);
+        $sourceImageIds = is_array($video->source_image_ids_json)
+            ? $video->source_image_ids_json
+            : [];
+        $paths = $automation->collectRenderableImagePaths($yacht, $sourceImageIds);
         $rawCount = count($paths);
 
         $max = (int) config('video_automation.max_images', 15);
@@ -513,10 +516,11 @@ class RenderMarketingVideo implements ShouldQueue
         $this->logInfo('images_collected', [
             'raw_count' => $rawCount,
             'selected_count' => count($paths),
+            'source_image_ids' => $sourceImageIds,
             'max_images' => $max,
             'min_images' => $min,
             'sample_paths' => array_slice($paths, 0, 3),
-        ], null, $yacht);
+        ], $video, $yacht);
 
         return $paths;
     }
