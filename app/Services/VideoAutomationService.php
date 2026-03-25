@@ -63,10 +63,18 @@ class VideoAutomationService
     /**
      * @return array{video: Video, created: bool}
      */
-    public function queueManualVideo(Yacht $yacht, ?string $templateType = null, bool $force = false): array
+    public function queueManualVideo(
+        Yacht $yacht,
+        ?string $templateType = null,
+        bool $force = false,
+        array $sourceImageIds = [],
+        string $trigger = 'manual'
+    ): array
     {
+        $normalizedSourceImageIds = $this->normalizeSourceImageIds($sourceImageIds);
+
         if (! $force) {
-            $existing = $this->findReusableVideo($yacht);
+            $existing = $this->findReusableVideo($yacht, $normalizedSourceImageIds);
             if ($existing) {
                 return [
                     'video' => $existing,
@@ -76,25 +84,60 @@ class VideoAutomationService
         }
 
         return [
-            'video' => $this->createQueuedVideo($yacht, $templateType, 'manual'),
+            'video' => $this->createQueuedVideo($yacht, $templateType, $trigger, $normalizedSourceImageIds),
             'created' => true,
         ];
     }
 
-    public function findReusableVideo(Yacht $yacht): ?Video
+    public function findReusableVideo(Yacht $yacht, array $sourceImageIds = []): ?Video
     {
+        $normalizedSourceImageIds = $this->normalizeSourceImageIds($sourceImageIds);
+
         return Video::where('yacht_id', $yacht->id)
             ->whereIn('status', ['queued', 'processing', 'ready'])
             ->latest()
-            ->first();
+            ->get()
+            ->first(function (Video $video) use ($normalizedSourceImageIds): bool {
+                if ($normalizedSourceImageIds === []) {
+                    return true;
+                }
+
+                return $this->normalizeSourceImageIds($video->source_image_ids_json ?? []) === $normalizedSourceImageIds;
+            });
     }
 
     /**
      * @return array<int, string>
      */
-    public function collectRenderableImagePaths(Yacht $yacht): array
+    public function collectRenderableImagePaths(Yacht $yacht, array $sourceImageIds = []): array
     {
         $paths = [];
+        $normalizedSourceImageIds = $this->normalizeSourceImageIds($sourceImageIds);
+
+        if ($normalizedSourceImageIds !== []) {
+            $selectedImages = $yacht->images()
+                ->whereIn('id', $normalizedSourceImageIds)
+                ->get()
+                ->keyBy('id');
+
+            foreach ($normalizedSourceImageIds as $imageId) {
+                $image = $selectedImages->get($imageId);
+                if (! $image) {
+                    continue;
+                }
+
+                foreach ([
+                    $image->optimized_master_url,
+                    $image->url,
+                    $image->original_kept_url,
+                    $image->thumb_url,
+                ] as $candidate) {
+                    $this->appendRenderablePath($paths, $candidate);
+                }
+            }
+
+            return array_values(array_unique($paths));
+        }
 
         $this->appendRenderablePath($paths, $yacht->main_image);
 
@@ -116,9 +159,9 @@ class VideoAutomationService
         return array_values(array_unique($paths));
     }
 
-    public function renderableImageCount(Yacht $yacht): int
+    public function renderableImageCount(Yacht $yacht, array $sourceImageIds = []): int
     {
-        return count($this->collectRenderableImagePaths($yacht));
+        return count($this->collectRenderableImagePaths($yacht, $sourceImageIds));
     }
 
     public function buildClickthroughUrl(Yacht $yacht, ?Video $video = null): string
@@ -159,12 +202,20 @@ class VideoAutomationService
         return $this->isPublishedStatus($yacht->status);
     }
 
-    private function createQueuedVideo(Yacht $yacht, ?string $templateType = null, ?string $trigger = null): Video
+    private function createQueuedVideo(
+        Yacht $yacht,
+        ?string $templateType = null,
+        ?string $trigger = null,
+        array $sourceImageIds = []
+    ): Video
     {
+        $normalizedSourceImageIds = $this->normalizeSourceImageIds($sourceImageIds);
+
         $video = Video::create([
             'yacht_id' => $yacht->id,
             'status' => 'queued',
             'template_type' => $templateType ?: config('video_automation.template_type'),
+            'source_image_ids_json' => $normalizedSourceImageIds !== [] ? $normalizedSourceImageIds : null,
             'generation_trigger' => $trigger,
             'generation_provider' => config('video_automation.provider', 'openai_sora'),
             'whatsapp_status' => config('video_automation.auto_notify_owner_whatsapp', true) ? 'pending' : 'skipped',
@@ -173,6 +224,18 @@ class VideoAutomationService
         RenderMarketingVideo::dispatch($video->id)->onQueue('video-rendering');
 
         return $video;
+    }
+
+    /**
+     * @param  array<int, mixed>  $sourceImageIds
+     * @return array<int, int>
+     */
+    private function normalizeSourceImageIds(array $sourceImageIds): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(static fn ($id) => (int) $id, $sourceImageIds),
+            static fn (int $id): bool => $id > 0
+        )));
     }
 
     /**

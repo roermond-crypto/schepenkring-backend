@@ -23,10 +23,12 @@ use App\Http\Controllers\Api\AiPipelineController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\RegisterController;
+use App\Http\Controllers\Api\Auth\EmailVerificationCodeController;
 use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
 use App\Http\Controllers\Api\BoatFormConfigController;
+use App\Http\Controllers\Api\BoatVideoController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
 use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
@@ -113,7 +115,20 @@ Route::prefix('auth')->group(function () {
     Route::post('register', [RegisterController::class, 'store'])->middleware('throttle:5,1');
     Route::post('login', [SessionController::class, 'store'])->middleware('throttle:10,1');
     Route::post('logout', [SessionController::class, 'destroy'])->middleware('auth:sanctum');
+
+    // Password Reset (API JSON version)
+    Route::post('forgot-password', [\App\Http\Controllers\Api\Auth\PasswordResetController::class, 'sendResetLinkEmail'])
+        ->middleware('guest');
+    Route::post('verify-reset-token', [\App\Http\Controllers\Api\Auth\PasswordResetController::class, 'verifyToken'])
+        ->middleware('guest');
+    Route::post('reset-password', [\App\Http\Controllers\Api\Auth\PasswordResetController::class, 'reset'])
+        ->middleware('guest');
 });
+
+Route::post('resend-verification', [EmailVerificationCodeController::class, 'resend'])
+    ->middleware('throttle:6,1');
+Route::post('verify-email', [EmailVerificationCodeController::class, 'verify'])
+    ->middleware('throttle:10,1');
 
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
@@ -168,6 +183,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('yachts/{yachtId}/images')->group(function () {
         Route::post('/upload', [ImagePipelineController::class, 'upload']);
         Route::get('/', [ImagePipelineController::class, 'index']);
+        Route::post('/reorder', [ImagePipelineController::class, 'reorder']);
+        Route::post('/auto-classify', [ImagePipelineController::class, 'autoClassify']);
         Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
         Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
         Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
@@ -200,6 +217,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [BoatDocumentController::class, 'store']);
         Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
     });
+
+    // Uploaded yacht videos
+    Route::get('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'index']);
+    Route::post('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'store']);
+    Route::delete('boat-videos/{id}', [BoatVideoController::class, 'destroy']);
+    Route::post('boat-videos/{id}/publish', [BoatVideoController::class, 'publish']);
 
     // Current user & lockscreen
     Route::get('user', function (Request $request) {

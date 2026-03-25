@@ -13,6 +13,7 @@ class Video extends Model
         'yacht_id',
         'status',
         'template_type',
+        'source_image_ids_json',
         'generation_trigger',
         'generation_provider',
         'provider_job_id',
@@ -37,6 +38,7 @@ class Video extends Model
     ];
 
     protected $casts = [
+        'source_image_ids_json' => 'array',
         'provider_progress' => 'integer',
         'provider_payload' => 'array',
         'duration_seconds' => 'integer',

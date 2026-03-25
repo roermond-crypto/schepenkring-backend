@@ -24,6 +24,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \Illuminate\Auth\Notifications\ResetPassword::createUrlUsing(function (object $notifiable, string $token) {
+            return config('app.frontend_url')."/nl/auth/reset-password?token={$token}&email={$notifiable->getEmailForPasswordReset()}";
+        });
+
         Vite::prefetch(concurrency: 3);
         Event::listen(TaskCreated::class, SendTaskNotification::class);
     }

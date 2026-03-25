@@ -457,8 +457,9 @@ class YachtController extends Controller
 
         $files = is_array($files) ? $files : [$files];
         $uploaded = [];
+        $currentCount = $yacht->images()->whereNotIn('status', ['deleted'])->count();
 
-        foreach ($files as $image) {
+        foreach ($files as $index => $image) {
             if ($image instanceof \Illuminate\Http\UploadedFile) {
                 $folderName = $yacht->vessel_id ?? $yacht->id;
                 
@@ -471,14 +472,15 @@ class YachtController extends Controller
                     'original_name'     => $image->getClientOriginalName(),
                     'category'          => $request->input('category', 'General'),
                     'part_name'         => $request->input('category', 'General'),
-                    'status'            => 'processing',
-                    'enhancement_method'=> 'pending',
+                    'status'            => 'ready_for_review',
+                    'keep_original'     => false,
+                    'sort_order'        => $currentCount + $index,
                 ]);
 
-                // Dispatch Phase 1 processing job
-                \App\Jobs\ProcessYachtImageJob::dispatch($record->id);
+                // Queue the optimizer after the response so the card is visible immediately.
+                \App\Jobs\ProcessYachtImageJob::dispatchAfterResponse($record->id);
 
-                $uploaded[] = $record;
+                $uploaded[] = $record->fresh();
             }
         }
 

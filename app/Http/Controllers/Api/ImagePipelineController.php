@@ -121,30 +121,7 @@ class ImagePipelineController extends Controller
     {
         $yacht = $this->findAuthorizedYacht($request, $yachtId);
 
-        $images = $yacht->images()
-            ->whereNotIn('status', ['deleted'])
-            ->orderBy('sort_order')
-            ->get();
-
-        $approvedCount = $images->where('status', 'approved')->count();
-        $processingCount = $images->where('status', 'processing')->count();
-        $enhancingCount = $images->where('enhancement_method', 'pending')->count();
-        $readyCount = $images->where('status', 'ready_for_review')->count();
-
-        // Step 2 should not be blocked by background processing/enhancement.
-        $isStep2Unlocked = $approvedCount >= $this->minApproved;
-
-        return response()->json([
-            'images'  => $images,
-            'stats'   => [
-                'total'        => $images->count(),
-                'approved'     => $approvedCount,
-                'processing'   => $processingCount + $enhancingCount,
-                'ready'        => $readyCount,
-                'min_required' => $this->minApproved,
-            ],
-            'step2_unlocked' => $isStep2Unlocked,
-        ]);
+        return response()->json($this->buildPipelinePayload($yacht));
     }
 
     /**
@@ -324,11 +301,12 @@ class ImagePipelineController extends Controller
             ->whereNotIn('status', ['deleted'])
             ->orderBy('sort_order')
             ->get();
+        $classifiedCategories = $this->classifyStoredImages($images);
 
         foreach ($images as $image) {
-            $category = $this->classifyStoredImage($image);
+            $category = $classifiedCategories[$image->id] ?? $this->classifyStoredImage($image);
             $flags = $image->quality_flags ?? [];
-            $flags['ai_category_source'] = 'auto_classify';
+            $flags['ai_category_source'] = 'batched_auto_classify';
 
             $image->update([
                 'category' => $category,
@@ -358,11 +336,8 @@ class ImagePipelineController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Images auto-classified.',
-            'images' => $yacht->images()
-                ->whereNotIn('status', ['deleted'])
-                ->orderBy('sort_order')
-                ->get(),
+            'message' => 'Images sorted instantly.',
+            ...$this->buildPipelinePayload($yacht),
         ]);
     }
 
@@ -514,59 +489,199 @@ class ImagePipelineController extends Controller
 
     private function classifyStoredImage(YachtImage $image): string
     {
+        $existingCategory = trim((string) ($image->category ?? ''));
+        if (in_array($existingCategory, self::VALID_CATEGORIES, true) && $existingCategory !== 'General') {
+            return $existingCategory;
+        }
+
+        $inferredFromName = $this->inferCategoryFromFilename($image->original_name);
+        if ($inferredFromName !== 'General') {
+            return $inferredFromName;
+        }
+
         $absolutePath = $this->resolveStoredImagePath($image);
         if (!$absolutePath) {
-            return $this->inferCategoryFromFilename($image->original_name);
+            return 'General';
+        }
+
+        $normalizedPath = strtolower($absolutePath);
+        if (str_contains($normalizedPath, 'engine')) {
+            return 'Engine Room';
+        }
+
+        if (
+            str_contains($normalizedPath, 'bridge') ||
+            str_contains($normalizedPath, 'helm') ||
+            str_contains($normalizedPath, 'cockpit')
+        ) {
+            return 'Bridge';
+        }
+
+        if (
+            str_contains($normalizedPath, 'interior') ||
+            str_contains($normalizedPath, 'cabin') ||
+            str_contains($normalizedPath, 'salon') ||
+            str_contains($normalizedPath, 'galley') ||
+            str_contains($normalizedPath, 'kitchen') ||
+            str_contains($normalizedPath, 'bed')
+        ) {
+            return 'Interior';
+        }
+
+        if (
+            str_contains($normalizedPath, 'exterior') ||
+            str_contains($normalizedPath, 'outside') ||
+            str_contains($normalizedPath, 'deck') ||
+            str_contains($normalizedPath, 'hull')
+        ) {
+            return 'Exterior';
+        }
+
+        return 'General';
+    }
+
+    private function classifyStoredImages($images): array
+    {
+        $results = [];
+        foreach ($images as $image) {
+            $results[$image->id] = $this->classifyStoredImage($image);
         }
 
         $apiKey = config('services.gemini.key') ?: env('GEMINI_API_KEY');
-        if (!$apiKey) {
-            return $this->inferCategoryFromFilename($image->original_name);
+        if (!$apiKey || $images->isEmpty()) {
+            return $results;
         }
 
-        try {
-            $imageData = base64_encode(file_get_contents($absolutePath));
-            $model = 'gemini-2.5-flash';
-            $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        $model = 'gemini-2.5-flash';
+        $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
 
-            $response = Http::timeout(20)->post($endpoint, [
-                'contents' => [[
-                    'parts' => [
-                        ['text' => 'Return only one word: Exterior, Interior, Engine Room, Bridge, or General.'],
-                        ['inline_data' => [
-                            'mime_type' => mime_content_type($absolutePath) ?: 'image/jpeg',
-                            'data' => $imageData,
-                        ]],
-                    ],
-                ]],
-            ]);
+        foreach ($images->chunk(12) as $chunk) {
+            $parts = [[
+                'text' => 'Classify each boat image. Return ONLY JSON in this exact format: {"categories":["Exterior","Interior"]}. Use the same order as the images. Allowed values: Exterior, Interior, Engine Room, Bridge, General.',
+            ]];
+            $orderedImages = [];
 
-            if ($response->successful()) {
-                $text = data_get($response->json(), 'candidates.0.content.parts.0.text', 'General');
-                $category = trim((string) preg_replace('/[^A-Za-z\s]/', '', (string) $text));
-                if (in_array($category, self::VALID_CATEGORIES, true)) {
-                    return $category;
+            foreach ($chunk as $index => $image) {
+                $absolutePath = $this->resolveStoredImagePath($image, true);
+                if (!$absolutePath) {
+                    continue;
                 }
+
+                $orderedImages[] = $image;
+                $parts[] = ['text' => 'Image ' . ($index + 1)];
+                $parts[] = [
+                    'inline_data' => [
+                        'mime_type' => mime_content_type($absolutePath) ?: 'image/jpeg',
+                        'data' => base64_encode(file_get_contents($absolutePath)),
+                    ],
+                ];
             }
-        } catch (\Throwable $e) {
-            Log::warning('[ImagePipeline] Auto-classify fallback triggered', [
-                'image_id' => $image->id,
-                'error' => $e->getMessage(),
-            ]);
+
+            if ($orderedImages === []) {
+                continue;
+            }
+
+            try {
+                $response = Http::timeout(25)->post($endpoint, [
+                    'contents' => [[
+                        'parts' => $parts,
+                    ]],
+                ]);
+
+                if (!$response->successful()) {
+                    continue;
+                }
+
+                $text = (string) data_get($response->json(), 'candidates.0.content.parts.0.text', '');
+                $decoded = $this->decodeAutoClassifyResponse($text);
+                $categories = is_array($decoded['categories'] ?? null)
+                    ? $decoded['categories']
+                    : [];
+
+                foreach ($orderedImages as $index => $image) {
+                    $category = trim((string) ($categories[$index] ?? ''));
+                    if (in_array($category, self::VALID_CATEGORIES, true)) {
+                        $results[$image->id] = $category;
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[ImagePipeline] Batched auto-classify fallback triggered', [
+                    'image_ids' => $chunk->pluck('id')->all(),
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        return $this->inferCategoryFromFilename($image->original_name);
+        return $results;
     }
 
-    private function resolveStoredImagePath(YachtImage $image): ?string
+    private function decodeAutoClassifyResponse(string $text): array
     {
-        $candidates = [
-            $image->original_kept_url,
-            $image->original_temp_url,
-            $image->optimized_master_url,
-            $image->thumb_url,
-            $image->url,
+        $trimmed = trim($text);
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $trimmed = preg_replace('/^```(?:json)?\s*/i', '', $trimmed) ?? $trimmed;
+        $trimmed = preg_replace('/\s*```$/', '', $trimmed) ?? $trimmed;
+
+        $decoded = json_decode($trimmed, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            return $decoded;
+        }
+
+        if (preg_match('/\{.*\}/s', $trimmed, $matches) === 1) {
+            $decoded = json_decode($matches[0], true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return [];
+    }
+
+    private function buildPipelinePayload(Yacht $yacht): array
+    {
+        $images = $yacht->images()
+            ->whereNotIn('status', ['deleted'])
+            ->orderBy('sort_order')
+            ->get();
+
+        $approvedCount = $images->where('status', 'approved')->count();
+        $processingCount = $images->where('status', 'processing')->count();
+        $enhancingCount = $images->where('enhancement_method', 'pending')->count();
+        $readyCount = $images->where('status', 'ready_for_review')->count();
+
+        return [
+            'images'  => $images,
+            'stats'   => [
+                'total'        => $images->count(),
+                'approved'     => $approvedCount,
+                'processing'   => $processingCount + $enhancingCount,
+                'ready'        => $readyCount,
+                'min_required' => $this->minApproved,
+            ],
+            'step2_unlocked' => $approvedCount >= $this->minApproved,
         ];
+    }
+
+    private function resolveStoredImagePath(YachtImage $image, bool $preferThumbnail = false): ?string
+    {
+        $candidates = $preferThumbnail
+            ? [
+                $image->thumb_url,
+                $image->optimized_master_url,
+                $image->original_temp_url,
+                $image->original_kept_url,
+                $image->url,
+            ]
+            : [
+                $image->original_kept_url,
+                $image->original_temp_url,
+                $image->optimized_master_url,
+                $image->thumb_url,
+                $image->url,
+            ];
 
         foreach ($candidates as $candidate) {
             if (!$candidate) {
