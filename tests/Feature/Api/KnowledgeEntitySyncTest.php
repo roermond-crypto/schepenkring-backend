@@ -103,6 +103,15 @@ test('yacht saves create a knowledge entity linked to the selected harbor', func
         'type' => UserType::CLIENT,
         'status' => UserStatus::ACTIVE,
         'client_location_id' => $location->id,
+        'first_name' => 'Klaas',
+        'last_name' => 'Jansen',
+        'phone' => '+31611112222',
+        'date_of_birth' => '1985-09-12',
+        'address_line1' => 'Havenweg 12',
+        'city' => 'Lelystad',
+        'postal_code' => '8221AA',
+        'country' => 'NL',
+        'email_verified_at' => now(),
     ]);
 
     Sanctum::actingAs($client);

@@ -29,6 +29,15 @@ test('published yacht with a main image auto queues a marketing video on create'
         'type' => UserType::CLIENT,
         'status' => UserStatus::ACTIVE,
         'client_location_id' => $location->id,
+        'first_name' => 'Marin',
+        'last_name' => 'Owner',
+        'phone' => '+31698765432',
+        'date_of_birth' => '1990-04-21',
+        'address_line1' => 'Kade 7',
+        'city' => 'Rotterdam',
+        'postal_code' => '3011AA',
+        'country' => 'NL',
+        'email_verified_at' => now(),
     ]);
 
     Sanctum::actingAs($owner);

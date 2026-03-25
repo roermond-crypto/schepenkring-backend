@@ -39,6 +39,15 @@ function createClientWithLocation(): array
         'type' => UserType::CLIENT,
         'status' => UserStatus::ACTIVE,
         'client_location_id' => $location->id,
+        'first_name' => 'Jan',
+        'last_name' => 'De Vries',
+        'phone' => '+31612345678',
+        'date_of_birth' => '1988-05-15',
+        'address_line1' => 'Keizersgracht 1',
+        'city' => 'Amsterdam',
+        'postal_code' => '1015CJ',
+        'country' => 'NL',
+        'email_verified_at' => now(),
     ]);
 
     return [$user, $location];

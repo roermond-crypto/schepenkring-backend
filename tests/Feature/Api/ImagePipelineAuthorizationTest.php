@@ -6,6 +6,10 @@ use App\Models\Location;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Models\YachtImage;
+use App\Support\YachtImageLimits;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
 test('guests cannot access yacht image pipeline endpoints', function () {
@@ -64,6 +68,79 @@ test('clients can still view their own yacht images', function () {
         ->assertOk()
         ->assertJsonPath('step2_unlocked', true)
         ->assertJsonPath('approved_count', 1);
+});
+
+test('clients can upload images until the fifty image gallery cap', function () {
+    Queue::fake();
+    Storage::fake('public');
+
+    [$owner, $location] = imagePipelineClientWithLocation('Upload Limit Marina', 'ULM');
+    $yacht = imagePipelineYacht($owner, $location);
+
+    foreach (range(1, 40) as $index) {
+        YachtImage::create([
+            'yacht_id' => $yacht->id,
+            'url' => "approved/master/existing-{$index}.jpg",
+            'status' => 'approved',
+            'sort_order' => $index,
+        ]);
+    }
+
+    Sanctum::actingAs($owner);
+
+    $response = $this->post('/api/yachts/'.$yacht->id.'/images/upload', [
+        'images' => array_map(
+            fn (int $index) => UploadedFile::fake()->image("upload-{$index}.jpg"),
+            range(1, 10)
+        ),
+    ], [
+        'Accept' => 'application/json',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('status', 'success')
+        ->assertJsonCount(10, 'images');
+
+    $this->assertDatabaseCount('yacht_images', YachtImageLimits::MAX_IMAGES_PER_YACHT);
+
+    $this->getJson("/api/yachts/{$yacht->id}/images")
+        ->assertOk()
+        ->assertJsonPath('stats.total', YachtImageLimits::MAX_IMAGES_PER_YACHT);
+});
+
+test('clients cannot exceed the fifty image gallery cap', function () {
+    Queue::fake();
+    Storage::fake('public');
+
+    [$owner, $location] = imagePipelineClientWithLocation('Upload Guard Marina', 'UGM');
+    $yacht = imagePipelineYacht($owner, $location);
+
+    foreach (range(1, YachtImageLimits::MAX_IMAGES_PER_YACHT) as $index) {
+        YachtImage::create([
+            'yacht_id' => $yacht->id,
+            'url' => "approved/master/full-{$index}.jpg",
+            'status' => 'approved',
+            'sort_order' => $index,
+        ]);
+    }
+
+    Sanctum::actingAs($owner);
+
+    $response = $this->post('/api/yachts/'.$yacht->id.'/images/upload', [
+        'images' => [
+            UploadedFile::fake()->image('overflow.jpg'),
+        ],
+    ], [
+        'Accept' => 'application/json',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonPath(
+            'error',
+            'Maximum '.YachtImageLimits::MAX_IMAGES_PER_YACHT.' images allowed. You have '.YachtImageLimits::MAX_IMAGES_PER_YACHT.' images.'
+        );
+
+    $this->assertDatabaseCount('yacht_images', YachtImageLimits::MAX_IMAGES_PER_YACHT);
 });
 
 function imagePipelineClientWithLocation(string $name, string $code): array

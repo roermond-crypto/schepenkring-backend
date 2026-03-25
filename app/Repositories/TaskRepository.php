@@ -20,6 +20,7 @@ class TaskRepository
             'creator:id,name,email',
             'user:id,name,email',
             'yacht:id,boat_name',
+            'automation.relatedYacht:id,boat_name',
             'column',
         ]);
     }

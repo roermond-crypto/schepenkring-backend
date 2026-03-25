@@ -13,6 +13,7 @@ use App\Services\KnowledgeGraphService;
 use App\Services\LocationAccessService;
 use App\Services\SyncYachtTasksService;
 use App\Services\VideoAutomationService;
+use App\Support\YachtImageLimits;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -154,10 +155,17 @@ class YachtController extends Controller
             }
         }
 
+        $actor = $request->user();
+        if ($id === null && $actor?->isClient()) {
+            $eligibilityError = $this->clientBoatCreationEligibilityError($actor);
+            if ($eligibilityError !== null) {
+                return response()->json($eligibilityError, 422);
+            }
+        }
+
         try {
             DB::beginTransaction();
 
-            $actor = $request->user();
             $isUpdate = $id !== null;
             if ($this->shouldBootstrapDraft($request, $isUpdate)) {
                 $draft = $this->createBootstrapDraft($request, $actor, $offlineUuid);
@@ -413,6 +421,64 @@ class YachtController extends Controller
         } elseif (! $isUpdate && $actor?->client_location_id) {
             $yacht->ref_harbor_id = $actor->client_location_id;
         }
+    }
+
+    private function clientBoatCreationEligibilityError(User $actor): ?array
+    {
+        $requiredProfileFields = [
+            'first_name' => 'first name',
+            'last_name' => 'last name',
+            'phone' => 'phone',
+            'date_of_birth' => 'date of birth',
+            'address_line1' => 'address line 1',
+            'city' => 'city',
+            'postal_code' => 'postal code',
+            'country' => 'country',
+        ];
+
+        $missingFieldKeys = [];
+        $missingFieldLabels = [];
+
+        foreach ($requiredProfileFields as $field => $label) {
+            $value = $actor->{$field};
+            if ($value === null || trim((string) $value) === '') {
+                $missingFieldKeys[] = $field;
+                $missingFieldLabels[] = $label;
+            }
+        }
+
+        $identityVerified = method_exists($actor, 'hasVerifiedEmail')
+            ? $actor->hasVerifiedEmail()
+            : ! empty($actor->email_verified_at);
+
+        if ($missingFieldKeys === [] && $identityVerified) {
+            return null;
+        }
+
+        $messageParts = [];
+        if ($missingFieldLabels !== []) {
+            $messageParts[] = 'Complete all customer details before creating a vessel. Missing: ' . implode(', ', $missingFieldLabels) . '.';
+        }
+        if (! $identityVerified) {
+            $messageParts[] = 'Verify your account identity before creating a vessel.';
+        }
+
+        return [
+            'message' => implode(' ', $messageParts),
+            'error_code' => 'client_profile_incomplete_for_boat_creation',
+            'requirements' => [
+                'missing_profile_fields' => $missingFieldKeys,
+                'identity_verification_required' => ! $identityVerified,
+            ],
+            'errors' => array_filter([
+                'profile' => $missingFieldLabels !== []
+                    ? ['Missing required customer details: ' . implode(', ', $missingFieldLabels) . '.']
+                    : null,
+                'identity_verification' => ! $identityVerified
+                    ? ['Account identity verification is required before creating a vessel.']
+                    : null,
+            ]),
+        ];
     }
 
 
@@ -871,7 +937,7 @@ class YachtController extends Controller
     public function extractFromImages(Request $request): JsonResponse
     {
         $request->validate([
-            'images'    => 'required|array|min:1|max:30',
+            'images'    => 'required|array|min:1|max:'.YachtImageLimits::MAX_IMAGES_PER_YACHT,
             'images.*'  => 'required|image|max:10240',
             'hint_text' => 'nullable|string|max:2000',
         ]);

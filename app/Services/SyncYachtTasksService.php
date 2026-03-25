@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Log;
 
 class SyncYachtTasksService
 {
+    public function __construct(private BoatTaskTemplateRenderer $templateRenderer)
+    {
+    }
+
     public function syncForYacht(Yacht $yacht, ?User $actor = null): void
     {
         $recipient = $yacht->user_id ? User::find($yacht->user_id) : null;
@@ -34,7 +38,11 @@ class SyncYachtTasksService
                 }
             })
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(fn (TaskAutomationTemplate $template) => $this->templateRenderer->matchesBoatTypeFilter(
+                $template->boat_type_filter,
+                $yacht->boat_type
+            ));
 
         foreach ($templates as $template) {
             $this->syncTemplate($template, $yacht, $recipient, $actor, $locationId);
@@ -76,6 +84,7 @@ class SyncYachtTasksService
             'type' => 'assigned',
             'assigned_to' => $assigneeId,
             'user_id' => $recipient->id,
+            'yacht_id' => $yacht->id,
             'location_id' => $resolvedLocationId,
             'client_visible' => $recipient->isClient(),
             'due_date' => $automation->due_at?->toDateString(),
@@ -194,15 +203,6 @@ class SyncYachtTasksService
 
     private function renderText(?string $value, Yacht $yacht, User $recipient): ?string
     {
-        if ($value === null || $value === '') {
-            return $value;
-        }
-
-        return strtr($value, [
-            '{{boat_name}}' => $yacht->boat_name ?? '',
-            '{{yacht_name}}' => $yacht->boat_name ?? '',
-            '{{vessel_id}}' => $yacht->vessel_id ?? '',
-            '{{client_name}}' => $recipient->name ?? '',
-        ]);
+        return $this->templateRenderer->render($value, $yacht, $recipient);
     }
 }

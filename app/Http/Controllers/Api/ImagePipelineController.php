@@ -10,6 +10,7 @@ use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Services\LocationAccessService;
 use App\Services\VideoAutomationService;
+use App\Support\YachtImageLimits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -43,12 +44,12 @@ class ImagePipelineController extends Controller
 
     /**
      * POST /yachts/{yachtId}/images/upload
-     * Upload 1–30 images, store to original_temp/, dispatch processing jobs.
+     * Upload 1-50 images, store to original_temp/, dispatch processing jobs.
      */
     public function upload(Request $request, $yachtId): JsonResponse
     {
         $request->validate([
-            'images'   => 'required|array|min:1|max:30',
+            'images'   => 'required|array|min:1|max:'.YachtImageLimits::MAX_IMAGES_PER_YACHT,
             'images.*' => 'required|file|max:15360', // 15MB each
         ]);
 
@@ -58,9 +59,9 @@ class ImagePipelineController extends Controller
         $currentCount = $yacht->images()->whereNotIn('status', ['deleted'])->count();
         $newCount = count($request->file('images'));
 
-        if ($currentCount + $newCount > 30) {
+        if ($currentCount + $newCount > YachtImageLimits::MAX_IMAGES_PER_YACHT) {
             return response()->json([
-                'error' => 'Maximum 30 images allowed. You have ' . $currentCount . ' images.',
+                'error' => 'Maximum '.YachtImageLimits::MAX_IMAGES_PER_YACHT.' images allowed. You have ' . $currentCount . ' images.',
             ], 422);
         }
 
