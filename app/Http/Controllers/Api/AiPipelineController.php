@@ -11,6 +11,7 @@ use App\Models\YachtImage;
 use App\Services\AiCorrectionLoggingService;
 use App\Services\FaqKnowledgeTextExtractor;
 use App\Services\PineconeMatcherService;
+use App\Support\YachtImageLimits;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
@@ -373,7 +374,7 @@ class AiPipelineController extends Controller
         ini_set('memory_limit', '1024M'); // 1GB for processing base64 images
 
         $request->validate([
-            'images'    => 'required_without:yacht_id|array|max:30',
+            'images'    => 'required_without:yacht_id|array|max:'.YachtImageLimits::MAX_IMAGES_PER_YACHT,
             'images.*'  => 'image|max:10240',
             'yacht_id'  => 'required_without:images|integer|exists:yachts,id',
             'hint_text' => 'nullable|string|max:2000',

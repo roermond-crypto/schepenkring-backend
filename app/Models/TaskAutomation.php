@@ -43,4 +43,9 @@ class TaskAutomation extends Model
     {
         return $this->belongsTo(Location::class);
     }
+
+    public function relatedYacht(): BelongsTo
+    {
+        return $this->belongsTo(Yacht::class, 'related_id');
+    }
 }

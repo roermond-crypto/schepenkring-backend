@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Log;
 
 class BoatTaskAutomationService
 {
+    public function __construct(private BoatTaskTemplateRenderer $templateRenderer)
+    {
+    }
+
     /**
      * Fire task automation for a newly created or updated yacht.
      *
@@ -32,25 +36,7 @@ class BoatTaskAutomationService
             ->with('items')
             ->get()
             ->filter(function (TaskAutomationTemplate $template) use ($boatType) {
-                $filter = $template->boat_type_filter;
-
-                // null or empty array = matches all boat types
-                if (empty($filter)) {
-                    return true;
-                }
-
-                // If boat has no type, it can only match templates with no filter
-                if (empty($boatType)) {
-                    return empty($filter);
-                }
-
-                // Standard filter matching
-                $normalizedType = strtolower(trim($boatType));
-                $normalizedFilter = array_map(function ($v) {
-                    return strtolower(trim($v));
-                }, (array) $filter);
-
-                return in_array($normalizedType, $normalizedFilter, true);
+                return $this->templateRenderer->matchesBoatTypeFilter($template->boat_type_filter, $boatType);
             });
 
         if ($templates->isEmpty()) {
@@ -172,15 +158,6 @@ class BoatTaskAutomationService
      */
     private function interpolateTemplate(string $text, Yacht $yacht): string
     {
-        $baseUrl = env('FRONTEND_URL', 'http://localhost:3000');
-        $locale = app()->getLocale() ?: 'nl';
-        $boatUrl = "{$baseUrl}/{$locale}/dashboard/admin/fleet/{$yacht->id}";
-
-        // Order matters: replace specific long strings first
-        return str_replace(
-            ['{boat_url}', '#{boat_id}', '{boat_id}', '{vessel_id}', '{boat_name}', '{boat_type}'],
-            [$boatUrl, "#{$yacht->id}", $yacht->id, $yacht->vessel_id ?? $yacht->id, $yacht->boat_name ?? "Yacht #{$yacht->id}", $yacht->boat_type ?? ''],
-            $text
-        );
+        return $this->templateRenderer->render($text, $yacht) ?? '';
     }
 }
