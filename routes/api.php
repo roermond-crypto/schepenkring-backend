@@ -72,6 +72,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
+use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
 
@@ -496,6 +497,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('copilot/phrases', [CopilotActionPhraseController::class, 'store']);
     Route::put('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'update']);
     Route::delete('copilot/phrases/{phrase}', [CopilotActionPhraseController::class, 'destroy']);
+
+    // Integrations (central credential management)
+    Route::apiResource('integrations', IntegrationController::class);
 });
 
 Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->group(function () {
