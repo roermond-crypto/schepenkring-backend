@@ -2,17 +2,18 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
-use App\Models\PlatformError;
-use App\Models\IssueReport;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Storage;
+use App\Models\IssueReport;
+use App\Models\PlatformError;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class PlatformErrorController extends Controller
 {
     public function index(Request $request)
     {
         $query = PlatformError::query();
+        $search = trim((string) ($request->string('subject')->value() ?: $request->string('search')->value()));
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -21,7 +22,16 @@ class PlatformErrorController extends Controller
             $query->where('level', $request->string('level'));
         }
         if ($request->filled('source')) {
-            $query->where('source', $request->string('source'));
+            $source = (string) $request->string('source');
+
+            $query->where(function ($builder) use ($source) {
+                $builder
+                    ->where('source', $source)
+                    ->orWhere('project', $source);
+            });
+        }
+        if ($request->filled('project')) {
+            $query->where('project', $request->string('project'));
         }
         if ($request->filled('environment')) {
             $query->where('environment', $request->string('environment'));
@@ -30,7 +40,7 @@ class PlatformErrorController extends Controller
             $query->where('release', $request->string('release'));
         }
         if ($request->filled('route')) {
-            $query->where('route', 'like', '%' . $request->string('route') . '%');
+            $query->where('route', 'like', '%'.$request->string('route').'%');
         }
         if ($request->filled('user_id')) {
             $query->where('tags->user_id', (string) $request->string('user_id'));
@@ -38,11 +48,10 @@ class PlatformErrorController extends Controller
         if ($request->filled('category')) {
             $query->where('ai_category', $request->string('category'));
         }
-        if ($request->filled('subject')) {
-            $subject = (string) $request->string('subject');
-            $query->where(function ($q) use ($subject) {
-                $q->where('title', 'like', '%' . $subject . '%')
-                  ->orWhere('message', 'like', '%' . $subject . '%');
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', '%'.$search.'%')
+                    ->orWhere('message', 'like', '%'.$search.'%');
             });
         }
         if ($request->filled('from')) {
@@ -55,7 +64,7 @@ class PlatformErrorController extends Controller
         $sortBy = $request->string('sort_by', 'last_seen_at');
         $sortDir = $request->string('sort_dir', 'desc');
         $allowedSorts = ['last_seen_at', 'first_seen_at', 'occurrences_count', 'users_affected', 'level'];
-        if (!in_array($sortBy, $allowedSorts, true)) {
+        if (! in_array($sortBy, $allowedSorts, true)) {
             $sortBy = 'last_seen_at';
         }
         $query->orderBy($sortBy, $sortDir === 'asc' ? 'asc' : 'desc');
@@ -69,7 +78,7 @@ class PlatformErrorController extends Controller
     public function show(Request $request, PlatformError $error)
     {
         $includeReports = filter_var($request->query('include_reports', false), FILTER_VALIDATE_BOOL);
-        if (!$includeReports) {
+        if (! $includeReports) {
             return response()->json($error);
         }
 
