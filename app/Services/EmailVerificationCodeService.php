@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Mail\UserVerificationCodeMail;
 use App\Models\User;
+use App\Support\AuthEmailSupport;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -12,16 +13,22 @@ class EmailVerificationCodeService
 {
     private const TTL_MINUTES = 15;
 
-    public function issue(User $user): void
+    public function issue(User $user, ?string $preferredLocale = null, ?string $acceptLanguage = null): void
     {
         $code = (string) random_int(100000, 999999);
+        $locale = app(AuthEmailSupport::class)->resolveLocale(
+            $preferredLocale ?: $user->locale,
+            $acceptLanguage
+        );
 
         Cache::put($this->cacheKey($user->email), [
             'hash' => hash('sha256', $code),
         ], now()->addMinutes(self::TTL_MINUTES));
 
         try {
-            Mail::to($user->email)->send(new UserVerificationCodeMail($user, $code, self::TTL_MINUTES));
+            Mail::to($user->email)->send(
+                new UserVerificationCodeMail($user, $code, self::TTL_MINUTES, $locale)
+            );
         } catch (\Throwable $exception) {
             Log::error('User verification code email failed', [
                 'user_id' => $user->id,

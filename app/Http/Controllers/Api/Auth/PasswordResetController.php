@@ -3,20 +3,25 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PasswordResetLinkMail;
 use App\Models\User;
+use App\Support\AuthEmailSupport;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
-use Carbon\Carbon;
 
 class PasswordResetController extends Controller
 {
     public function sendResetLinkEmail(Request $request)
     {
-        $request->validate(['email' => 'required|email']);
+        $request->validate([
+            'email' => 'required|email',
+            'locale' => 'sometimes|nullable|string|max:5',
+        ]);
         $email = strtolower($request->email);
         $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
 
@@ -33,13 +38,17 @@ class PasswordResetController extends Controller
             'created_at' => Carbon::now()
         ]);
 
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-        $link = rtrim($frontendUrl, '/') . "/nl/auth/reset-password?token={$token}&email=" . urlencode($email);
+        $emailSupport = app(AuthEmailSupport::class);
+        $locale = $emailSupport->resolveLocale(
+            $request->input('locale') ?: $user->locale,
+            $request->header('Accept-Language')
+        );
+        $link = $emailSupport->localizedFrontendPath(
+            'auth/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email),
+            $locale
+        );
 
-        Mail::raw("You are receiving this email because we received a password reset request for your account.\n\nReset Password Link: {$link}\n\nIf you did not request a password reset, no further action is required.", function ($message) use ($email) {
-            $message->to($email)
-                    ->subject('Reset Password Notification');
-        });
+        Mail::to($email)->send(new PasswordResetLinkMail($user, $link, $locale));
 
         Log::info("Password reset requested for {$email}");
 

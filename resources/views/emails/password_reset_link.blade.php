@@ -1,5 +1,5 @@
 @php
-    $displayName = trim((string) ($bidder->full_name ?? ''));
+    $displayName = trim((string) ($user->first_name ?? $user->name ?? ''));
     $greeting = $displayName !== '' ? $displayName . ',' : null;
 @endphp
 
@@ -11,11 +11,12 @@
     'headline' => $copy['headline'],
     'greeting' => $greeting,
     'introLines' => [$copy['intro']],
+    'secondaryLines' => [$copy['expires']],
     'primaryActionLabel' => $copy['action_label'],
-    'primaryActionUrl' => $verifyUrl,
+    'primaryActionUrl' => $resetUrl,
     'primaryActionSupportText' => $copy['action_support'],
     'fallbackLabel' => $copy['fallback_label'],
-    'fallbackUrl' => $verifyUrl,
+    'fallbackUrl' => $resetUrl,
     'outro' => $copy['outro'],
     'footer' => $copy['footer'],
     'logoUrl' => $logoUrl,

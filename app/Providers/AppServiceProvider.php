@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Events\TaskCreated;
 use App\Listeners\SendTaskNotification;
 use App\Services\ImpersonationContext;
+use App\Support\AuthEmailSupport;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -25,7 +26,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         \Illuminate\Auth\Notifications\ResetPassword::createUrlUsing(function (object $notifiable, string $token) {
-            return config('app.frontend_url')."/nl/auth/reset-password?token={$token}&email={$notifiable->getEmailForPasswordReset()}";
+            $emailSupport = app(AuthEmailSupport::class);
+            $locale = $emailSupport->resolveLocale($notifiable->locale ?? null, request()?->header('Accept-Language'));
+
+            return $emailSupport->localizedFrontendPath(
+                'auth/reset-password?token=' . urlencode($token) . '&email=' . urlencode($notifiable->getEmailForPasswordReset()),
+                $locale
+            );
         });
 
         Vite::prefetch(concurrency: 3);
