@@ -3360,15 +3360,44 @@ CONTEXT,
         $normalized = array_fill_keys(self::STEP2_SCHEMA_FIELDS, '');
 
         foreach ($formValues as $field => $value) {
-            if (is_string($value) && strtolower(trim($value)) === 'unknown') {
-                $normalized[$field] = '';
-                continue;
-            }
-
-            $normalized[$field] = $value ?? '';
+            $normalized[$field] = $this->normalizeStep2ResponseScalarValue($value);
         }
 
         return $normalized;
+    }
+
+    private function normalizeStep2ResponseScalarValue(mixed $value): string|int|float|bool
+    {
+        if (is_array($value)) {
+            foreach (['value', 'normalized_value', 'answer', 'result', 'text', 'name', 'label'] as $key) {
+                if (!array_key_exists($key, $value)) {
+                    continue;
+                }
+
+                return $this->normalizeStep2ResponseScalarValue($value[$key]);
+            }
+
+            return '';
+        }
+
+        if (is_object($value)) {
+            return $this->normalizeStep2ResponseScalarValue((array) $value);
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return is_finite((float) $value) ? $value : '';
+        }
+
+        $text = trim(strip_tags((string) $value));
+        if ($this->isPlaceholderText($text) || strtolower($text) === '[object object]') {
+            return '';
+        }
+
+        return $text;
     }
 
     private function resolveStoredImagePath(\App\Models\YachtImage $yachtImage): ?string
