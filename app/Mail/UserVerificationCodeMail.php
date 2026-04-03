@@ -36,7 +36,7 @@ class UserVerificationCodeMail extends Mailable
                 'copy' => $copy,
                 'subjectLine' => $copy['subject'],
                 'verifyUrl' => $emailSupport->localizedFrontendPath(
-                    'auth/verify-email?email=' . urlencode($this->user->email),
+                    'auth/verify-email?email=' . urlencode($this->user->email) . '&code=' . urlencode($this->code),
                     $locale
                 ),
                 'logoUrl' => $emailSupport->logoUrl(),
