@@ -15,7 +15,7 @@ class PasswordResetLinkMail extends Mailable
     public function __construct(
         public User $user,
         public string $resetUrl,
-        public ?string $locale = null,
+        public ?string $preferredLocale = null,
         public int $ttlMinutes = 60
     ) {
     }
@@ -23,7 +23,7 @@ class PasswordResetLinkMail extends Mailable
     public function build(): self
     {
         $emailSupport = app(AuthEmailSupport::class);
-        $locale = $emailSupport->resolveLocale($this->locale, null);
+        $locale = $emailSupport->resolveLocale($this->preferredLocale, null);
         $copy = $this->copy($locale);
 
         return $this->subject($copy['subject'])

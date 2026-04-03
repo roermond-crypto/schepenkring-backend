@@ -16,14 +16,14 @@ class UserVerificationCodeMail extends Mailable
         public User $user,
         public string $code,
         public int $ttlMinutes,
-        public ?string $locale = null
+        public ?string $preferredLocale = null
     ) {
     }
 
     public function build(): self
     {
         $emailSupport = app(AuthEmailSupport::class);
-        $locale = $emailSupport->resolveLocale($this->locale, null);
+        $locale = $emailSupport->resolveLocale($this->preferredLocale, null);
         $copy = $this->copy($locale);
 
         return $this->subject($copy['subject'])
