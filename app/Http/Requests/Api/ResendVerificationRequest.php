@@ -8,6 +8,7 @@ class ResendVerificationRequest extends ApiRequest
     {
         return [
             'email' => ['required', 'email'],
+            'locale' => ['sometimes', 'nullable', 'string', 'max:5'],
         ];
     }
 }

@@ -34,7 +34,11 @@ class EmailVerificationCodeController extends Controller
             ]);
         }
 
-        $verificationCodes->issue($user);
+        $verificationCodes->issue(
+            $user,
+            $request->validated('locale'),
+            $request->header('Accept-Language')
+        );
 
         return response()->json([
             'sent' => true,
@@ -113,7 +117,9 @@ class EmailVerificationCodeController extends Controller
             'has_location_assignment' => $user->isClient()
                 ? $user->client_location_id !== null
                 : $user->locations->isNotEmpty(),
-            'can_access_board' => $user->isAdmin() || ($user->isEmployee() && $user->locations->isNotEmpty()),
+            'can_access_board' => $user->isAdmin()
+                || ($user->isClient() && $user->client_location_id !== null)
+                || ($user->isEmployee() && $user->locations->isNotEmpty()),
             'location' => $resolvedLocation ? [
                 'id' => $resolvedLocation->id,
                 'name' => $resolvedLocation->name,

@@ -67,11 +67,13 @@ class UserResource extends JsonResource
                 : ($this->relationLoaded('locations')
                     ? $this->locations->isNotEmpty()
                     : $this->location_id !== null),
-            'can_access_board' => $this->isAdmin() || ($this->isEmployee() && (
-                $this->relationLoaded('locations')
-                    ? $this->locations->isNotEmpty()
-                    : $this->location_id !== null
-            )),
+            'can_access_board' => $this->isAdmin()
+                || ($this->isClient() && $this->client_location_id !== null)
+                || ($this->isEmployee() && (
+                    $this->relationLoaded('locations')
+                        ? $this->locations->isNotEmpty()
+                        : $this->location_id !== null
+                )),
             'timezone' => $this->timezone,
             'locale' => $this->locale,
             'address_line1' => $this->address_line1,
