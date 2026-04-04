@@ -5,6 +5,7 @@ namespace App\Actions\Signhost;
 use App\Models\SignRequest;
 use App\Models\User;
 use App\Repositories\SignRequestRepository;
+use App\Support\SignhostRecipientSupport;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 
@@ -50,17 +51,6 @@ class GetSignhostStatusAction
 
     private function clientCanAccess(SignRequest $signRequest, User $actor): bool
     {
-        if ($signRequest->requested_by_user_id === $actor->id) {
-            return true;
-        }
-
-        $recipients = $signRequest->metadata['recipients'] ?? [];
-        foreach ($recipients as $recipient) {
-            if (! empty($recipient['user_id']) && (int) $recipient['user_id'] === $actor->id) {
-                return true;
-            }
-        }
-
-        return false;
+        return SignhostRecipientSupport::clientCanAccess($signRequest, $actor);
     }
 }

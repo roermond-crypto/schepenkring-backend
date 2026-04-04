@@ -9,6 +9,7 @@ use App\Repositories\SignRequestRepository;
 use App\Services\ActionSecurity;
 use App\Services\NotificationDispatchService;
 use App\Services\SignhostService;
+use App\Support\SignhostRecipientSupport;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 
@@ -94,7 +95,7 @@ class ResendSignhostRequestAction
 
     private function notifyRecipients(SignRequest $signRequest, string $title, string $message): void
     {
-        $recipientIds = $this->recipientUserIds($signRequest);
+        $recipientIds = SignhostRecipientSupport::recipientUserIds($signRequest);
         foreach ($recipientIds as $userId) {
             $user = User::find($userId);
             if (! $user) {
@@ -109,7 +110,7 @@ class ResendSignhostRequestAction
                     'entity_type' => $signRequest->entity_type,
                     'entity_id' => $signRequest->entity_id,
                     'sign_request_id' => $signRequest->id,
-                    'url' => "/dashboard/admin/contracts/{$signRequest->id}",
+                    'url' => SignhostRecipientSupport::notificationUrl($signRequest),
                 ],
                 null,
                 true,
@@ -117,25 +118,5 @@ class ResendSignhostRequestAction
                 $signRequest->location_id
             );
         }
-    }
-
-    /**
-     * @return array<int, int>
-     */
-    private function recipientUserIds(SignRequest $signRequest): array
-    {
-        $ids = [];
-        if ($signRequest->requested_by_user_id) {
-            $ids[] = $signRequest->requested_by_user_id;
-        }
-
-        $recipients = $signRequest->metadata['recipients'] ?? [];
-        foreach ($recipients as $recipient) {
-            if (! empty($recipient['user_id'])) {
-                $ids[] = (int) $recipient['user_id'];
-            }
-        }
-
-        return array_values(array_unique($ids));
     }
 }

@@ -310,6 +310,7 @@ class YachtController extends Controller
             $yacht = $savedYacht->load([
                 'images',
                 'availabilityRules',
+                'latestSignRequest',
                 'location:id,name,code,status,chat_widget_enabled,chat_widget_welcome_text,chat_widget_theme',
                 'owner:id,client_location_id',
             ]);
@@ -725,7 +726,7 @@ class YachtController extends Controller
 
     private function visibleYachtsQuery(?User $user): Builder
     {
-        $query = Yacht::query()->with(['images', 'availabilityRules']);
+        $query = Yacht::query()->with(['images', 'availabilityRules', 'latestSignRequest']);
 
         if (! $user) {
             return $query->whereRaw('1 = 0');
