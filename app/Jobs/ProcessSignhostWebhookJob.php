@@ -11,6 +11,7 @@ use App\Models\WebhookEvent;
 use App\Services\ActionSecurity;
 use App\Services\NotificationDispatchService;
 use App\Services\SignhostService;
+use App\Support\SignhostRecipientSupport;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -122,7 +123,7 @@ class ProcessSignhostWebhookJob implements ShouldQueue
 
         $message = "Signing status updated to {$status}.";
 
-        $recipientIds = $this->recipientUserIds($signRequest);
+        $recipientIds = SignhostRecipientSupport::recipientUserIds($signRequest);
         foreach ($recipientIds as $userId) {
             $user = User::find($userId);
             if (! $user) {
@@ -138,7 +139,7 @@ class ProcessSignhostWebhookJob implements ShouldQueue
                     'entity_id' => $signRequest->entity_id,
                     'sign_request_id' => $signRequest->id,
                     'status' => $status,
-                    'url' => "/dashboard/admin/contracts/{$signRequest->id}",
+                    'url' => SignhostRecipientSupport::notificationUrl($signRequest),
                 ],
                 null,
                 true,
@@ -162,7 +163,7 @@ class ProcessSignhostWebhookJob implements ShouldQueue
                         'entity_type' => $signRequest->entity_type,
                         'entity_id' => $signRequest->entity_id,
                         'sign_request_id' => $signRequest->id,
-                        'url' => "/dashboard/admin/contracts/{$signRequest->id}",
+                        'url' => SignhostRecipientSupport::notificationUrl($signRequest),
                     ],
                     null,
                     true,
@@ -171,26 +172,6 @@ class ProcessSignhostWebhookJob implements ShouldQueue
                 );
             }
         }
-    }
-
-    /**
-     * @return array<int, int>
-     */
-    private function recipientUserIds(SignRequest $signRequest): array
-    {
-        $ids = [];
-        if ($signRequest->requested_by_user_id) {
-            $ids[] = $signRequest->requested_by_user_id;
-        }
-
-        $recipients = $signRequest->metadata['recipients'] ?? [];
-        foreach ($recipients as $recipient) {
-            if (! empty($recipient['user_id'])) {
-                $ids[] = (int) $recipient['user_id'];
-            }
-        }
-
-        return array_values(array_unique($ids));
     }
 
     private function mapSignhostStatus(string $status): string

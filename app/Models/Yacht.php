@@ -8,10 +8,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 use App\Traits\Auditable;
+use App\Support\SignhostRecipientSupport;
 
 class Yacht extends Model
 {
     use Auditable;
+
+    protected $appends = ['latest_signhost'];
+
+    protected $hidden = [
+        'latest_sign_request',
+        'sign_requests',
+    ];
 
     // Used by saveSubTables() and toArray() to keep things DRY.
     public const SUB_TABLE_MAP = [
@@ -234,6 +242,41 @@ class Yacht extends Model
 
     public function location(): BelongsTo {
         return $this->belongsTo(Location::class);
+    }
+
+    public function signRequests(): HasMany
+    {
+        return $this->hasMany(SignRequest::class, 'entity_id')
+            ->where('entity_type', 'Yacht');
+    }
+
+    public function latestSignRequest(): HasOne
+    {
+        return $this->hasOne(SignRequest::class, 'entity_id')
+            ->where('entity_type', 'Yacht')
+            ->latestOfMany();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getLatestSignhostAttribute(): array
+    {
+        $signRequest = $this->relationLoaded('latestSignRequest')
+            ? $this->getRelation('latestSignRequest')
+            : $this->latestSignRequest()->first();
+
+        return [
+            'sign_request_id' => $signRequest?->id,
+            'status' => SignhostRecipientSupport::normalizedSummaryStatus($signRequest, $this->status),
+            'client_sign_url' => $signRequest
+                ? SignhostRecipientSupport::clientSignUrl($signRequest, 'buyer')
+                : null,
+            'has_signed_document' => $signRequest
+                ? SignhostRecipientSupport::hasSignedDocument($signRequest)
+                : false,
+            'updated_at' => $signRequest?->updated_at?->toISOString(),
+        ];
     }
 
     // ─── Flatten sub-tables into top-level JSON ────────────────

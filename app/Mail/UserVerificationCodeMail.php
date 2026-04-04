@@ -16,14 +16,14 @@ class UserVerificationCodeMail extends Mailable
         public User $user,
         public string $code,
         public int $ttlMinutes,
-        public ?string $locale = null
+        public ?string $preferredLocale = null
     ) {
     }
 
     public function build(): self
     {
         $emailSupport = app(AuthEmailSupport::class);
-        $locale = $emailSupport->resolveLocale($this->locale, null);
+        $locale = $emailSupport->resolveLocale($this->preferredLocale, null);
         $copy = $this->copy($locale);
 
         return $this->subject($copy['subject'])
@@ -36,7 +36,7 @@ class UserVerificationCodeMail extends Mailable
                 'copy' => $copy,
                 'subjectLine' => $copy['subject'],
                 'verifyUrl' => $emailSupport->localizedFrontendPath(
-                    'auth/verify-email?email=' . urlencode($this->user->email),
+                    'auth/verify-email?email=' . urlencode($this->user->email) . '&code=' . urlencode($this->code),
                     $locale
                 ),
                 'logoUrl' => $emailSupport->logoUrl(),

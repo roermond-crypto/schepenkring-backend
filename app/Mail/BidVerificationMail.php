@@ -15,7 +15,7 @@ class BidVerificationMail extends Mailable
     public function __construct(
         public Bidder $bidder,
         public string $token,
-        public ?string $locale = null
+        public ?string $preferredLocale = null
     )
     {
     }
@@ -23,7 +23,7 @@ class BidVerificationMail extends Mailable
     public function build(): self
     {
         $emailSupport = app(AuthEmailSupport::class);
-        $locale = $emailSupport->resolveLocale($this->locale, null);
+        $locale = $emailSupport->resolveLocale($this->preferredLocale, null);
         $copy = $this->copy($locale);
         $baseUrl = rtrim((string) config('bidding.verify_url', ''), '/');
         $separator = str_contains($baseUrl, '?') ? '&' : '?';

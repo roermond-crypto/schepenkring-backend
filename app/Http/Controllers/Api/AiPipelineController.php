@@ -1227,12 +1227,11 @@ class AiPipelineController extends Controller
         ));
         $referenceDocumentContext = $request->attributes->get('reference_document_context');
         $referenceDocumentContext = is_array($referenceDocumentContext) ? $referenceDocumentContext : [];
-        $maxVisionImages = match ($speedMode) {
-            'fast' => (int) config('services.ai_pipeline.max_vision_images_fast', 6),
-            'deep' => (int) config('services.ai_pipeline.max_vision_images_deep', 16),
-            default => (int) config('services.ai_pipeline.max_vision_images_balanced', 10),
-        };
-        $maxVisionImages = max(1, $maxVisionImages);
+        // Analyze the full uploaded yacht gallery instead of truncating to a
+        // speed-mode subset. This improves Step 2 coverage for details that
+        // may only appear in later images such as HIN plates, dashboards,
+        // engine labels, CE plates, and upholstery/interior shots.
+        $maxVisionImages = YachtImageLimits::MAX_IMAGES_PER_YACHT;
 
         $parts = [];
 

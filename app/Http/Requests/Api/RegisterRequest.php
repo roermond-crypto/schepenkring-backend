@@ -11,6 +11,7 @@ class RegisterRequest extends ApiRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'locale' => ['sometimes', 'nullable', 'string', 'max:5'],
             'phone' => ['nullable', 'string', 'max:25'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'location_id' => ['required', 'integer', 'exists:locations,id'],

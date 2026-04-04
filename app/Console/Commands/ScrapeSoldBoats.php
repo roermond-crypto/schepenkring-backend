@@ -14,12 +14,15 @@ use Illuminate\Support\Str;
 
 class ScrapeSoldBoats extends Command
 {
+    private const MAX_BROCHURE_BYTES = 2_500_000;
+    private const MAX_IMAGE_BYTES = 12_000_000;
+
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'app:scrape-sold-boats {--limit= : Limit the number of boats to scrape} {--page=1 : Start page} {--max-pages= : Maximum number of pages to crawl}';
+    protected $signature = 'app:scrape-sold-boats {--limit= : Limit the number of boats to scrape} {--page=1 : Start page} {--max-pages= : Maximum number of pages to crawl} {--update-existing : Update boats that already exist instead of skipping them}';
 
     /**
      * Backward-compatible alias.
@@ -56,6 +59,7 @@ class ScrapeSoldBoats extends Command
         
         $boatsProcessed = 0;
         $boatsImported = 0;
+        $boatsUpdated = 0;
         $boatsSkipped = 0;
         $currentPage = $startPage;
 
@@ -92,8 +96,11 @@ class ScrapeSoldBoats extends Command
                         return 0;
                     }
 
-                    if ($this->scrapeBoat($boatUrl)) {
+                    $result = $this->scrapeBoat($boatUrl);
+                    if ($result === 'imported') {
                         $boatsImported++;
+                    } elseif ($result === 'updated') {
+                        $boatsUpdated++;
                     } else {
                         $boatsSkipped++;
                     }
@@ -111,7 +118,7 @@ class ScrapeSoldBoats extends Command
             }
         }
 
-        $this->info("Scraping completed. Processed: {$boatsProcessed}, Imported/Updated: {$boatsImported}, Skipped: {$boatsSkipped}");
+        $this->info("Scraping completed. Processed: {$boatsProcessed}, Imported: {$boatsImported}, Updated: {$boatsUpdated}, Skipped: {$boatsSkipped}");
         return 0;
     }
 
@@ -128,7 +135,7 @@ class ScrapeSoldBoats extends Command
         }
     }
 
-    private function scrapeBoat(string $url): bool
+    private function scrapeBoat(string $url): string
     {
         $this->comment("Scraping boat: {$url}");
 
@@ -138,6 +145,11 @@ class ScrapeSoldBoats extends Command
         
         $existingYacht = Yacht::where('source_identifier', $sourceIdentifier)->first();
         if ($existingYacht) {
+            if (! $this->option('update-existing')) {
+                $this->warn("Boat already exists: {$sourceIdentifier}. Skipping.");
+                return 'skipped';
+            }
+
             $this->warn("Boat already exists: {$sourceIdentifier}. Updating record and images.");
         }
 
@@ -145,7 +157,7 @@ class ScrapeSoldBoats extends Command
             $response = Http::timeout(20)->retry(2, 300)->get($url);
             if ($response->failed()) {
                 $this->error("Failed to fetch boat page: {$url}");
-                return false;
+                return 'skipped';
             }
 
             $crawler = new Crawler($response->body());
@@ -275,7 +287,7 @@ class ScrapeSoldBoats extends Command
                     'source_identifier' => $sourceIdentifier,
                     'issues' => $validation['issues'],
                 ]);
-                return false;
+                return 'skipped';
             }
 
             // Create Yacht record
@@ -514,12 +526,12 @@ class ScrapeSoldBoats extends Command
             $yacht->saveSubTables($subTableData);
 
             $this->info("Successfully saved boat: {$title}");
-            return true;
+            return $existingYacht ? 'updated' : 'imported';
 
         } catch (\Exception $e) {
             $this->error("Error scraping boat {$url}: " . $e->getMessage());
             Log::error("Scraper error for {$url}: " . $e->getMessage());
-            return false;
+            return 'skipped';
         }
     }
 
@@ -633,9 +645,17 @@ class ScrapeSoldBoats extends Command
             return [];
         }
 
+        $tempFile = tempnam(sys_get_temp_dir(), 'sold-brochure-');
+        if ($tempFile === false) {
+            return [];
+        }
+
         try {
             $response = Http::timeout(20)
                 ->retry(2, 300)
+                ->withOptions([
+                    'sink' => $tempFile,
+                ])
                 ->withHeaders([
                     'User-Agent' => 'Mozilla/5.0 (compatible; NauticSecureBot/1.0)',
                 ])
@@ -646,7 +666,27 @@ class ScrapeSoldBoats extends Command
             }
 
             $contentType = strtolower((string) $response->header('Content-Type'));
-            $body = $response->body();
+            $contentLength = (int) $response->header('Content-Length', 0);
+            if ($contentLength > self::MAX_BROCHURE_BYTES) {
+                Log::info("Skipping oversized supplemental brochure {$documentUrl}", [
+                    'content_length' => $contentLength,
+                ]);
+                return [];
+            }
+
+            if (str_contains($contentType, 'pdf')) {
+                return [];
+            }
+
+            $fileSize = @filesize($tempFile);
+            if (is_int($fileSize) && $fileSize > self::MAX_BROCHURE_BYTES) {
+                Log::info("Skipping oversized downloaded brochure {$documentUrl}", [
+                    'file_size' => $fileSize,
+                ]);
+                return [];
+            }
+
+            $body = @file_get_contents($tempFile);
             if ($body === '' || str_starts_with($body, '%PDF')) {
                 return [];
             }
@@ -664,6 +704,10 @@ class ScrapeSoldBoats extends Command
         } catch (\Throwable $e) {
             Log::warning("Failed fetching supplemental brochure data {$documentUrl}: {$e->getMessage()}");
             return [];
+        } finally {
+            if (is_string($tempFile) && is_file($tempFile)) {
+                @unlink($tempFile);
+            }
         }
     }
 
@@ -1182,9 +1226,17 @@ class ScrapeSoldBoats extends Command
 
     private function downloadImage(string $url, string $directory, string $filenamePrefix): ?string
     {
+        $tempFile = tempnam(sys_get_temp_dir(), 'sold-image-');
+        if ($tempFile === false) {
+            return null;
+        }
+
         try {
             $response = Http::timeout(20)
                 ->retry(2, 300)
+                ->withOptions([
+                    'sink' => $tempFile,
+                ])
                 ->withHeaders([
                     'User-Agent' => 'Mozilla/5.0 (compatible; NauticSecureBot/1.0)',
                 ])
@@ -1194,21 +1246,49 @@ class ScrapeSoldBoats extends Command
                 return null;
             }
 
-            $contents = $response->body();
-            if (!$contents) {
+            $contentLength = (int) $response->header('Content-Length', 0);
+            if ($contentLength > self::MAX_IMAGE_BYTES) {
+                Log::warning("Skipping oversized image {$url}", [
+                    'content_length' => $contentLength,
+                ]);
                 return null;
             }
 
             $contentType = strtolower((string) $response->header('Content-Type'));
+            if (!str_contains($contentType, 'image/')) {
+                return null;
+            }
+
+            $fileSize = @filesize($tempFile);
+            if ($fileSize === false || $fileSize <= 0) {
+                return null;
+            }
+            if ($fileSize > self::MAX_IMAGE_BYTES) {
+                Log::warning("Skipping oversized downloaded image {$url}", [
+                    'file_size' => $fileSize,
+                ]);
+                return null;
+            }
+
             $ext = $this->resolveImageExtension($url, $contentType);
             $filename = "{$filenamePrefix}_" . time() . '_' . Str::random(4) . ".{$ext}";
             $path = "{$directory}/{$filename}";
 
-            Storage::disk('public')->put($path, $contents);
+            $stream = fopen($tempFile, 'rb');
+            if ($stream === false) {
+                return null;
+            }
+
+            Storage::disk('public')->put($path, $stream);
+            fclose($stream);
             return $path;
         } catch (\Throwable $e) {
             Log::warning("Failed downloading image {$url}: {$e->getMessage()}");
             return null;
+        } finally {
+            if (is_string($tempFile) && is_file($tempFile)) {
+                @unlink($tempFile);
+            }
         }
     }
 
