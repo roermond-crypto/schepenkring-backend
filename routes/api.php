@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\ConversationMessageController;
 use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
+use App\Http\Controllers\Api\ContractPartyController;
 use App\Http\Controllers\Api\EmployeeUserController;
 use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\FaqKnowledgeController;
@@ -247,6 +248,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/read', [NotificationController::class, 'markAsRead']);
         Route::post('/read-all', [NotificationController::class, 'markAllAsRead']);
     });
+
+    Route::get('contract-parties', [ContractPartyController::class, 'index']);
+    Route::post('contract-parties', [ContractPartyController::class, 'store']);
+    Route::patch('contract-parties/{contractParty}', [ContractPartyController::class, 'update']);
+    Route::delete('contract-parties/{contractParty}', [ContractPartyController::class, 'destroy']);
 
     // Social Media / Video Automation
     // ================== SOCIAL VIDEO AUTOMATION ==================
