@@ -179,7 +179,7 @@ class YachtController extends Controller
             if ($isUpdate) {
                 $this->authorizeYachtAccess($actor, $yacht);
             }
-            if (! $request->has('boat_name') || empty($request->input('boat_name'))) {
+            if (! $isUpdate && (! $request->has('boat_name') || empty($request->input('boat_name')))) {
                 $manufacturer = $request->input('manufacturer', '');
                 $model = $request->input('model', '');
                 $autoName = trim("$manufacturer $model");
@@ -247,10 +247,9 @@ class YachtController extends Controller
             }
 
             $this->applyRequestedHarbor($request, $yacht, $actor, $isUpdate);
+            $this->applyRequestedOwner($request, $yacht, $actor, $isUpdate);
 
             if (! $isUpdate) {
-                $yacht->user_id = $actor?->id;
-
                 if (! $yacht->vessel_id) {
                     $yacht->vessel_id = 'SK-'.date('Y').'-'.strtoupper(bin2hex(random_bytes(3)));
                 }
@@ -312,7 +311,7 @@ class YachtController extends Controller
                 'availabilityRules',
                 'latestSignRequest',
                 'location:id,name,code,status,chat_widget_enabled,chat_widget_welcome_text,chat_widget_theme',
-                'owner:id,client_location_id',
+                'owner:id,name,first_name,last_name,email,phone,address_line1,address_line2,postal_code,city,country,client_location_id',
             ]);
 
             $this->syncYachtKnowledgeSafely($yacht);
@@ -386,9 +385,9 @@ class YachtController extends Controller
         $yacht->status = 'draft';
         $yacht->boat_name = 'Yacht '.date('Y-m-d H:i');
         $yacht->allow_bidding = false;
-        $yacht->user_id = $actor?->id;
 
         $this->applyRequestedHarbor($request, $yacht, $actor, false);
+        $this->applyRequestedOwner($request, $yacht, $actor, false);
 
         if (! $yacht->vessel_id) {
             $yacht->vessel_id = 'SK-'.date('Y').'-'.strtoupper(bin2hex(random_bytes(3)));
@@ -421,6 +420,43 @@ class YachtController extends Controller
             }
         } elseif (! $isUpdate && $actor?->client_location_id) {
             $yacht->ref_harbor_id = $actor->client_location_id;
+        }
+    }
+
+    private function applyRequestedOwner(Request $request, Yacht $yacht, ?User $actor, bool $isUpdate): void
+    {
+        if ($request->has('user_id')) {
+            $requestedUserId = $request->input('user_id');
+
+            if ($requestedUserId === null || $requestedUserId === '') {
+                if (! $actor?->isClient()) {
+                    $yacht->user_id = null;
+                }
+
+                return;
+            }
+
+            $owner = User::query()->findOrFail((int) $requestedUserId);
+
+            if (! $owner->isClient()) {
+                abort(422, 'The linked yacht owner must be a client user.');
+            }
+
+            if ($actor?->isEmployee() && ! $this->locationAccess->sharesLocation($actor, $owner->client_location_id)) {
+                abort(403, 'Forbidden');
+            }
+
+            $yacht->user_id = $owner->id;
+
+            if (! $yacht->ref_harbor_id && $owner->client_location_id) {
+                $yacht->ref_harbor_id = (int) $owner->client_location_id;
+            }
+
+            return;
+        }
+
+        if (! $isUpdate && $actor?->isClient()) {
+            $yacht->user_id = $actor->id;
         }
     }
 
@@ -726,7 +762,12 @@ class YachtController extends Controller
 
     private function visibleYachtsQuery(?User $user): Builder
     {
-        $query = Yacht::query()->with(['images', 'availabilityRules', 'latestSignRequest']);
+        $query = Yacht::query()->with([
+            'images',
+            'availabilityRules',
+            'latestSignRequest',
+            'owner:id,name,first_name,last_name,email,phone,address_line1,address_line2,postal_code,city,country,client_location_id',
+        ]);
 
         if (! $user) {
             return $query->whereRaw('1 = 0');

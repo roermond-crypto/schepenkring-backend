@@ -813,6 +813,31 @@ class AiPipelineController extends Controller
             if (!isset($formValues['short_description_en']) || $formValues['short_description_en'] === null) {
                 $formValues['short_description_en'] = $hintText;
             }
+        } else {
+            $primaryExtracted = $stage1Result['extracted'] ?? null;
+            if (is_array($primaryExtracted)) {
+                $stagesRun[] = 'gemini_vision_primary';
+                $primaryVisionValues = $this->buildFormValues($primaryExtracted);
+                $primaryVisionConfidence = is_array($primaryExtracted['confidence'] ?? null)
+                    ? $primaryExtracted['confidence']
+                    : [];
+
+                foreach ($primaryVisionValues as $key => $value) {
+                    if ($value !== null) {
+                        $formValues[$key] = $value;
+                        $fieldConfidence[$key] = (float) ($primaryVisionConfidence[$key] ?? 0.80);
+                        $fieldSources[$key] = 'gemini_vision_primary';
+                    }
+                }
+
+                Log::info('[AI Pipeline] Stage 1 (Gemini primary) extracted fields', [
+                    'image_count' => $visionImagesUsed,
+                    'filled_fields' => count(array_filter($primaryVisionValues, fn($value) => $value !== null && $value !== '')),
+                ]);
+            } else {
+                $warnings[] = 'Primary vision extraction returned no structured data.';
+                Log::warning('[AI Pipeline] Stage 1 (Gemini primary) returned no structured data');
+            }
         }
         // ─── PARALLEL EXECUTION TRACKS ────────────────────────────────
         // We run independent stages in parallel to hit the 60s target.
@@ -892,6 +917,12 @@ class AiPipelineController extends Controller
                     }
                 }
             }
+        } elseif ($visionResult) {
+            $warnings[] = 'Parallel Gemini vision request failed.';
+            Log::warning('[AI Pipeline] Parallel Gemini vision request failed', [
+                'status' => $visionResult->status(),
+                'body' => $visionResult->body(),
+            ]);
         }
 
         // 2. Process OpenAI Enrichment
@@ -4600,6 +4631,44 @@ USER;
 
     private function formatDescriptionSpecValue(string $field, mixed $value): ?string
     {
+        if (is_array($value)) {
+            $flattened = collect($value)
+                ->map(function (mixed $item): ?string {
+                    if (is_bool($item)) {
+                        return $item ? 'Yes' : null;
+                    }
+
+                    if (is_int($item) || is_float($item)) {
+                        return (float) $item === 0.0
+                            ? null
+                            : $this->formatDescriptionNumber((float) $item);
+                    }
+
+                    if (!is_scalar($item)) {
+                        return null;
+                    }
+
+                    $text = trim(strip_tags((string) $item));
+                    return $this->isPlaceholderText($text) ? null : $text;
+                })
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if (empty($flattened)) {
+                return null;
+            }
+
+            return implode(', ', $flattened);
+        }
+
+        if (is_object($value)) {
+            return method_exists($value, '__toString')
+                ? $this->formatDescriptionSpecValue($field, (string) $value)
+                : null;
+        }
+
         if (is_bool($value)) {
             return $value ? 'Yes' : null;
         }
