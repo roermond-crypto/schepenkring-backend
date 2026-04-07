@@ -9,7 +9,10 @@ use App\Models\KnowledgeIngestionRun;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class FaqKnowledgeIngestionService
 {
@@ -48,32 +51,25 @@ class FaqKnowledgeIngestionService
             ],
         ]);
 
-        $run = KnowledgeIngestionRun::create([
-            'source_type' => $document->source_type,
-            'source_table' => $document->getTable(),
-            'source_reference' => (string) $document->id,
-            'location_id' => $document->location_id,
-            'triggered_by_user_id' => $user->id,
-            'status' => 'processing',
-            'documents_count' => 1,
-            'entities_count' => 1,
-            'metadata' => [
-                'document_id' => $document->id,
-                'file_name' => $document->file_name,
-            ],
-            'started_at' => now(),
-        ]);
+        $run = $this->createIngestionRun($document, $user);
 
-        $document->forceFill([
-            'metadata' => array_merge($document->metadata ?? [], [
-                'ingestion_run_id' => $run->id,
-            ]),
-        ])->save();
+        if ($run instanceof KnowledgeIngestionRun) {
+            $document->forceFill([
+                'metadata' => array_merge($document->metadata ?? [], [
+                    'ingestion_run_id' => $run->id,
+                ]),
+            ])->save();
+        }
 
-        $this->graph->syncDocument($document);
+        $this->syncDocumentSafely($document);
 
         try {
-            $text = $this->extractor->extract($file);
+            try {
+                $text = $this->extractor->extract($file);
+            } catch (Throwable $e) {
+                throw $this->documentProcessingException($e);
+            }
+
             if ($text === '') {
                 throw ValidationException::withMessages([
                     'file' => 'No readable text could be extracted from this document.',
@@ -85,7 +81,11 @@ class FaqKnowledgeIngestionService
 
             DB::transaction(function () use ($document, $attributes, $chunks, $text, &$count) {
                 foreach ($chunks as $index => $chunk) {
-                    $qas = $this->generator->generate($chunk, $attributes['language'] ?? null);
+                    try {
+                        $qas = $this->generator->generate($chunk, $attributes['language'] ?? null);
+                    } catch (Throwable $e) {
+                        throw $this->documentProcessingException($e);
+                    }
 
                     foreach ($qas as $qa) {
                         FaqKnowledgeItem::create([
@@ -123,29 +123,16 @@ class FaqKnowledgeIngestionService
             });
 
             $document = $document->fresh();
-            $this->graph->syncDocument($document);
-            $run->forceFill([
-                'status' => 'completed',
-                'chunks_count' => count($chunks),
-                'entities_count' => 1,
-                'metadata' => array_merge($run->metadata ?? [], [
-                    'generated_qna_count' => $count,
-                ]),
-                'completed_at' => now(),
-            ])->save();
-        } catch (\Throwable $e) {
+            $this->syncDocumentSafely($document);
+            $this->completeIngestionRun($run, count($chunks), $count);
+        } catch (Throwable $e) {
             $document->forceFill([
                 'status' => 'failed',
                 'processing_error' => $e->getMessage(),
             ])->save();
 
-            $this->graph->syncDocument($document->fresh());
-            $run->forceFill([
-                'status' => 'failed',
-                'failures_count' => 1,
-                'error_text' => $e->getMessage(),
-                'completed_at' => now(),
-            ])->save();
+            $this->syncDocumentSafely($document->fresh());
+            $this->failIngestionRun($run, $e->getMessage());
 
             throw $e;
         }
@@ -308,5 +295,84 @@ class FaqKnowledgeIngestionService
         $safeBase = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $base) ?: 'document';
 
         return $safeBase.($extension ? '.'.$extension : '');
+    }
+
+    private function createIngestionRun(FaqKnowledgeDocument $document, User $user): ?KnowledgeIngestionRun
+    {
+        if (! Schema::hasTable('knowledge_ingestion_runs')) {
+            Log::warning('Skipping knowledge ingestion run because the table is not available.', [
+                'document_id' => $document->id,
+            ]);
+
+            return null;
+        }
+
+        return KnowledgeIngestionRun::create([
+            'source_type' => $document->source_type,
+            'source_table' => $document->getTable(),
+            'source_reference' => (string) $document->id,
+            'location_id' => $document->location_id,
+            'triggered_by_user_id' => $user->id,
+            'status' => 'processing',
+            'documents_count' => 1,
+            'entities_count' => 1,
+            'metadata' => [
+                'document_id' => $document->id,
+                'file_name' => $document->file_name,
+            ],
+            'started_at' => now(),
+        ]);
+    }
+
+    private function completeIngestionRun(?KnowledgeIngestionRun $run, int $chunkCount, int $generatedQnaCount): void
+    {
+        if (! $run instanceof KnowledgeIngestionRun) {
+            return;
+        }
+
+        $run->forceFill([
+            'status' => 'completed',
+            'chunks_count' => $chunkCount,
+            'entities_count' => 1,
+            'metadata' => array_merge($run->metadata ?? [], [
+                'generated_qna_count' => $generatedQnaCount,
+            ]),
+            'completed_at' => now(),
+        ])->save();
+    }
+
+    private function failIngestionRun(?KnowledgeIngestionRun $run, string $message): void
+    {
+        if (! $run instanceof KnowledgeIngestionRun) {
+            return;
+        }
+
+        $run->forceFill([
+            'status' => 'failed',
+            'failures_count' => 1,
+            'error_text' => $message,
+            'completed_at' => now(),
+        ])->save();
+    }
+
+    private function syncDocumentSafely(FaqKnowledgeDocument $document): void
+    {
+        try {
+            $this->graph->syncDocument($document);
+        } catch (Throwable $e) {
+            Log::warning('Knowledge graph sync skipped for FAQ knowledge document.', [
+                'document_id' => $document->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function documentProcessingException(Throwable $e): ValidationException
+    {
+        $message = trim($e->getMessage());
+
+        return ValidationException::withMessages([
+            'file' => $message !== '' ? $message : 'The document could not be processed.',
+        ]);
     }
 }
