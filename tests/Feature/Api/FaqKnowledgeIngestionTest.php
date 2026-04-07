@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 
@@ -156,6 +157,97 @@ test('staff can upload an xlsx knowledge document and extract spreadsheet text',
     expect($document->extension)->toBe('xlsx');
     expect($document->extracted_text)->toContain('What is Nautic Secure?');
     expect($document->extracted_text)->toContain('It is a secure platform for structured boat sales.');
+});
+
+test('staff can upload a knowledge document when auxiliary knowledge tables are missing', function () {
+    Storage::fake('local');
+
+    Schema::dropIfExists('knowledge_ingestion_runs');
+    Schema::dropIfExists('knowledge_relationships');
+    Schema::dropIfExists('knowledge_entities');
+
+    $location = Location::create([
+        'name' => 'Schepenkring HQ',
+        'code' => 'SKHQ',
+        'status' => 'ACTIVE',
+    ]);
+
+    $employee = User::factory()->create([
+        'type' => UserType::EMPLOYEE,
+        'status' => UserStatus::ACTIVE,
+    ]);
+    $employee->locations()->attach($location->id, ['role' => 'sales']);
+
+    config()->set('services.openai.key', 'test-openai');
+
+    Http::fake([
+        'https://api.openai.com/v1/chat/completions' => Http::response([
+            'choices' => [[
+                'message' => [
+                    'content' => json_encode([
+                        'items' => [[
+                            'question' => 'Which documents are required?',
+                            'answer' => 'Registration papers and identification are required.',
+                        ]],
+                    ], JSON_UNESCAPED_SLASHES),
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    Sanctum::actingAs($employee);
+
+    $response = $this
+        ->withHeader('Accept', 'application/json')
+        ->post('/api/faqs/knowledge/documents', [
+            'location_id' => $location->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'knowledge.txt',
+                'Registration papers and identification are required before processing the sale.'
+            ),
+        ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('document.status', 'pending_review')
+        ->assertJsonPath('document.generated_qna_count', 1);
+
+    expect(FaqKnowledgeDocument::query()->count())->toBe(1);
+    expect(FaqKnowledgeItem::query()->count())->toBe(1);
+});
+
+test('upload returns a validation error when OpenAI FAQ generation is unavailable', function () {
+    Storage::fake('local');
+
+    $location = Location::create([
+        'name' => 'Schepenkring HQ',
+        'code' => 'SKHQ',
+        'status' => 'ACTIVE',
+    ]);
+
+    $employee = User::factory()->create([
+        'type' => UserType::EMPLOYEE,
+        'status' => UserStatus::ACTIVE,
+    ]);
+    $employee->locations()->attach($location->id, ['role' => 'sales']);
+
+    config()->set('services.openai.key', null);
+
+    Sanctum::actingAs($employee);
+
+    $response = $this
+        ->withHeader('Accept', 'application/json')
+        ->post('/api/faqs/knowledge/documents', [
+            'location_id' => $location->id,
+            'file' => UploadedFile::fake()->createWithContent(
+                'knowledge.txt',
+                'Registration papers and identification are required before processing the sale.'
+            ),
+        ]);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('message', 'OPENAI_API_KEY is not configured.');
+
+    expect(FaqKnowledgeDocument::query()->first()?->status)->toBe('failed');
 });
 
 test('approving a generated knowledge item creates a faq and upserts it to pinecone', function () {
