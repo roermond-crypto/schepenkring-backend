@@ -28,6 +28,7 @@ class RegisterClientAction
             'type' => UserType::CLIENT,
             'status' => UserStatus::ACTIVE,
             'client_location_id' => $data['location_id'],
+            'role' => $data['role'] ?? null,
             'email_changed_at' => now(),
             'phone_changed_at' => array_key_exists('phone', $data) ? now() : null,
             'password_changed_at' => now(),

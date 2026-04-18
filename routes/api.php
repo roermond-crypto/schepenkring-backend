@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
 use App\Http\Controllers\Api\KnowledgeBrainController;
+use App\Http\Controllers\Api\AiKnowledgeArticleController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
 use App\Http\Controllers\Api\SocialVideoController;
@@ -325,6 +326,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('faqs/knowledge-brain/suggestions', [KnowledgeBrainController::class, 'suggestions']);
     Route::post('faqs/knowledge-brain/refresh', [KnowledgeBrainController::class, 'refresh']);
     Route::patch('faqs/knowledge-brain/suggestions/{suggestion}', [KnowledgeBrainController::class, 'review']);
+
+    Route::middleware(['auth:sanctum', 'onboarding.active', 'admin.errors'])->prefix('admin/knowledge-articles')->group(function () {
+        Route::get('/', [AiKnowledgeArticleController::class, 'index']);
+        Route::post('/', [AiKnowledgeArticleController::class, 'store']);
+        Route::post('/translate', [AiKnowledgeArticleController::class, 'translate']);
+        Route::post('/seed-starter-brands-models', [AiKnowledgeArticleController::class, 'seedStarterBrandsAndModels']);
+        Route::put('/{article}', [AiKnowledgeArticleController::class, 'update']);
+        Route::delete('/{article}', [AiKnowledgeArticleController::class, 'destroy']);
+    });
     Route::put('faqs/{faq}', [FaqController::class, 'update']);
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
@@ -506,6 +516,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     // Integrations (central credential management)
     Route::apiResource('integrations', IntegrationController::class);
+    Route::post('integrations/{id}/send-access-details', [IntegrationController::class, 'sendAccessDetails']);
 });
 
 Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->group(function () {

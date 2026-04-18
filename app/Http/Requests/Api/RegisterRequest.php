@@ -20,7 +20,7 @@ class RegisterRequest extends ApiRequest
             'website' => ['nullable', 'max:0'],
             'type' => ['prohibited'],
             'status' => ['prohibited'],
-            'role' => ['prohibited'],
+            'role' => ['nullable', 'string', 'in:buyer,seller'],
             'roles' => ['prohibited'],
             'permissions' => ['prohibited'],
         ];

@@ -129,6 +129,13 @@ return [
         'application_id' => env('TELNYX_APPLICATION_ID'),
     ],
 
+    'integrations' => [
+        'access_delivery_allowed_emails' => array_filter(array_map(
+            'trim',
+            explode(',', env('INTEGRATION_ACCESS_DELIVERY_ALLOWED_EMAILS', 'nauticsecure@gmail.com'))
+        )),
+    ],
+
     'yext' => [
         'api_key' => env('YEXT_API_KEY'),
         'account_id' => env('YEXT_ACCOUNT_ID'),
