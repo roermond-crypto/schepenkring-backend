@@ -62,7 +62,7 @@ class EmailVerificationCodeController extends Controller
             ], 404);
         }
 
-        if (! $user->isActive()) {
+        if (!$user->isActive() && !in_array($user->status, [\App\Enums\UserStatus::EMAIL_PENDING, \App\Enums\UserStatus::PENDING, \App\Enums\UserStatus::PENDING_APPROVAL], true)) {
             return response()->json([
                 'message' => 'Account is not active.',
             ], 403);
@@ -77,6 +77,8 @@ class EmailVerificationCodeController extends Controller
 
             if ($user->markEmailAsVerified()) {
                 event(new Verified($user));
+                
+                $user->status = \App\Enums\UserStatus::ACTIVE;
             }
         }
 

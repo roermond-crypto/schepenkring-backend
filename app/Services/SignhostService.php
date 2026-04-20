@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -18,39 +19,32 @@ class SignhostService
         $this->userToken = (string) config('services.signhost.user_token');
     }
 
-    /**
-     * @param array<int, array{email:string,name:string,send?:bool}> $signers
-     * @param string|array<int, string> $pdfPaths  Single path or array of paths
-     */
-    public function createTransaction(array $signers, string|array $pdfPaths, string $reference): array
+    public function createMultiSignerTransaction(array $signers, string $pdfPath, string $reference): array
     {
-        // Normalize to array for uniform handling
-        $pdfPaths = is_array($pdfPaths) ? array_values($pdfPaths) : [$pdfPaths];
-
-        $payloadSigners = [];
+        $signerPayload = [];
         foreach ($signers as $signer) {
-            $payloadSigners[] = $this->buildSignerPayload($signer);
+            $signerPayload[] = [
+                'Email' => $signer['email'],
+                'ScribbleName' => $signer['name'],
+                'SendSignRequest' => true,
+                'SignRequestMessage' => $this->defaultSignRequestMessage(),
+            ];
         }
 
         $create = $this->request('post', 'transaction', [
-            'Seal' => false,
-            'Signers' => $payloadSigners,
+            'Signers' => $signerPayload,
+            'SendEmailNotifications' => true,
+            'SignRequestSubject' => $this->defaultSignRequestSubject(),
+            'SignRequestMessage' => $this->defaultSignRequestMessage(),
             'Reference' => $reference,
         ]);
 
         $transactionId = $create['Id'] ?? $create['id'] ?? null;
-        if (! $transactionId) {
+        if (!$transactionId) {
             throw new \RuntimeException('Signhost transaction id missing');
         }
 
-        // Upload each PDF with a unique file key
-        foreach ($pdfPaths as $index => $pdfPath) {
-            $fileKey = count($pdfPaths) === 1
-                ? 'Contract.pdf'
-                : 'Contract_' . ($index + 1) . '.pdf';
-            $this->uploadFile($transactionId, $pdfPath, $fileKey);
-        }
-
+        $this->uploadFile($transactionId, $pdfPath);
         $this->startTransaction($transactionId);
 
         $transaction = $this->request('get', "transaction/{$transactionId}");
@@ -61,24 +55,90 @@ class SignhostService
         ];
     }
 
-    public function createSingleSignerTransaction(array $signer, string|array $pdfPaths, string $reference): array
+    public function createSingleSignerTransaction(User $signer, string $pdfPath, string $reference): array
     {
-        return $this->createTransaction([$signer], $pdfPaths, $reference);
+        $create = $this->request('post', 'transaction', [
+            'Signers' => [
+                [
+                    'Email' => $signer->email,
+                    'ScribbleName' => $signer->name,
+                    'SendSignRequest' => true,
+                    'SignRequestMessage' => $this->defaultSignRequestMessage(),
+                ],
+            ],
+            'SendEmailNotifications' => true,
+            'SignRequestSubject' => $this->defaultSignRequestSubject(),
+            'SignRequestMessage' => $this->defaultSignRequestMessage(),
+            'Reference' => $reference,
+        ]);
+
+        $transactionId = $create['Id'] ?? $create['id'] ?? null;
+        if (!$transactionId) {
+            throw new \RuntimeException('Signhost transaction id missing');
+        }
+
+        $this->uploadFile($transactionId, $pdfPath);
+        $this->startTransaction($transactionId);
+
+        $transaction = $this->request('get', "transaction/{$transactionId}");
+
+        return [
+            'transaction_id' => $transactionId,
+            'transaction' => $transaction,
+        ];
+    }
+
+    public function createVerificationPhaseTransaction(
+        User $signer,
+        array $metadata,
+        ?string $pdfPath = null,
+        ?string $reference = null
+    ): array {
+        $payload = [
+            'Signers' => [
+                [
+                    'Email' => $signer->email,
+                    'ScribbleName' => $signer->name,
+                    'SendSignRequest' => true,
+                    'SignRequestMessage' => $this->defaultSignRequestMessage(),
+                ],
+            ],
+            'SendEmailNotifications' => true,
+            'SignRequestSubject' => $this->defaultSignRequestSubject(),
+            'SignRequestMessage' => $this->defaultSignRequestMessage(),
+            'Reference' => $reference ?: ('verification-' . ($metadata['onboarding_id'] ?? $signer->id)),
+        ];
+
+        if (!empty($metadata)) {
+            $payload['MetaData'] = $metadata;
+        }
+
+        $create = $this->request('post', 'transaction', $payload);
+        $transactionId = $create['Id'] ?? $create['id'] ?? null;
+        if (!$transactionId) {
+            throw new \RuntimeException('Signhost transaction id missing');
+        }
+
+        if ($pdfPath) {
+            $this->uploadFile($transactionId, $pdfPath);
+        } else {
+            $this->uploadPlaceholderFile($transactionId);
+        }
+
+        $this->startTransaction($transactionId);
+        $transaction = $this->request('get', "transaction/{$transactionId}");
+        $redirectUrl = $this->extractSigningUrl($transaction);
+
+        return [
+            'transaction_id' => $transactionId,
+            'transaction' => $transaction,
+            'redirect_url' => $redirectUrl,
+        ];
     }
 
     public function getTransaction(string $transactionId): array
     {
         return $this->request('get', "transaction/{$transactionId}");
-    }
-
-    public function resendTransaction(string $transactionId): void
-    {
-        $this->request('put', "transaction/{$transactionId}/start");
-    }
-
-    public function cancelTransaction(string $transactionId): void
-    {
-        $this->request('put', "transaction/{$transactionId}/cancel");
     }
 
     public function downloadSignedFile(string $transactionId): ?string
@@ -87,7 +147,6 @@ class SignhostService
         if ($response['status'] !== 200) {
             return null;
         }
-
         return $response['body'];
     }
 
@@ -101,35 +160,50 @@ class SignhostService
         $transactionId = (string) ($payload['TransactionId'] ?? $payload['transactionId'] ?? '');
         $status = (string) ($payload['Status'] ?? $payload['status'] ?? '');
         $fileId = '';
-        if (! empty($payload['File']) && is_array($payload['File'])) {
+        if (!empty($payload['File']) && is_array($payload['File'])) {
             $fileId = (string) ($payload['File']['Id'] ?? $payload['File']['id'] ?? '');
         }
 
         if ($fileId !== '') {
-            $source = $transactionId.'|'.$fileId.'|'.$status.'|'.$secret;
+            $source = $transactionId . '|' . $fileId . '|' . $status . '|' . $secret;
         } else {
-            $source = $transactionId.'||'.$status.'|'.$secret;
+            $source = $transactionId . '||' . $status . '|' . $secret;
         }
 
         $calculated = sha1($source);
         return hash_equals($calculated, $checksum);
     }
 
-    private function uploadFile(string $transactionId, string $pdfPath, string $fileKey = 'Contract.pdf'): void
+    private function uploadFile(string $transactionId, string $pdfPath): void
     {
         $contents = file_get_contents($pdfPath);
         if ($contents === false) {
-            throw new \RuntimeException('Failed to read contract PDF: ' . $pdfPath);
+            throw new \RuntimeException('Failed to read PDF');
         }
 
         $digest = base64_encode(hash('sha256', $contents, true));
 
-        $this->requestRaw('put', "transaction/{$transactionId}/file/{$fileKey}", [
+        $this->requestRaw('put', "transaction/{$transactionId}/file/Contract.pdf", [
             'headers' => [
                 'Content-Type' => 'application/pdf',
-                'Digest' => 'SHA-256='.$digest,
+                'Digest' => 'SHA-256=' . $digest,
             ],
             'body' => $contents,
+        ]);
+    }
+
+    private function uploadPlaceholderFile(string $transactionId): void
+    {
+        $placeholder = "%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids [3 0 R]/Count 1>> endobj\n3 0 obj <</Type/Page/Parent 2 0 R/MediaBox [0 0 595.28 841.89]/Contents 4 0 R>> endobj\n4 0 obj <</Length 44>> stream\nBT /F1 12 Tj 0 -12 Td (Identity Verification) ET\nendstream endobj\nxref\n0 5\n0000000000 65535 f\n0000000010 00000 n\n0000000060 00000 n\n0000000120 00000 n\n0000000220 00000 n\ntrailer <</Size 5/Root 1 0 R>>\nstartxref\n314\n%%EOF";
+        
+        $digest = base64_encode(hash('sha256', $placeholder, true));
+
+        $this->requestRaw('put', "transaction/{$transactionId}/file/VerificationDocument.pdf", [
+            'headers' => [
+                'Content-Type' => 'application/pdf',
+                'Digest' => 'SHA-256=' . $digest,
+            ],
+            'body' => $placeholder,
         ]);
     }
 
@@ -141,23 +215,18 @@ class SignhostService
     private function request(string $method, string $path, array $payload = []): array
     {
         $options = [];
-        if (! empty($payload)) {
+        if (!empty($payload)) {
             $options['json'] = $payload;
         }
 
-        $response = Http::withHeaders($this->headers())
-            ->withOptions([
-                'curl' => [
-                    CURLOPT_RESOLVE => ["api.signhost.com:443:83.96.205.231"]
-                ]
-            ])
+        $response = Http::withoutVerifying()
+            ->withHeaders($this->headers())
             ->acceptJson()
-            ->send(strtoupper($method), $this->baseUrl.ltrim($path, '/'), $options);
+            ->send(strtoupper($method), $this->baseUrl . ltrim($path, '/'), $options);
 
         if ($response->failed()) {
-            $body = $response->body();
-            Log::error('Signhost API error', ['path' => $path, 'body' => $body]);
-            throw new \RuntimeException("Signhost API error ({$path}): " . ($body ?: 'Empty response'));
+            Log::error('Signhost API error', ['path' => $path, 'body' => $response->body()]);
+            throw new \RuntimeException('Signhost API error: ' . $response->status());
         }
 
         return $response->json() ?? [];
@@ -165,13 +234,9 @@ class SignhostService
 
     private function requestRaw(string $method, string $path, array $options = []): array
     {
-        $response = Http::withHeaders($this->headers())
-            ->withOptions([
-                'curl' => [
-                    CURLOPT_RESOLVE => ["api.signhost.com:443:83.96.205.231"]
-                ]
-            ])
-            ->send(strtoupper($method), $this->baseUrl.ltrim($path, '/'), $options);
+        $response = Http::withoutVerifying()
+            ->withHeaders($this->headers())
+            ->send(strtoupper($method), $this->baseUrl . ltrim($path, '/'), $options);
 
         return [
             'status' => $response->status(),
@@ -181,33 +246,29 @@ class SignhostService
 
     private function headers(): array
     {
-        if ($this->appKey === '' || $this->userToken === '') {
-            throw new \RuntimeException('Signhost credentials are missing. Configure SIGNHOST_APP_KEY and SIGNHOST_USER_TOKEN.');
-        }
-
         return [
-            'Authorization' => 'APIKey '.$this->userToken,
-            'Application' => 'APPKey '.$this->appKey,
+            'Application' => 'APPKey ' . $this->appKey,
+            'Authorization' => 'APIKey ' . $this->userToken,
         ];
     }
 
-    /**
-     * @param array{email:string,name:string,send?:bool,message?:string} $signer
-     */
-    private function buildSignerPayload(array $signer): array
+    private function defaultSignRequestSubject(): string
     {
-        $sendSignRequest = $signer['send'] ?? true;
+        return config('services.signhost.sign_request_subject', 'Please sign your document');
+    }
 
-        return array_filter([
-            'Email' => $signer['email'],
-            'SendSignRequest' => $sendSignRequest,
-            'SignRequestMessage' => $sendSignRequest
-                ? ($signer['message'] ?? 'Please review and sign this document.')
-                : null,
-            'Verifications' => [[
-                'Type' => 'Scribble',
-                'ScribbleName' => $signer['name'],
-            ]],
-        ], static fn ($value) => $value !== null);
+    private function defaultSignRequestMessage(): string
+    {
+        return config('services.signhost.sign_request_message', 'Please review and sign the attached document.');
+    }
+
+    private function extractSigningUrl(array $transaction): ?string
+    {
+        $signers = $transaction['Signers'] ?? $transaction['signers'] ?? [];
+        if (!is_array($signers) || count($signers) === 0) {
+            return null;
+        }
+
+        return $signers[0]['SignUrl'] ?? $signers[0]['signUrl'] ?? null;
     }
 }

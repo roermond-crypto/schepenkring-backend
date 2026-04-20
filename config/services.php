@@ -148,4 +148,16 @@ return [
         'analytics_endpoint' => env('YEXT_ANALYTICS_ENDPOINT'),
     ],
 
+    'mollie' => [
+        'base_url' => env('MOLLIE_BASE_URL', 'https://api.mollie.com/v2'),
+        'api_key' => env('MOLLIE_API_KEY'),
+        'api_key_test' => env('MOLLIE_API_KEY_TEST'),
+        'api_key_live' => env('MOLLIE_API_KEY_LIVE'),
+        'webhook_url' => env('MOLLIE_WEBHOOK_URL'),
+    ],
+
+    'seller_onboarding' => [
+        'payment_amount' => env('SELLER_ONBOARDING_PAYMENT_AMOUNT', 395.00),
+    ],
+
 ];

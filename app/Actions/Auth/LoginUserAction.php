@@ -33,7 +33,7 @@ class LoginUserAction
             ]);
         }
 
-        if (! $user->isActive()) {
+        if (! $user->isActive() && !in_array($user->status, [\App\Enums\UserStatus::PENDING_APPROVAL, \App\Enums\UserStatus::PENDING], true)) {
             $this->security->log('auth.login', RiskLevel::MEDIUM, $user, $user, [
                 'email' => $data['email'],
                 'reason' => 'inactive',

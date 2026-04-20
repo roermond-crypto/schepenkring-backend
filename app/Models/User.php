@@ -237,6 +237,26 @@ class User extends Authenticatable implements MustVerifyEmail
             ->withTimestamps();
     }
 
+    public function sellerProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(SellerProfile::class);
+    }
+
+    public function buyerProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(BuyerProfile::class);
+    }
+
+    public function sellerOnboarding(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(SellerOnboarding::class);
+    }
+
+    public function buyerVerification(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(BuyerVerification::class);
+    }
+
     public function userNotifications(): HasMany
     {
         return $this->hasMany(UserNotification::class);
@@ -264,7 +284,11 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isClient(): bool
     {
-        return $this->type === UserType::CLIENT;
+        return in_array($this->type, [
+            UserType::CLIENT,
+            UserType::SELLER,
+            UserType::BUYER,
+        ], true);
     }
 
     public function isActive(): bool
@@ -327,6 +351,9 @@ class User extends Authenticatable implements MustVerifyEmail
             'admin' => UserType::ADMIN->value,
             'employee' => UserType::EMPLOYEE->value,
             'client' => UserType::CLIENT->value,
+            'seller' => UserType::SELLER->value,
+            'buyer' => UserType::BUYER->value,
+            'partner' => UserType::PARTNER->value,
             default => in_array(strtoupper($role), array_map(
                 static fn (UserType $type) => $type->value,
                 UserType::cases()
@@ -340,6 +367,9 @@ class User extends Authenticatable implements MustVerifyEmail
             UserType::ADMIN->value => 'admin',
             UserType::EMPLOYEE->value => 'employee',
             UserType::CLIENT->value => 'client',
+            UserType::SELLER->value => 'seller',
+            UserType::BUYER->value => 'buyer',
+            UserType::PARTNER->value => 'partner',
             default => null,
         };
     }
