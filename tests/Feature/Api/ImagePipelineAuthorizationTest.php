@@ -164,7 +164,7 @@ function imagePipelineYacht(User $owner, Location $location): Yacht
 {
     return Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => 'SK-IMG-'.strtoupper(substr(md5((string) microtime(true)), 0, 6)),
         'boat_name' => 'Authorization Test Yacht',
         'status' => 'draft',

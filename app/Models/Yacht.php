@@ -107,7 +107,7 @@ class Yacht extends Model
         'user_id', 'location_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
         'allow_bidding', 'auction_enabled', 'auction_mode', 'auction_start', 'auction_end',
         'auction_duration_minutes', 'auction_extension_seconds', 'main_image', 'year', 'min_bid_amount',
-        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
+        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid',
 
         // Identity (from Yachtshift)
         'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
@@ -210,6 +210,16 @@ class Yacht extends Model
 
     public function socialPosts(): HasMany {
         return $this->hasMany(SocialPost::class);
+    }
+
+    public function channelListings(): HasMany
+    {
+        return $this->hasMany(BoatChannelListing::class, 'boat_id');
+    }
+
+    public function channelLogs(): HasMany
+    {
+        return $this->hasMany(BoatChannelLog::class, 'boat_id');
     }
 
     public function auctionSessions(): HasMany
@@ -355,9 +365,29 @@ class Yacht extends Model
      */
     public function requiresAdminApproval(): bool
     {
-        return $this->user_id !== null
-            && $this->location_id !== null
-            && (int) $this->user_id !== (int) $this->location_id;
+        if ($this->user_id === null || $this->location_id === null) {
+            return false;
+        }
+
+        $owner = $this->owner;
+        if (!$owner) {
+            return true;
+        }
+
+        // Super admins never require approval
+        if ($owner->isAdmin()) {
+            return false;
+        }
+
+        // Employees only bypass approval if they belong to this specific location
+        if ($owner->isEmployee()) {
+            return !$owner->locations()
+                ->where('locations.id', $this->location_id)
+                ->exists();
+        }
+
+        // Clients (Sellers) always require approval from the broker
+        return true;
     }
 
     // ─── Lifecycle ─────────────────────────────────────────────

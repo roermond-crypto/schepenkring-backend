@@ -73,10 +73,6 @@ class BoatAuctionController extends Controller
             return (int) $yacht->location_id;
         }
 
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
-        }
-
         return $yacht->owner?->client_location_id ? (int) $yacht->owner->client_location_id : null;
     }
 }

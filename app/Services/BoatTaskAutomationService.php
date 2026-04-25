@@ -124,7 +124,7 @@ class BoatTaskAutomationService
             'due_date' => Carbon::now()->addDays(7),
             'type' => 'assigned',
             'client_visible' => true,
-            'location_id' => $yacht->ref_harbor_id ?? $actor->locations()->value('locations.id'),
+            'location_id' => $yacht->location_id ?? $actor->locations()->value('locations.id'),
         ]);
     }
 

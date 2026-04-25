@@ -113,8 +113,8 @@ class SyncYachtTasksService
             return $recipient->client_location_id;
         }
 
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
+        if ($yacht->location_id) {
+            return (int) $yacht->location_id;
         }
 
         if ($recipient->isEmployee()) {
@@ -128,7 +128,7 @@ class SyncYachtTasksService
     {
         return match ($template->default_assignee_type) {
             'seller', 'buyer', 'creator', 'related_owner' => $recipient->id,
-            'harbor', 'admin' => $this->resolveLocationStaffId($locationId) ?? $this->resolveDefaultAdminId() ?? $recipient->id,
+            'location', 'harbor', 'admin' => $this->resolveLocationStaffId($locationId) ?? $this->resolveDefaultAdminId() ?? $recipient->id,
             default => $recipient->id,
         };
     }

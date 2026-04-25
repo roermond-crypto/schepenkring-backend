@@ -36,14 +36,14 @@ test('client only sees their own yachts', function () {
 
     $ownedYacht = Yacht::create([
         'user_id' => $client->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => 'SK-CLIENT-001',
         'boat_name' => 'Owned Yacht',
     ]);
 
     Yacht::create([
         'user_id' => $otherClient->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => 'SK-CLIENT-002',
         'boat_name' => 'Other Yacht',
     ]);
@@ -90,21 +90,21 @@ test('employee only sees yachts from assigned harbors', function () {
 
     $harborScopedYacht = Yacht::create([
         'user_id' => $clientA->id,
-        'ref_harbor_id' => $locationA->id,
+        'location_id' => $locationA->id,
         'vessel_id' => 'SK-EMPLOYEE-001',
         'boat_name' => 'Harbor Scoped Yacht',
     ]);
 
     $ownerFallbackYacht = Yacht::create([
         'user_id' => $clientA->id,
-        'ref_harbor_id' => null,
+        'location_id' => null,
         'vessel_id' => 'SK-EMPLOYEE-002',
         'boat_name' => 'Owner Fallback Yacht',
     ]);
 
     Yacht::create([
         'user_id' => $clientB->id,
-        'ref_harbor_id' => $locationB->id,
+        'location_id' => $locationB->id,
         'vessel_id' => 'SK-EMPLOYEE-003',
         'boat_name' => 'Foreign Yacht',
     ]);
@@ -139,7 +139,7 @@ test('client cannot view another users yacht', function () {
 
     $otherYacht = Yacht::create([
         'user_id' => $otherClient->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => 'SK-CLIENT-003',
         'boat_name' => 'Private Yacht',
     ]);

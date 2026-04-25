@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\BoatDocument;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class BoatDocumentController extends Controller
@@ -15,8 +16,9 @@ class BoatDocumentController extends Controller
     public function index(Request $request, $yachtId)
     {
         $documents = BoatDocument::where('boat_id', $yachtId)
+            ->orderBy('sort_order')
             ->orderByDesc('uploaded_at')
-            ->orderByDesc('id')
+            ->orderBy('id')
             ->get();
 
         return response()->json(
@@ -43,7 +45,11 @@ class BoatDocumentController extends Controller
         if ($files !== []) {
             $documents = [];
 
-            foreach ($files as $file) {
+            $nextSortOrder = (int) BoatDocument::where('boat_id', $yachtId)
+                ->where('document_type', $request->document_type)
+                ->max('sort_order');
+
+            foreach ($files as $index => $file) {
             $originalName = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
             $extension = $file->getClientOriginalExtension();
                 $safeBase = Str::slug($originalName);
@@ -56,7 +62,8 @@ class BoatDocumentController extends Controller
                 'user_id' => Auth::id(),
                 'file_path' => '/storage/' . $path,
                 'file_type' => $extension,
-                'document_type' => $request->document_type
+                'document_type' => $request->document_type,
+                'sort_order' => $nextSortOrder + $index + 1,
             ]);
 
                 $documents[] = $this->serializeDocument($request, $document);
@@ -69,6 +76,44 @@ class BoatDocumentController extends Controller
         }
 
         return response()->json(['error' => 'No file uploaded'], 400);
+    }
+
+    public function reorder(Request $request, $yachtId)
+    {
+        $validated = $request->validate([
+            'document_ids' => 'required|array|min:1',
+            'document_ids.*' => 'required|integer',
+        ]);
+
+        $documents = BoatDocument::query()
+            ->where('boat_id', $yachtId)
+            ->whereIn('id', $validated['document_ids'])
+            ->get()
+            ->keyBy('id');
+
+        if ($documents->count() !== count($validated['document_ids'])) {
+            return response()->json([
+                'message' => 'One or more documents could not be found for this boat.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($validated, $documents) {
+            foreach ($validated['document_ids'] as $index => $documentId) {
+                $document = $documents->get((int) $documentId);
+
+                if (! $document) {
+                    continue;
+                }
+
+                $document->update([
+                    'sort_order' => $index,
+                ]);
+            }
+        });
+
+        return response()->json([
+            'message' => 'Documents reordered successfully.',
+        ]);
     }
 
     public function destroy($yachtId, $id)

@@ -12,6 +12,100 @@ Improve the boat creation workflow to:
 6. Normalize YachtShift, scraped, and future import values before they reach UI, DB, AI, or Pinecone.
 7. Give admin a central control layer for field visibility, mapping, AI relevance, and boat-type specific behavior.
 
+## Implementation Status (updated 2026-04-25)
+
+### Completed in this pass
+
+1. Partner/location route parity:
+- frontend role normalization now accepts `partner` and treats it as equivalent to `location` for dashboard access.
+- sidebar labels, task board permissions, and impersonation role mapping were updated for partner/location compatibility.
+
+2. Yacht video settings API parity:
+- `GET /api/yachts/{yachtId}/video-settings`
+- `PUT /api/yachts/{yachtId}/video-settings`
+- existing `BoatVideoSettingController` is now reachable from `routes/api.php`.
+
+3. Seller intake and paid listing workflow:
+- added `boat_intakes`, `boat_intake_payments`, `listing_workflows`, `listing_workflow_versions`, and `listing_workflow_reviews`.
+- added seller intake API:
+  - `POST /api/seller-intakes`
+  - `GET /api/seller-intakes/{id}`
+  - `PUT /api/seller-intakes/{id}`
+  - `POST /api/seller-intakes/{id}/photos`
+  - `POST /api/seller-intakes/{id}/payment/session`
+  - `GET /api/seller-intakes/{id}/payment/status`
+- added listing workflow API:
+  - `GET /api/listing-workflows/{id}`
+  - `GET /api/listing-workflows/{id}/preview`
+  - `POST /api/listing-workflows/{id}/approve`
+  - `POST /api/listing-workflows/{id}/request-changes`
+- added admin listing workflow API:
+  - `GET /api/admin/listing-workflows`
+  - `GET /api/admin/listing-workflows/{id}`
+  - `POST /api/admin/listing-workflows/{id}/start-ai`
+  - `POST /api/admin/listing-workflows/{id}/mark-reviewed`
+  - `POST /api/admin/listing-workflows/{id}/publish`
+  - `POST /api/admin/listing-workflows/{id}/reject`
+  - `POST /api/admin/listing-workflows/{id}/archive`
+- added Mollie payment service/config and `POST /api/webhooks/mollie` handling for seller listing intake payments.
+- payment success creates a draft yacht, attaches intake photos as approved yacht images, snapshots the workflow, and exposes preview/approval actions.
+
+4. Seller intake support:
+- added `src/lib/api/seller-intakes.ts`.
+- added `/[locale]/dashboard/[role]/listing-workflows/[id]/preview`.
+
+5. Old admin yacht wizard parity:
+- `/[locale]/dashboard/[role]/yachts/new` is now handled by the same dynamic `[id]` wizard as `/yachts/{id}`, matching old-project's `id === "new"` flow.
+- after a server draft yacht is created, the frontend redirects from `/yachts/new` to `/yachts/{id}?step={step}&draftFlow=1`.
+- Step 1 autocomplete now uses the old `/api/autocomplete/types|brands|models` endpoints and the configured backend API client.
+- Step 1 reference documents can be drag-reordered and persist through `POST /api/yachts/{yachtId}/documents/reorder`.
+- Step 5 includes old-project Marktplaats/channel publishing controls for admins and sales-website selection cards for non-admin sellers.
+- Step 6 passes seller details and a location-step navigation callback into Signhost, matching old contract flow behavior.
+
+6. Marktplaats/channel publishing API parity:
+- added `boat_channel_listings` and `boat_channel_logs`.
+- added channel listing API:
+  - `GET /api/yachts/{id}/channel-listings`
+  - `PUT /api/yachts/{id}/channel-listings/{channel}`
+  - `GET /api/yachts/{id}/channel-listings/{channel}/logs`
+  - `POST /api/yachts/{id}/channel-listings/{channel}/retry`
+  - `POST /api/yachts/{id}/channel-listings/{channel}/pause`
+  - `POST /api/yachts/{id}/channel-listings/{channel}/remove`
+  - `POST /api/yachts/{id}/channel-listings/{channel}/sync`
+
+7. Build blockers found during validation:
+- fixed existing yacht editor TypeScript mismatches for availability defaults, boat-match template id access, document upload handlers, and internal review status typing.
+
+### Still missing or intentionally deferred
+
+1. Full old-project seller verification/onboarding parity:
+- the new project does not have old seller onboarding/profile tables.
+- publish gating currently allows authenticated users; dedicated seller verification must still be rebuilt if required for production.
+
+2. Hardened Mollie webhook security:
+- seller listing payments reconcile through Mollie status fetch by payment id.
+- full signature/idempotency parity from the old broader webhook stack is still outstanding.
+
+3. Async AI extraction runs:
+- `yacht_ai_runs`, queued `RunYachtAiExtractionJob`, status polling, stale-run handling, and apply/merge endpoints remain missing.
+- current AI extraction is still synchronous from the frontend perspective.
+
+4. Full dynamic yacht form renderer:
+- backend field config and admin field settings exist, but the large yacht editor is not fully replaced by a config-driven renderer.
+
+5. Draft hardening:
+- server yacht draft endpoints exist, but the frontend wizard still needs full local-first draft manager integration, flush-on-language-switch, conflict handling, and save indicators.
+
+6. Upload performance improvements:
+- chunked upload, direct-to-storage upload sessions, retry UI, and client-side pre-upload downscaling are still missing.
+
+7. Public marketplace parity:
+- public `/yachts`, yacht detail, brochure/compare/favorites, public inquiry, and per-yacht public booking flows from the old project are not yet ported.
+
+8. Full Marktplaats external integration:
+- Step 5 and local channel listing state are ported.
+- actual Admarkt publishing jobs/feed builder/status polling from old-project are not fully ported yet; current new-project channel actions update local listing state and logs.
+
 ## Current State (Validated in Code)
 
 ### Frontend

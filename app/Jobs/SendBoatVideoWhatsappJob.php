@@ -47,7 +47,7 @@ class SendBoatVideoWhatsappJob implements ShouldQueue
             return;
         }
 
-        $locationId = $video->yacht->ref_harbor_id ?: $video->yacht->owner?->client_location_id;
+        $locationId = $video->yacht->location_id ?: $video->yacht->owner?->client_location_id;
         if (! $locationId) {
             $this->markFailed($video, 'missing_location');
 

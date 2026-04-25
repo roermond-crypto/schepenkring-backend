@@ -274,6 +274,6 @@ function socialVideoYacht(int $locationId): Yacht
     return Yacht::create([
         'boat_name' => 'Sea Ray 320',
         'status' => 'active',
-        'ref_harbor_id' => $locationId,
+        'location_id' => $locationId,
     ]);
 }

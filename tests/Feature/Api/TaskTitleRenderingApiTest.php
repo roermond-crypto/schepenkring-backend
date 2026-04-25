@@ -25,7 +25,7 @@ test('tasks api renders boat name and id for legacy boat placeholder titles', fu
 
     $yacht = Yacht::create([
         'user_id' => $client->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => 'VESSEL-99',
         'boat_name' => 'Blue Pearl',
         'boat_type' => 'Motor Yacht',

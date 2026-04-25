@@ -1094,7 +1094,7 @@ class AiPipelineController extends Controller
             $postEnrichmentOverallConfidence = $this->computeOverallConfidence($fieldConfidence);
             $postEnrichmentMissingRequired = $this->findMissingRequired($formValues);
             $postEnrichmentFilledFieldCount = $this->countFilledFields($formValues);
-            $canSkipDeepValidation = $speedMode !== 'deep'
+            $canSkipDeepValidation = $speedMode === 'fast'
                 && empty($postEnrichmentMissingRequired)
                 && $postEnrichmentOverallConfidence >= 0.80
                 && $postEnrichmentFilledFieldCount >= 18
@@ -1116,15 +1116,11 @@ class AiPipelineController extends Controller
             } else {
                 // Cross-Validation
                 $pineconeResult = $this->runPineconeCrossValidation($formValues, $fieldConfidence);
-                if (!empty($pineconeResult['similar_boats'])) {
-                    $stagesRun[] = 'pinecone_cross_validation';
-                }
+                $stagesRun[] = 'pinecone_cross_validation';
 
                 // ChatGPT Validation
                 $validationResult = $this->runChatGptValidation($formValues, $fieldConfidence, $pineconeResult, $feedResult, $databaseResult, $request);
-                if (!empty($validationResult['confirmed_fields']) || !empty($validationResult['removed_fields'])) {
-                    $stagesRun[] = 'chatgpt_validation';
-                }
+                $stagesRun[] = 'chatgpt_validation';
 
                 // Merge
                 $mergeResult = $this->mergeWithConfidence($formValues, $fieldConfidence, $validationResult, $pineconeResult);
@@ -1272,10 +1268,43 @@ class AiPipelineController extends Controller
 
         $parts[] = ['text' => "STRICT VISUAL ANALYSIS: Examine each image carefully. Report ONLY what you can directly SEE or READ. Do NOT guess or infer from general boat knowledge."];
 
-        // Add all images as inline_data FIRST
-        // Priority: DB images first (higher quality, already processed), then FormData fallback
-        // This matches the old project's behavior for reliability.
+        // Evidence priority: reference documents first, then gallery/uploaded images.
+        // This lets brochures and spec sheets seed the extraction before photos are used
+        // to confirm or fill missing fields.
         $imageCount = 0;
+
+        foreach (($referenceDocumentContext['vision_files'] ?? []) as $documentVisual) {
+            try {
+                if (!is_array($documentVisual) || empty($documentVisual['data'])) {
+                    continue;
+                }
+
+                $mimeType = $documentVisual['mime_type'] ?? 'image/jpeg';
+                
+                if ($mimeType === 'application/pdf') {
+                    $fileUri = $this->uploadFileToGemini($documentVisual['data'], $mimeType, $apiKey);
+                    if ($fileUri) {
+                        $parts[] = [
+                            'fileData' => [
+                                'mimeType' => 'application/pdf',
+                                'fileUri' => $fileUri,
+                            ]
+                        ];
+                        $imageCount++;
+                    }
+                } else {
+                    $parts[] = [
+                        'inline_data' => [
+                            'mime_type' => $mimeType,
+                            'data'      => $documentVisual['data'],
+                        ]
+                    ];
+                    $imageCount++;
+                }
+            } catch (\Exception $e) {
+                Log::warning("[AI Pipeline] Failed to read reference document image: " . $e->getMessage());
+            }
+        }
 
         if ($request->has('yacht_id')) {
             $yachtId = $request->input('yacht_id');
@@ -1293,13 +1322,26 @@ class AiPipelineController extends Controller
 
                     $imageData = base64_encode(file_get_contents($fullPath));
                     $mimeType = mime_content_type($fullPath) ?: 'image/jpeg';
-                    $parts[] = [
-                        'inline_data' => [
-                            'mime_type' => $mimeType,
-                            'data'      => $imageData,
-                        ]
-                    ];
-                    $imageCount++;
+                    if ($mimeType === 'application/pdf') {
+                        $fileUri = $this->uploadFileToGemini($imageData, $mimeType, $apiKey);
+                        if ($fileUri) {
+                            $parts[] = [
+                                'fileData' => [
+                                    'mimeType' => 'application/pdf',
+                                    'fileUri' => $fileUri,
+                                ]
+                            ];
+                            $imageCount++;
+                        }
+                    } else {
+                        $parts[] = [
+                            'inline_data' => [
+                                'mime_type' => $mimeType,
+                                'data'      => $imageData,
+                            ]
+                        ];
+                        $imageCount++;
+                    }
                 } catch (\Exception $e) {
                     Log::warning("[AI Pipeline] Failed to read db image: " . $e->getMessage());
                 }
@@ -1310,34 +1352,30 @@ class AiPipelineController extends Controller
             foreach (array_slice($request->file('images'), 0, $maxVisionImages) as $image) {
                 try {
                     $imageData = base64_encode(file_get_contents($image->getRealPath()));
-                    $parts[] = [
-                        'inline_data' => [
-                            'mime_type' => $image->getMimeType(),
-                            'data'      => $imageData,
-                        ]
-                    ];
-                    $imageCount++;
+                    $mimeType = $image->getMimeType();
+                    if ($mimeType === 'application/pdf') {
+                        $fileUri = $this->uploadFileToGemini($imageData, $mimeType, $apiKey);
+                        if ($fileUri) {
+                            $parts[] = [
+                                'fileData' => [
+                                    'mimeType' => 'application/pdf',
+                                    'fileUri' => $fileUri,
+                                ]
+                            ];
+                            $imageCount++;
+                        }
+                    } else {
+                        $parts[] = [
+                            'inline_data' => [
+                                'mime_type' => $mimeType,
+                                'data'      => $imageData,
+                            ]
+                        ];
+                        $imageCount++;
+                    }
                 } catch (\Exception $e) {
                     Log::warning("[AI Pipeline] Failed to read uploaded image: " . $e->getMessage());
                 }
-            }
-        }
-
-        foreach (($referenceDocumentContext['vision_files'] ?? []) as $documentVisual) {
-            try {
-                if (!is_array($documentVisual) || empty($documentVisual['data'])) {
-                    continue;
-                }
-
-                $parts[] = [
-                    'inline_data' => [
-                        'mime_type' => $documentVisual['mime_type'] ?? 'image/jpeg',
-                        'data'      => $documentVisual['data'],
-                    ]
-                ];
-                $imageCount++;
-            } catch (\Exception $e) {
-                Log::warning("[AI Pipeline] Failed to read reference document image: " . $e->getMessage());
             }
         }
 
@@ -1351,7 +1389,8 @@ class AiPipelineController extends Controller
 SELLER-PROVIDED TEXT AND REFERENCE DOCUMENT DATA:
 "{$analysisHintText}"
 
-Extract data from this text into JSON fields. Text-sourced data gets confidence 0.90.
+First read the reference document data/PDFs, then use vessel photos only to confirm or fill missing fields.
+Extract data from the reference documents and seller text into JSON fields. Document/text-sourced data gets confidence 0.90.
 For fields NOT mentioned in text, ONLY fill if clearly visible in images.
 
 🚨 CONSERVATIVE DETECTION RULE for equipment (e.g. life jackets, bimini, etc.):
@@ -2896,6 +2935,10 @@ SCHEMA;
 
             $confidenceJson = json_encode($fieldConfidence, JSON_PRETTY_PRINT);
             $feedConsensusJson = json_encode($feedResult['consensus_values'] ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            $analysisHintText = trim((string) $request->attributes->get(
+                'analysis_hint_text',
+                $request->input('hint_text', ''),
+            ));
 
             $anomaliesText = '';
             if (!empty($pineconeResult['anomalies'])) {
@@ -3018,10 +3061,10 @@ YACHTSHIFT FEED CONSENSUS:
 
 {$databaseMatchText}
 
-USER HINT/DESCRIPTION:
-"{$request->input('hint_text')}"
+REFERENCE DOCUMENTS / SELLER TEXT:
+"{$analysisHintText}"
 
-Based on the images above and the data provided, validate the Gemini extraction.
+Based on the reference documents, images, and data provided, validate the Gemini extraction.
 Remove any hallucinated fields. Confirm correct ones. Adjust incorrect values.
 Respond in the JSON format specified.
 CONTEXT,
@@ -3556,6 +3599,8 @@ CONTEXT,
 
             $fallbackSummary = "Document: {$filename}" . ($extension !== '' ? " ({$extension})" : '');
 
+            $addedTextContext = false;
+
             if (in_array($extension, ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'], true)) {
                 try {
                     $text = trim($extractor->extractFromPath($path, $extension));
@@ -3566,7 +3611,7 @@ CONTEXT,
                             1800,
                             ' ...'
                         );
-                        continue;
+                        $addedTextContext = true;
                     }
                 } catch (\Throwable $error) {
                     Log::warning('[AI Pipeline] Failed to extract reference document text', [
@@ -3574,27 +3619,33 @@ CONTEXT,
                         'path' => $document->file_path,
                         'error' => $error->getMessage(),
                     ]);
-                    $warnings[] = 'One reference document could not be parsed and was skipped.';
+                    $warnings[] = 'One reference document text could not be parsed; visual AI analysis will be attempted.';
                 }
             }
 
-            if (in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) && count($visionFiles) < 2) {
+            $canUseAsVisualReference = in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true);
+            if ($canUseAsVisualReference && count($visionFiles) < 2) {
                 try {
                     $visionFiles[] = [
-                        'mime_type' => mime_content_type($path) ?: 'image/jpeg',
+                        'mime_type' => $extension === 'pdf'
+                            ? 'application/pdf'
+                            : (mime_content_type($path) ?: 'image/jpeg'),
                         'data' => base64_encode(file_get_contents($path)),
                     ];
+                    continue;
                 } catch (\Throwable $error) {
                     Log::warning('[AI Pipeline] Failed to load reference document image', [
                         'document_id' => $document->id,
                         'path' => $document->file_path,
                         'error' => $error->getMessage(),
                     ]);
-                    $warnings[] = 'One reference document image could not be read and was skipped.';
+                    $warnings[] = 'One reference document could not be read for visual analysis.';
                 }
             }
 
-            $promptChunks[] = $fallbackSummary;
+            if (!$addedTextContext) {
+                $promptChunks[] = $fallbackSummary;
+            }
         }
 
         return [
@@ -6020,11 +6071,23 @@ USER;
             $request->input('hint_text', ''),
         ));
 
-        // 1. Get images from DB if yacht_id provided
+        foreach (($referenceDocumentContext['vision_files'] ?? []) as $documentVisual) {
+            if (!is_array($documentVisual) || empty($documentVisual['data'])) {
+                continue;
+            }
+
+            $visionImages[] = [
+                'mime_type' => $documentVisual['mime_type'] ?? 'image/jpeg',
+                'data' => $documentVisual['data'],
+            ];
+        }
+
+        // 1. Get images from DB if yacht_id provided, after reference documents.
         if ($request->has('yacht_id')) {
             $yacht = \App\Models\Yacht::find($request->yacht_id);
             if ($yacht) {
-                $images = $yacht->images()->orderBy('sort_order')->limit($maxVisionImages)->get();
+                $remainingImageSlots = max(0, $maxVisionImages - count($visionImages));
+                $images = $yacht->images()->orderBy('sort_order')->limit($remainingImageSlots)->get();
                 foreach ($images as $img) {
                     $path = $this->resolveStoredImagePath($img);
                     if ($path && file_exists($path)) {
@@ -6047,17 +6110,6 @@ USER;
             }
         }
 
-        foreach (($referenceDocumentContext['vision_files'] ?? []) as $documentVisual) {
-            if (!is_array($documentVisual) || empty($documentVisual['data'])) {
-                continue;
-            }
-
-            $visionImages[] = [
-                'mime_type' => $documentVisual['mime_type'] ?? 'image/jpeg',
-                'data' => $documentVisual['data'],
-            ];
-        }
-
         if (empty($visionImages)) return null;
 
         $model = 'gemini-1.5-flash';
@@ -6065,7 +6117,9 @@ USER;
         $historicalFeedbackHint = $this->buildHistoricalFeedbackHint();
         
         $parts = [];
-        $prompt = $this->getGeminiSchema() . "\n\nUSER HINT: " . $analysisHintText;
+        $prompt = $this->getGeminiSchema()
+            . "\n\nREFERENCE DOCUMENT PRIORITY: First read uploaded reference documents/PDFs and seller text. Use vessel photos only to confirm or fill missing fields."
+            . "\n\nUSER HINT: " . $analysisHintText;
         if ($historicalFeedbackHint !== '') {
             $prompt .= "\n\n" . $historicalFeedbackHint;
         }
@@ -6153,5 +6207,37 @@ USER;
         }
 
         return $payload;
+    }
+
+    private function uploadFileToGemini(string $base64Data, string $mimeType, string $apiKey): ?string
+    {
+        try {
+            $decodedData = base64_decode($base64Data);
+            $size = strlen($decodedData);
+
+            $response = Http::withHeaders([
+                'X-Goog-Upload-Protocol' => 'raw',
+                'X-Goog-Upload-Command' => 'upload, finalize',
+                'X-Goog-Upload-Header-Content-Length' => $size,
+                'X-Goog-Upload-Header-Content-Type' => $mimeType,
+                'Content-Type' => $mimeType,
+            ])->send('POST', "https://generativelanguage.googleapis.com/upload/v1beta/files?key={$apiKey}", [
+                'body' => $decodedData
+            ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                return $data['file']['uri'] ?? null;
+            }
+
+            Log::warning('[AI Pipeline] Failed to upload file to Gemini', [
+                'status' => $response->status(),
+                'error' => $response->body()
+            ]);
+            return null;
+        } catch (\Throwable $e) {
+            Log::warning('[AI Pipeline] Exception uploading file to Gemini: ' . $e->getMessage());
+            return null;
+        }
     }
 }

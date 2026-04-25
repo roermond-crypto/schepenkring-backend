@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class BoatDocument extends Model
 {
-    protected $fillable = ['boat_id', 'user_id', 'file_path', 'file_type', 'document_type', 'uploaded_at', 'verified'];
+    protected $fillable = ['boat_id', 'user_id', 'file_path', 'file_type', 'document_type', 'sort_order', 'uploaded_at', 'verified'];
 
     public function boat()
     {

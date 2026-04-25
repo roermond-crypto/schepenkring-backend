@@ -243,7 +243,7 @@ test('client yacht responses expose latest signhost summary and yacht signhost n
 
     $yacht = Yacht::create([
         'user_id' => $client->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'Blue Pearl',
         'status' => 'For Sale',
         'vessel_id' => 'SK-TEST-001',
@@ -367,7 +367,7 @@ test('signhost webhook updates yacht latest signhost summary to signed and keeps
 
     $yacht = Yacht::create([
         'user_id' => $client->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'Silver Tide',
         'status' => 'For Sale',
         'vessel_id' => 'SK-TEST-002',

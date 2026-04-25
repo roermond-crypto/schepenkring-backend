@@ -36,7 +36,7 @@ test('render marketing video can complete through the openai provider flow', fun
 
     $yacht = Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'AI Ready Yacht',
         'manufacturer' => 'NauticSecure',
         'model' => '42 Fly',
@@ -138,7 +138,7 @@ test('render marketing video uses the persisted source image ids when provided',
 
     $yacht = Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'Scoped Source Yacht',
         'manufacturer' => 'NauticSecure',
         'model' => '48 Fly',

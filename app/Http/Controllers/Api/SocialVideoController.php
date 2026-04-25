@@ -389,7 +389,7 @@ class SocialVideoController extends Controller
             }
 
             return $query->where(function (Builder $builder) use ($locationIds) {
-                $builder->whereIn('ref_harbor_id', $locationIds)
+                $builder->whereIn('location_id', $locationIds)
                     ->orWhereHas('owner', function (Builder $ownerQuery) use ($locationIds) {
                         $ownerQuery->whereIn('client_location_id', $locationIds);
                     });
@@ -421,8 +421,8 @@ class SocialVideoController extends Controller
 
     private function resolveYachtLocationId(Yacht $yacht): ?int
     {
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
+        if ($yacht->location_id) {
+            return (int) $yacht->location_id;
         }
 
         return $yacht->owner?->client_location_id ? (int) $yacht->owner->client_location_id : null;

@@ -134,7 +134,7 @@ test('it logs manual field diffs on yacht update without AI context', function (
 
     $yacht = Yacht::create([
         'user_id' => $user->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => 'SK-UPDATE-001',
         'boat_name' => 'Update Test Yacht',
         'status' => 'draft',

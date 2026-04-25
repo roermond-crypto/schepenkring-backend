@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessSignhostWebhookJob;
+use App\Models\BoatIntakePayment;
 use App\Models\WebhookEvent;
+use App\Services\MollieService;
+use App\Services\SellerIntakeWorkflowService;
 use App\Services\SignhostService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +16,70 @@ use Illuminate\Support\Facades\RateLimiter;
 
 class WebhookController extends Controller
 {
+    public function mollie(
+        Request $request,
+        MollieService $mollie,
+        SellerIntakeWorkflowService $sellerIntakeWorkflow
+    ) {
+        if ($this->isRateLimited($request, 'mollie')) {
+            return response()->json(['message' => 'Rate limit exceeded'], 429);
+        }
+
+        if (! $this->verifyWebhookTimestamp($request, 'mollie')) {
+            Log::warning('Mollie webhook timestamp too old');
+            return response()->json(['message' => 'Stale webhook'], 400);
+        }
+
+        $paymentId = $request->input('id') ?? $request->input('payment_id');
+        if (! $paymentId) {
+            return response()->json(['message' => 'Missing payment id'], 200);
+        }
+
+        try {
+            $remote = $mollie->getPayment((string) $paymentId);
+        } catch (\RuntimeException $e) {
+            Log::error('Mollie webhook fetch failed', [
+                'payment_id' => $paymentId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Payment fetch failed'], 200);
+        }
+
+        $metadata = is_array($remote['metadata'] ?? null) ? $remote['metadata'] : [];
+        if (($metadata['payment_type'] ?? null) !== 'seller_listing_intake') {
+            return response()->json(['message' => 'Ignored payment type'], 200);
+        }
+
+        $payment = BoatIntakePayment::query()
+            ->where('mollie_payment_id', $paymentId)
+            ->latest('id')
+            ->first();
+
+        if (! $payment && isset($metadata['boat_intake_id'])) {
+            $payment = BoatIntakePayment::query()
+                ->where('boat_intake_id', $metadata['boat_intake_id'])
+                ->latest('id')
+                ->first();
+        }
+
+        if (! $payment) {
+            Log::warning('Mollie seller intake payment not found', [
+                'payment_id' => $paymentId,
+                'metadata' => $metadata,
+            ]);
+
+            return response()->json(['message' => 'Payment not found'], 200);
+        }
+
+        $sellerIntakeWorkflow->handlePaymentStatus(
+            $payment,
+            $this->normalizeMollieStatus((string) ($remote['status'] ?? 'open'))
+        );
+
+        return response()->json(['message' => 'ok'], 200);
+    }
+
     public function signhost(Request $request)
     {
         if ($this->isRateLimited($request, 'signhost')) {
@@ -90,7 +157,8 @@ class WebhookController extends Controller
 
         $timestamp = $request->header('X-Webhook-Timestamp')
             ?? $request->header('X-Signature-Timestamp')
-            ?? $request->header('X-Signhost-Timestamp');
+            ?? $request->header('X-Signhost-Timestamp')
+            ?? $request->header('X-Mollie-Timestamp');
 
         if (! $timestamp) {
             return true;
@@ -158,5 +226,19 @@ class WebhookController extends Controller
 
             return ['status' => 'claimed', 'event' => $event];
         });
+    }
+
+    private function normalizeMollieStatus(string $status): string
+    {
+        return match (strtolower($status)) {
+            'paid' => 'paid',
+            'authorized' => 'authorized',
+            'pending' => 'pending',
+            'open' => 'open',
+            'expired' => 'expired',
+            'failed' => 'failed',
+            'canceled', 'cancelled' => 'canceled',
+            default => strtolower($status),
+        };
     }
 }

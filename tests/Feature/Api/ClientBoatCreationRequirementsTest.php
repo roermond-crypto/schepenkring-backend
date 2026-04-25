@@ -51,7 +51,7 @@ test('client cannot create a boat when required customer details are missing and
     $response = $this->postJson('/api/yachts', [
         'boat_name' => 'Blocked Yacht',
         'status' => 'draft',
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
     ]);
 
     $response->assertStatus(422)
@@ -99,7 +99,7 @@ test('client can create a boat after completing customer details and verificatio
     $response = $this->postJson('/api/yachts', [
         'boat_name' => 'Eligible Yacht',
         'status' => 'draft',
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
     ]);
 
     $response->assertCreated()

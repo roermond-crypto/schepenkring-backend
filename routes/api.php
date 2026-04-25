@@ -11,9 +11,10 @@ use App\Http\Controllers\Api\Admin\CopilotActionController;
 use App\Http\Controllers\Api\Admin\CopilotActionPhraseController;
 use App\Http\Controllers\Api\Admin\CopilotSuggestionController;
 use App\Http\Controllers\Api\Admin\CopilotActionWorkflowController;
-use App\Http\Controllers\Api\Admin\HarborController as AdminHarborController;
+use App\Http\Controllers\Api\Admin\AdminLocationController;
 use App\Http\Controllers\Api\Admin\InsightController as AdminInsightController;
 use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonationController;
+use App\Http\Controllers\Api\Admin\ListingWorkflowController as AdminListingWorkflowController;
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
@@ -29,7 +30,9 @@ use App\Http\Controllers\Api\Auth\SessionController;
 use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
 use App\Http\Controllers\Api\BoatFormConfigController;
+use App\Http\Controllers\Api\BoatChannelListingController;
 use App\Http\Controllers\Api\BoatVideoController;
+use App\Http\Controllers\Api\BoatVideoSettingController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
 use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
@@ -47,6 +50,7 @@ use App\Http\Controllers\Api\FaqKnowledgeController;
 use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
+use App\Http\Controllers\Api\ListingWorkflowController;
 use App\Http\Controllers\Api\KnowledgeBrainController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
@@ -62,6 +66,7 @@ use App\Http\Controllers\Api\PublicLeadController;
 use App\Http\Controllers\Api\PublicConversationMessageController;
 use App\Http\Controllers\Api\SentryWebhookController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\SellerIntakeController;
 use App\Http\Controllers\Api\SignhostController;
 use App\Http\Controllers\Api\TelnyxVoiceWebhookController;
 use App\Http\Controllers\Api\Tasks\BoardController as TaskBoardController;
@@ -111,6 +116,16 @@ Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnri
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
 Route::post('ai/suggestions', [AiPipelineController::class, 'getSuggestions']);
 Route::post('boats/match', [\App\Http\Controllers\Api\BoatMatchController::class, 'match']);
+Route::prefix('autocomplete')->group(function () {
+    Route::get('brands', [CatalogAutocompleteController::class, 'brands']);
+    Route::get('models', [CatalogAutocompleteController::class, 'models']);
+    Route::get('types', [CatalogAutocompleteController::class, 'types']);
+});
+Route::prefix('boats/autocomplete')->group(function () {
+    Route::get('brand', [CatalogAutocompleteController::class, 'brands']);
+    Route::get('model', [CatalogAutocompleteController::class, 'models']);
+    Route::get('type', [CatalogAutocompleteController::class, 'types']);
+});
 
 // Checklists
 Route::get('checklists/templates', [ChecklistTemplateController::class, 'index']);
@@ -166,6 +181,7 @@ Route::post('analytics/track', [AnalyticsController::class, 'track']);
 Route::get('analytics/summary', [AnalyticsController::class, 'summary']);
 
 // Webhooks
+Route::post('webhooks/mollie', [WebhookController::class, 'mollie']);
 Route::post('webhooks/signhost', [WebhookController::class, 'signhost']);
 Route::post('webhooks/whatsapp/360dialog', [WhatsApp360DialogWebhookController::class, 'handle']);
 Route::post('webhooks/telnyx/voice', [TelnyxVoiceWebhookController::class, 'handle']);
@@ -205,6 +221,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('yacht-drafts/{draftId}/attach-yacht', [YachtDraftController::class, 'attachYacht']);
     Route::post('yacht-drafts/{draftId}/commit', [YachtDraftController::class, 'commit']);
 
+    // Seller intake and listing workflow
+    Route::post('seller-intakes', [SellerIntakeController::class, 'store']);
+    Route::get('seller-intakes/{id}', [SellerIntakeController::class, 'show'])->whereNumber('id');
+    Route::put('seller-intakes/{id}', [SellerIntakeController::class, 'update'])->whereNumber('id');
+    Route::post('seller-intakes/{id}/photos', [SellerIntakeController::class, 'uploadPhotos'])->whereNumber('id');
+    Route::post('seller-intakes/{id}/payment/session', [SellerIntakeController::class, 'paymentSession'])->whereNumber('id');
+    Route::get('seller-intakes/{id}/payment/status', [SellerIntakeController::class, 'paymentStatus'])->whereNumber('id');
+    Route::get('listing-workflows/{id}', [ListingWorkflowController::class, 'show'])->whereNumber('id');
+    Route::get('listing-workflows/{id}/preview', [ListingWorkflowController::class, 'preview'])->whereNumber('id');
+    Route::post('listing-workflows/{id}/approve', [ListingWorkflowController::class, 'approve'])->whereNumber('id');
+    Route::post('listing-workflows/{id}/request-changes', [ListingWorkflowController::class, 'requestChanges'])->whereNumber('id');
+
     // Yacht task automation (manual trigger)
     Route::post('yachts/{id}/trigger-automation', function (Illuminate\Http\Request $request, $id) {
         $yacht = \App\Models\Yacht::findOrFail($id);
@@ -220,14 +248,26 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('yachts/{yachtId}/documents')->group(function () {
         Route::get('/', [BoatDocumentController::class, 'index']);
         Route::post('/', [BoatDocumentController::class, 'store']);
+        Route::post('/reorder', [BoatDocumentController::class, 'reorder']);
         Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
     });
+
+    // Yacht channel publishing
+    Route::get('yachts/{id}/channel-listings', [BoatChannelListingController::class, 'index']);
+    Route::put('yachts/{id}/channel-listings/{channel}', [BoatChannelListingController::class, 'update']);
+    Route::get('yachts/{id}/channel-listings/{channel}/logs', [BoatChannelListingController::class, 'logs']);
+    Route::post('yachts/{id}/channel-listings/{channel}/retry', [BoatChannelListingController::class, 'retry']);
+    Route::post('yachts/{id}/channel-listings/{channel}/pause', [BoatChannelListingController::class, 'pause']);
+    Route::post('yachts/{id}/channel-listings/{channel}/remove', [BoatChannelListingController::class, 'remove']);
+    Route::post('yachts/{id}/channel-listings/{channel}/sync', [BoatChannelListingController::class, 'sync']);
 
     // Uploaded yacht videos
     Route::get('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'index']);
     Route::post('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'store']);
     Route::delete('boat-videos/{id}', [BoatVideoController::class, 'destroy']);
     Route::post('boat-videos/{id}/publish', [BoatVideoController::class, 'publish']);
+    Route::get('yachts/{yachtId}/video-settings', [BoatVideoSettingController::class, 'show']);
+    Route::put('yachts/{yachtId}/video-settings', [BoatVideoSettingController::class, 'update']);
 
     // Yacht Stickers
     Route::post('yachts/{yacht}/sticker/generate', [StickerController::class, 'generate']);
@@ -289,6 +329,15 @@ Route::middleware('auth:sanctum')->group(function () {
     // Admin-only routes
     Route::middleware('role:admin')->group(function () {
         Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+        Route::prefix('admin/listing-workflows')->group(function () {
+            Route::get('/', [AdminListingWorkflowController::class, 'index']);
+            Route::get('/{id}', [AdminListingWorkflowController::class, 'show'])->whereNumber('id');
+            Route::post('/{id}/start-ai', [AdminListingWorkflowController::class, 'startAi'])->whereNumber('id');
+            Route::post('/{id}/mark-reviewed', [AdminListingWorkflowController::class, 'markReviewed'])->whereNumber('id');
+            Route::post('/{id}/publish', [AdminListingWorkflowController::class, 'publish'])->whereNumber('id');
+            Route::post('/{id}/reject', [AdminListingWorkflowController::class, 'reject'])->whereNumber('id');
+            Route::post('/{id}/archive', [AdminListingWorkflowController::class, 'archive'])->whereNumber('id');
+        });
         Route::prefix('settings')->group(function () {
             Route::get('/', [\App\Http\Controllers\Api\SettingsController::class, 'index']);
             Route::get('/{key}', [\App\Http\Controllers\Api\SettingsController::class, 'show']);
@@ -447,18 +496,21 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('bookings', [AdminBookingController::class, 'index']);
     Route::get('bookings/{id}', [AdminBookingController::class, 'show']);
 
-    // Harbors
-    Route::get('harbors', [AdminHarborController::class, 'index']);
-    Route::post('harbors', [AdminHarborController::class, 'store']);
-    Route::get('harbors/performance', [AdminHarborController::class, 'performance']);
-    Route::patch('harbors/{harbor}', [AdminHarborController::class, 'update']);
-    Route::delete('harbors/{harbor}', [AdminHarborController::class, 'destroy']);
-    Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
-    Route::get('locations', [AdminHarborController::class, 'index']);
-    Route::post('locations', [AdminHarborController::class, 'store']);
-    Route::patch('locations/{harbor}', [AdminHarborController::class, 'update']);
-    Route::delete('locations/{harbor}', [AdminHarborController::class, 'destroy']);
-    Route::get('locations/{harbor}', [AdminHarborController::class, 'show']);
+    // Locations (Admin)
+    Route::get('locations', [AdminLocationController::class, 'index']);
+    Route::post('locations', [AdminLocationController::class, 'store']);
+    Route::get('locations/performance', [AdminLocationController::class, 'performance']);
+    Route::patch('locations/{harbor}', [AdminLocationController::class, 'update']);
+    Route::delete('locations/{harbor}', [AdminLocationController::class, 'destroy']);
+    Route::get('locations/{harbor}', [AdminLocationController::class, 'show']);
+
+    // Legacy Harbors (Admin)
+    Route::get('harbors', [AdminLocationController::class, 'index']);
+    Route::post('harbors', [AdminLocationController::class, 'store']);
+    Route::get('harbors/performance', [AdminLocationController::class, 'performance']);
+    Route::patch('harbors/{harbor}', [AdminLocationController::class, 'update']);
+    Route::delete('harbors/{harbor}', [AdminLocationController::class, 'destroy']);
+    Route::get('harbors/{harbor}', [AdminLocationController::class, 'show']);
 
     // Users
     Route::post('users', [AdminUserController::class, 'store']);

@@ -32,7 +32,8 @@ class BoatVideoSettingController extends Controller
 
         return response()->json([
             'settings' => $settings,
-            'social_posts' => $socialPosts
+            'social_posts' => $socialPosts,
+            'image_count' => $yacht->images()->count(),
         ]);
     }
 
@@ -42,7 +43,15 @@ class BoatVideoSettingController extends Controller
     public function update(Request $request, $yachtId): JsonResponse
     {
         $yacht = Yacht::findOrFail($yachtId);
-        $settings = BoatVideoSetting::where('yacht_id', $yacht->id)->firstOrFail();
+        $settings = BoatVideoSetting::firstOrCreate(
+            ['yacht_id' => $yacht->id],
+            [
+                'auto_publish_social' => false,
+                'video_crop_format' => '16:9',
+                'auto_generate_caption' => false,
+                'platforms' => ['instagram', 'facebook'],
+            ]
+        );
 
         $validated = $request->validate([
             'auto_publish_social' => 'boolean',

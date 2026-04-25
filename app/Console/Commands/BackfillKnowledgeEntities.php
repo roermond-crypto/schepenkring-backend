@@ -46,8 +46,7 @@ class BackfillKnowledgeEntities extends Command
                 ])
                 ->when($locationIds !== [], function ($query) use ($locationIds) {
                     $query->where(function ($builder) use ($locationIds) {
-                        $builder->whereIn('location_id', $locationIds)
-                            ->orWhereIn('ref_harbor_id', $locationIds);
+                        $builder->whereIn('location_id', $locationIds);
                     });
                 })
                 ->orderBy('id')

@@ -120,6 +120,22 @@ return [
         'webhook_auth' => env('SIGNHOST_WEBHOOK_AUTH'),
     ],
 
+    'mollie' => [
+        'base_url' => env('MOLLIE_BASE_URL', 'https://api.mollie.com/v2'),
+        'api_key' => env('MOLLIE_API_KEY'),
+        'api_key_live' => env('MOLLIE_API_KEY_LIVE'),
+        'api_key_test' => env('MOLLIE_API_KEY_TEST'),
+        'webhook_url' => env('MOLLIE_WEBHOOK_URL'),
+    ],
+
+    'seller_listing_intake' => [
+        'payment_amount' => env('SELLER_LISTING_INTAKE_PAYMENT_AMOUNT', 395.00),
+    ],
+
+    'pipeline' => [
+        'min_approved_images' => env('PIPELINE_MIN_APPROVED_IMAGES', 1),
+    ],
+
     'telnyx' => [
         'base_url' => env('TELNYX_BASE_URL', 'https://api.telnyx.com/v2'),
         'api_key' => env('TELNYX_API_KEY'),

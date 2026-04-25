@@ -116,10 +116,21 @@ class FaqKnowledgeTextExtractor
         }
 
         $texts = [];
-        preg_match_all('/stream(.*?)endstream/s', $contents, $matches, PREG_SET_ORDER);
+        preg_match_all('/stream\r?\n?(.*?)\r?\n?endstream/s', $contents, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
 
         foreach ($matches as $match) {
-            $stream = ltrim((string) ($match[1] ?? ''), "\r\n");
+            $streamOffset = (int) ($match[0][1] ?? 0);
+            $streamDictionary = substr($contents, max(0, $streamOffset - 800), 800);
+
+            if (
+                str_contains($streamDictionary, '/Subtype /Image') ||
+                str_contains($streamDictionary, '/DCTDecode') ||
+                str_contains($streamDictionary, '/JPXDecode')
+            ) {
+                continue;
+            }
+
+            $stream = ltrim((string) ($match[1][0] ?? ''), "\r\n");
             $decoded = $this->decodePdfStream($stream);
             $candidate = $decoded ?: $stream;
             $streamTexts = [];

@@ -131,7 +131,7 @@ function socialAccessYacht(User $owner, Location $location, string $vesselId): Y
 {
     return Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'vessel_id' => $vesselId,
         'boat_name' => 'Social Access Yacht',
         'status' => 'active',

@@ -221,7 +221,7 @@ class AuctionWidgetApiTest extends TestCase
         return Yacht::create(array_merge([
             'user_id' => $owner->id,
             'location_id' => $location->id,
-            'ref_harbor_id' => $location->id,
+            'location_id' => $location->id,
             'vessel_id' => 'SK-' . Str::upper(Str::random(8)),
             'boat_name' => 'Auction Yacht',
             'status' => 'For Bid',

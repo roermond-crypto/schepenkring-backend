@@ -471,8 +471,8 @@ class ImagePipelineController extends Controller
 
     private function resolveYachtLocationId(Yacht $yacht): ?int
     {
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
+        if ($yacht->location_id) {
+            return (int) $yacht->location_id;
         }
 
         if ($yacht->owner?->client_location_id) {

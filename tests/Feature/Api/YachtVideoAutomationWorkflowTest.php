@@ -45,7 +45,7 @@ test('published yacht with a main image auto queues a marketing video on create'
     $response = $this->post('/api/yachts', [
         'boat_name' => 'Automation Ready Yacht',
         'status' => 'active',
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'main_image' => UploadedFile::fake()->image('main.jpg'),
     ], [
         'Accept' => 'application/json',
@@ -84,7 +84,7 @@ test('image pipeline upload auto queues a marketing video for a published yacht'
 
     $yacht = Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'Gallery Trigger Yacht',
         'status' => 'active',
     ]);
@@ -140,7 +140,7 @@ test('boat video whatsapp job sends the ready video url to the owner and stores 
 
     $yacht = Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'WhatsApp Ready Yacht',
         'status' => 'active',
     ]);
@@ -196,7 +196,7 @@ test('authorized users can manually queue owner whatsapp delivery from the socia
 
     $yacht = Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'Manual Notify Yacht',
         'status' => 'active',
     ]);
@@ -238,7 +238,7 @@ test('authenticated users can upload, list, publish, and delete boat videos thro
 
     $yacht = Yacht::create([
         'user_id' => $owner->id,
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'boat_name' => 'Legacy Upload Yacht',
         'status' => 'draft',
     ]);

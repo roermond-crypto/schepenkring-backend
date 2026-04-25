@@ -130,7 +130,6 @@ class KnowledgeGraphService
                     'location_lat' => $yacht->location_lat,
                     'location_lng' => $yacht->location_lng,
                     'location_id' => $yacht->location_id,
-                    'ref_harbor_id' => $yacht->ref_harbor_id,
                     'external_url' => $yacht->external_url,
                     'loa' => $yacht->loa,
                     'beam' => $yacht->beam,
@@ -174,7 +173,7 @@ class KnowledgeGraphService
             'boat_type' => $yacht->boat_type,
             'boat_category' => $yacht->boat_category,
             'location_city' => $yacht->location_city,
-            'ref_harbor_id' => $yacht->ref_harbor_id,
+            'location_id' => $yacht->location_id,
             'resolved_location_id' => $resolvedLocation?->id,
             'resolved_location_code' => $resolvedLocation?->code,
         ]);
@@ -439,8 +438,8 @@ class KnowledgeGraphService
             return (int) $yacht->location_id;
         }
 
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
+        if ($yacht->location_id) {
+            return (int) $yacht->location_id;
         }
 
         if ($yacht->relationLoaded('owner') && $yacht->owner?->client_location_id) {

@@ -318,10 +318,6 @@ class AuctionService
             return (int) $yacht->location_id;
         }
 
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
-        }
-
         if ($yacht->relationLoaded('owner') && $yacht->owner?->client_location_id) {
             return (int) $yacht->owner->client_location_id;
         }

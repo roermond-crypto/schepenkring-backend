@@ -21,7 +21,7 @@ test('knowledge backfill command builds harbor and yacht entities with relations
         'manufacturer' => 'Grand Soleil',
         'model' => '40',
         'status' => 'available',
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
         'location_city' => 'Amsterdam',
     ]);
 

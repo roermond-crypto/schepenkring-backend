@@ -53,7 +53,7 @@ test('admin harbor updates keep the location knowledge entity in sync', function
 
     Sanctum::actingAs($admin);
 
-    $createResponse = $this->postJson('/api/admin/harbors', [
+    $createResponse = $this->postJson('/api/admin/locations', [
         'name' => 'Lelystad Marina',
         'code' => 'LEY',
         'status' => 'ACTIVE',
@@ -80,7 +80,7 @@ test('admin harbor updates keep the location knowledge entity in sync', function
         'theme' => 'ocean',
     ])->assertOk();
 
-    $this->patchJson("/api/admin/harbors/{$locationId}", [
+    $this->patchJson("/api/admin/locations/{$locationId}", [
         'name' => 'Lelystad Marina North',
     ])->assertOk();
 
@@ -124,7 +124,7 @@ test('yacht saves create a knowledge entity linked to the selected harbor', func
         'price' => 265000,
         'location_city' => 'Lelystad',
         'short_description_en' => 'A bluewater cruiser prepared for safe family passages.',
-        'ref_harbor_id' => $location->id,
+        'location_id' => $location->id,
     ]);
 
     $response->assertCreated()
@@ -141,7 +141,7 @@ test('yacht saves create a knowledge entity linked to the selected harbor', func
     expect($entity)->not->toBeNull();
     expect($entity->location_id)->toBe($location->id);
     expect(data_get($entity->metadata, 'manufacturer'))->toBe('Contest');
-    expect(data_get($entity->metadata, 'ref_harbor_id'))->toBe($location->id);
+    expect(data_get($entity->metadata, 'location_id'))->toBe($location->id);
 
     $relationship = $entity->outgoingRelationships()
         ->where('relationship_type', 'located_at')

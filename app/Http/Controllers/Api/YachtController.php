@@ -272,12 +272,12 @@ class YachtController extends Controller
                 }
             }
 
-            $this->applyRequestedHarbor($request, $yacht, $actor, $isUpdate);
+            $this->applyRequestedLocation($request, $yacht, $actor, $isUpdate);
             $this->applyRequestedOwner($request, $yacht, $actor, $isUpdate);
 
             // Hydrate coordinates from Location
-            if (empty($yacht->location_lat) && !empty($yacht->ref_harbor_id)) {
-                $location = \App\Models\Location::find($yacht->ref_harbor_id);
+            if (empty($yacht->location_lat) && !empty($yacht->location_id)) {
+                $location = \App\Models\Location::find($yacht->location_id);
                 if ($location && !empty($location->lat)) {
                     $yacht->location_lat = $location->lat;
                     $yacht->location_lng = $location->lng;
@@ -433,7 +433,7 @@ class YachtController extends Controller
             return false;
         }
 
-        $allowedKeys = ['status', 'ref_harbor_id'];
+        $allowedKeys = ['status', 'location_id'];
         $presentKeys = array_keys($request->except(['_method']));
 
         foreach ($presentKeys as $key) {
@@ -452,7 +452,7 @@ class YachtController extends Controller
         $yacht->boat_name = 'Yacht '.date('Y-m-d H:i');
         $yacht->allow_bidding = false;
 
-        $this->applyRequestedHarbor($request, $yacht, $actor, false);
+        $this->applyRequestedLocation($request, $yacht, $actor, false);
         $this->applyRequestedOwner($request, $yacht, $actor, false);
 
         if (! $yacht->vessel_id) {
@@ -468,24 +468,24 @@ class YachtController extends Controller
         return $yacht;
     }
 
-    private function applyRequestedHarbor(Request $request, Yacht $yacht, ?User $actor, bool $isUpdate): void
+    private function applyRequestedLocation(Request $request, Yacht $yacht, ?User $actor, bool $isUpdate): void
     {
-        if ($request->has('ref_harbor_id')) {
-            $requestedHarborId = $request->integer('ref_harbor_id') ?: null;
+        if ($request->has('location_id')) {
+            $requestedLocationId = $request->integer('location_id') ?: null;
 
             if ($actor?->isClient()) {
-                $yacht->ref_harbor_id = $actor->client_location_id;
+                $yacht->location_id = $actor->client_location_id;
             } elseif ($actor?->isEmployee()) {
-                if ($requestedHarborId !== null && ! $this->locationAccess->sharesLocation($actor, $requestedHarborId)) {
+                if ($requestedLocationId !== null && ! $this->locationAccess->sharesLocation($actor, $requestedLocationId)) {
                     abort(403, 'Forbidden');
                 }
 
-                $yacht->ref_harbor_id = $requestedHarborId;
+                $yacht->location_id = $requestedLocationId;
             } else {
-                $yacht->ref_harbor_id = $requestedHarborId;
+                $yacht->location_id = $requestedLocationId;
             }
         } elseif (! $isUpdate && $actor?->client_location_id) {
-            $yacht->ref_harbor_id = $actor->client_location_id;
+            $yacht->location_id = $actor->client_location_id;
         }
     }
 
@@ -514,8 +514,8 @@ class YachtController extends Controller
 
             $yacht->user_id = $owner->id;
 
-            if (! $yacht->ref_harbor_id && $owner->client_location_id) {
-                $yacht->ref_harbor_id = (int) $owner->client_location_id;
+            if (! $yacht->location_id && $owner->client_location_id) {
+                $yacht->location_id = (int) $owner->client_location_id;
             }
 
             return;
@@ -908,7 +908,7 @@ class YachtController extends Controller
             }
 
             return $query->where(function (Builder $builder) use ($locationIds) {
-                $builder->whereIn('ref_harbor_id', $locationIds)
+                $builder->whereIn('location_id', $locationIds)
                     ->orWhereHas('owner', function (Builder $ownerQuery) use ($locationIds) {
                         $ownerQuery->whereIn('client_location_id', $locationIds);
                     });
@@ -939,8 +939,8 @@ class YachtController extends Controller
 
     private function resolveYachtLocationId(Yacht $yacht): ?int
     {
-        if ($yacht->ref_harbor_id) {
-            return (int) $yacht->ref_harbor_id;
+        if ($yacht->location_id) {
+            return (int) $yacht->location_id;
         }
 
         if ($yacht->relationLoaded('owner') && $yacht->owner?->client_location_id) {
@@ -979,7 +979,7 @@ class YachtController extends Controller
             $createAction = app(\App\Actions\Signhost\CreateSignhostRequestAction::class);
 
             $payload = [
-                'location_id' => $yacht->ref_harbor_id ?? $yacht->location_id ?? 1,
+                'location_id' => $yacht->location_id ?? 1,
                 'entity_type' => 'Yacht',
                 'entity_id' => $yacht->id,
                 'title' => 'Brokerage Agreement - ' . $yacht->boat_name,
@@ -1345,7 +1345,7 @@ SCHEMA;
             $coreFields,
             $booleanFields,
             $subTableFields,
-            ['main_image', 'ref_harbor_id']
+            ['main_image', 'location_id']
         )));
     }
 
