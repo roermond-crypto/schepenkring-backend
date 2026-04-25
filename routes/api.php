@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
 use App\Http\Controllers\Api\Admin\YachtshiftImportController;
+use App\Http\Controllers\Api\Admin\BoatAuctionController as AdminBoatAuctionController;
 use App\Http\Controllers\Api\AiPipelineController;
 
 use App\Http\Controllers\Api\AnalyticsController;
@@ -74,6 +75,7 @@ use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\StickerController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
 
@@ -108,6 +110,7 @@ Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); /
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
 Route::post('ai/generate-description', [AiPipelineController::class, 'generateDescription']);
 Route::post('ai/suggestions', [AiPipelineController::class, 'getSuggestions']);
+Route::post('boats/match', [\App\Http\Controllers\Api\BoatMatchController::class, 'match']);
 
 // Checklists
 Route::get('checklists/templates', [ChecklistTemplateController::class, 'index']);
@@ -225,6 +228,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'store']);
     Route::delete('boat-videos/{id}', [BoatVideoController::class, 'destroy']);
     Route::post('boat-videos/{id}/publish', [BoatVideoController::class, 'publish']);
+
+    // Yacht Stickers
+    Route::post('yachts/{yacht}/sticker/generate', [StickerController::class, 'generate']);
+    Route::get('yachts/{yacht}/sticker/preview', [StickerController::class, 'preview']);
+    Route::get('yachts/{yacht}/sticker/pdf', [StickerController::class, 'downloadPdf']);
 
     // Current user & lockscreen
     Route::get('user', function (Request $request) {

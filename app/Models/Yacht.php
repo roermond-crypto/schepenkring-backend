@@ -117,7 +117,7 @@ class Yacht extends Model
 
         // URLs and references
         'external_url', 'print_url', 'owners_comment', 'reg_details',
-        'known_defects', 'last_serviced',
+        'known_defects', 'last_serviced', 'public_url', 'qr_code_path',
 
         // CE Certification
         'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
@@ -129,7 +129,7 @@ class Yacht extends Model
         'drift_restriction_controls', 'trimflaps', 'stabilizer',
 
         // Google Merchant Sync
-        'google_offer_id', 'google_product_id', 'google_status',
+        'google_offer_id', 'google_product_id', 'google_status', 'template_id',
         'google_last_sync_at', 'google_last_error',
     ];
 
@@ -227,8 +227,28 @@ class Yacht extends Model
 
     // ─── Existing relationships ────────────────────────────────
 
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(BoatTemplate::class, 'template_id');
+    }
+
     public function images(): HasMany {
-        return $this->hasMany(YachtImage::class);
+        return $this->hasMany(YachtImage::class)
+            ->where('status', '!=', 'deleted')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function drafts(): HasMany {
+        return $this->hasMany(YachtDraft::class);
+    }
+
+    public function bids(): HasMany {
+        return $this->hasMany(Bid::class)->orderBy('amount', 'desc');
+    }
+
+    public function tasks(): HasMany {
+        return $this->hasMany(Task::class);
     }
 
     public function owner(): BelongsTo
@@ -326,6 +346,18 @@ class Yacht extends Model
                 $this->{$relation}()->firstOrCreate(['yacht_id' => $this->id]);
             }
         }
+    }
+
+    /**
+     * Check if this yacht requires admin approval before going live.
+     * A yacht requires approval when it was created by a non-admin user
+     * at a location they don't own.
+     */
+    public function requiresAdminApproval(): bool
+    {
+        return $this->user_id !== null
+            && $this->location_id !== null
+            && (int) $this->user_id !== (int) $this->location_id;
     }
 
     // ─── Lifecycle ─────────────────────────────────────────────

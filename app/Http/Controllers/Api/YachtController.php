@@ -10,7 +10,10 @@ use App\Models\User;
 use App\Services\AiCorrectionLoggingService;
 use App\Services\BoatTaskAutomationService;
 use App\Services\KnowledgeGraphService;
+use App\Services\BoatTemplateService;
+use App\Services\Ga4MeasurementService;
 use App\Services\LocationAccessService;
+use App\Services\StickerService;
 use App\Services\SyncYachtTasksService;
 use App\Services\VideoAutomationService;
 use App\Support\YachtImageLimits;
@@ -40,7 +43,8 @@ class YachtController extends Controller
         private readonly LocationAccessService $locationAccess,
         private readonly AiCorrectionLoggingService $correctionLogging,
         private readonly VideoAutomationService $videoAutomation,
-        private readonly KnowledgeGraphService $knowledgeGraph
+        private readonly KnowledgeGraphService $knowledgeGraph,
+        private readonly StickerService $stickerService
     )
     {
     }
@@ -179,7 +183,8 @@ class YachtController extends Controller
             if ($isUpdate) {
                 $this->authorizeYachtAccess($actor, $yacht);
             }
-            if (! $isUpdate && (! $request->has('boat_name') || empty($request->input('boat_name')))) {
+            // Auto-generate boat name if not provided (for both new and update)
+            if (! $request->has('boat_name') || empty($request->input('boat_name'))) {
                 $manufacturer = $request->input('manufacturer', '');
                 $model = $request->input('model', '');
                 $autoName = trim("$manufacturer $model");
@@ -244,10 +249,40 @@ class YachtController extends Controller
                 }
 
                 $yacht->main_image = $request->file('main_image')->store('yachts/main', 'public');
+            } elseif ($request->has('main_image') && is_string($request->input('main_image'))) {
+                // Only accept a text main_image value if it belongs to this yacht's own images.
+                // This prevents cross-yacht image contamination from AI extraction or copy-paste.
+                $candidatePath = $request->input('main_image');
+                if ($candidatePath && $isUpdate) {
+                    $ownedByThisYacht = $yacht->images()
+                        ->where(function ($q) use ($candidatePath) {
+                            $q->where('url', $candidatePath)
+                              ->orWhere('optimized_master_url', $candidatePath)
+                              ->orWhere('full_url', $candidatePath);
+                        })->exists();
+                    // Also allow paths that contain the yacht's own folder name
+                    $inYachtFolder = str_contains($candidatePath, "/{$yacht->id}/")
+                        || str_contains($candidatePath, 'yachts/main/');
+                    if ($ownedByThisYacht || $inYachtFolder) {
+                        $yacht->main_image = $candidatePath;
+                    }
+                    // If not owned by this yacht, silently ignore — keep existing main_image
+                } elseif ($candidatePath && ! $isUpdate) {
+                    $yacht->main_image = $candidatePath;
+                }
             }
 
             $this->applyRequestedHarbor($request, $yacht, $actor, $isUpdate);
             $this->applyRequestedOwner($request, $yacht, $actor, $isUpdate);
+
+            // Hydrate coordinates from Location
+            if (empty($yacht->location_lat) && !empty($yacht->ref_harbor_id)) {
+                $location = \App\Models\Location::find($yacht->ref_harbor_id);
+                if ($location && !empty($location->lat)) {
+                    $yacht->location_lat = $location->lat;
+                    $yacht->location_lng = $location->lng;
+                }
+            }
 
             if (! $isUpdate) {
                 if (! $yacht->vessel_id) {
@@ -264,7 +299,16 @@ class YachtController extends Controller
             }
 
             $yacht->save();
-            $yacht->saveSubTables($request->all());
+
+            // Sync vessel_lying → construction.where to keep location data consistent
+            $subTableData = $request->all();
+            if (
+                (! array_key_exists('where', $subTableData) || $subTableData['where'] === '' || $subTableData['where'] === 'undefined' || $subTableData['where'] === null)
+                && ! empty($yacht->vessel_lying)
+            ) {
+                $subTableData['where'] = $yacht->vessel_lying;
+            }
+            $yacht->saveSubTables($subTableData);
 
             if ($request->filled('availability_rules')) {
                 try {
@@ -304,6 +348,21 @@ class YachtController extends Controller
 
             app(SyncYachtTasksService::class)->syncForYacht($savedYacht, $actor);
 
+            // --- Template auto-update ---
+            try {
+                $brand = trim((string) $savedYacht->manufacturer);
+                $model = trim((string) $savedYacht->model);
+                if (! empty($brand) && ! empty($model)) {
+                    app(BoatTemplateService::class)->updateTemplateFromBoatSave(
+                        $savedYacht->fresh(['dimensions', 'construction', 'engine', 'accommodation',
+                            'electrical', 'navigation', 'safety', 'comfort',
+                            'deckEquipment', 'rigging'])
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[YachtController] Template update after save failed: '.$e->getMessage());
+            }
+
             DB::commit();
 
             $yacht = $savedYacht->load([
@@ -331,6 +390,13 @@ class YachtController extends Controller
             $newStatusStr = strtolower((string) ($yacht->status ?? ''));
             if ($oldStatusStr !== $newStatusStr && in_array($newStatusStr, ['active', 'for sale'], true)) {
                 $this->triggerSignhostContract($yacht, $actor);
+            }
+
+            // Sync/Generate QR Sticker
+            try {
+                $this->stickerService->syncForYacht($yacht);
+            } catch (\Throwable $e) {
+                Log::warning('[StickerService] Auto-sync failed: ' . $e->getMessage());
             }
 
             return response()->json($yacht, $isUpdate ? 200 : 201);
@@ -582,6 +648,7 @@ class YachtController extends Controller
 
                 // Queue the optimizer after the response so the card is visible immediately.
                 \App\Jobs\ProcessYachtImageJob::dispatchAfterResponse($record->id);
+                \App\Jobs\EnhanceYachtImageJob::dispatch($record->id)->delay(now()->addSeconds(2));
 
                 $uploaded[] = $record->fresh();
             }
@@ -702,9 +769,49 @@ class YachtController extends Controller
         $image = YachtImage::findOrFail($id);
         $yacht = Yacht::findOrFail($image->yacht_id);
         $this->authorizeYachtAccess(Auth::user(), $yacht);
-        Storage::disk('public')->delete($image->url);
+
+        // Delete all stored variants from disk (not just the original url)
+        $pathsToDelete = array_filter(array_unique([
+            $image->url,
+            $image->full_url,
+            $image->optimized_url,
+            $image->optimized_master_url,
+            $image->thumb_url,
+            $image->thumb_full_url,
+            $image->original_temp_url,
+        ]), fn($p) => !empty($p) && !str_starts_with($p, 'http'));
+
+        foreach ($pathsToDelete as $path) {
+            Storage::disk('public')->delete($path);
+        }
+
+        // If this image was set as the yacht's main_image, clear it and
+        // replace with the next available gallery image
+        $deletedPaths = array_filter([
+            $image->url,
+            $image->optimized_master_url,
+            $image->optimized_url,
+            $image->full_url,
+        ]);
+        if (in_array($yacht->main_image, $deletedPaths, true)) {
+            $next = YachtImage::where('yacht_id', $yacht->id)
+                ->where('id', '!=', $image->id)
+                ->whereIn('status', ['approved', 'ready_for_review'])
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->first();
+            $yacht->main_image = $next
+                ? ($next->optimized_master_url ?? $next->optimized_url ?? $next->url)
+                : null;
+            $yacht->save();
+        }
+
         $image->delete();
-        return response()->json(['message' => 'Image removed']);
+
+        return response()->json([
+            'message' => 'Image removed',
+            'new_main_image' => $yacht->main_image,
+        ]);
     }
 
     public function show(Request $request, $id): JsonResponse
@@ -726,8 +833,21 @@ class YachtController extends Controller
             Storage::disk('public')->delete($yacht->main_image);
         }
 
+        // Delete all stored variants of each gallery image, not just the primary url
         foreach ($yacht->images as $img) {
-            Storage::disk('public')->delete($img->url);
+            $pathsToDelete = array_filter(array_unique([
+                $img->url,
+                $img->full_url,
+                $img->optimized_url,
+                $img->optimized_master_url,
+                $img->thumb_url,
+                $img->thumb_full_url,
+                $img->original_temp_url,
+            ]), fn($p) => !empty($p) && !str_starts_with($p, 'http'));
+
+            foreach ($pathsToDelete as $path) {
+                Storage::disk('public')->delete($path);
+            }
         }
 
         $yacht->delete();

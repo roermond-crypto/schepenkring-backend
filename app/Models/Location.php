@@ -20,6 +20,8 @@ class Location extends Model
         'chat_widget_enabled',
         'chat_widget_welcome_text',
         'chat_widget_theme',
+        'lat',
+        'lng',
     ];
 
     protected $casts = [
