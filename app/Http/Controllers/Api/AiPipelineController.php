@@ -1411,9 +1411,9 @@ HINT];
                 default => 2,
             };
             $requestTimeout = match ($speedMode) {
-                'fast' => 35,
-                'deep' => 60,
-                default => 45,
+                'fast' => 90,
+                'deep' => 180,
+                default => 120,
             };
             $response = null;
             for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
@@ -1598,7 +1598,7 @@ PROMPT;
             // Retry logic for Gemini 429 rate limits
             $response = null;
             for ($attempt = 1; $attempt <= 3; $attempt++) {
-                $response = Http::timeout(45)->post($endpoint, [
+                $response = Http::timeout(120)->post($endpoint, [
                     'contents' => [['parts' => [['text' => $enrichPrompt]]]],
                     'generationConfig' => [
                         'responseMimeType' => 'application/json',
