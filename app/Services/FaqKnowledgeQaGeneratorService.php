@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class FaqKnowledgeQaGeneratorService
@@ -38,6 +39,12 @@ class FaqKnowledgeQaGeneratorService
             ]);
 
         if ($response->failed()) {
+            \Illuminate\Support\Facades\Log::error('OpenAI Q&A generation failed', [
+                'status' => $response->status(),
+                'response' => $response->body(),
+                'model' => config('copilot.ai_model', 'gpt-4o-mini'),
+            ]);
+
             throw new RuntimeException('OpenAI Q&A generation failed.');
         }
 
