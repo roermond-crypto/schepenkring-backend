@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\IntegrationAccessDetailsMail;
 use App\Models\Integration;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 
 class IntegrationController extends Controller
 {
@@ -120,6 +124,46 @@ class IntegrationController extends Controller
         return response()->json(['message' => 'Integration deleted.']);
     }
 
+    public function sendAccessDetails(Request $request, int $id): JsonResponse
+    {
+        $integration = Integration::findOrFail($id);
+        $validated = $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $allowedEmails = $this->allowedDeliveryEmails();
+        if ($allowedEmails === []) {
+            throw ValidationException::withMessages([
+                'email' => ['No authorized delivery emails are configured for integration access details.'],
+            ]);
+        }
+
+        $targetEmail = strtolower(trim((string) $validated['email']));
+        $normalizedAllowedEmails = array_map(
+            static fn (string $email): string => strtolower(trim($email)),
+            $allowedEmails,
+        );
+
+        if (!in_array($targetEmail, $normalizedAllowedEmails, true)) {
+            throw ValidationException::withMessages([
+                'email' => ['This email address is not authorized for integration access delivery.'],
+            ]);
+        }
+
+        Mail::to($targetEmail)->send(new IntegrationAccessDetailsMail($integration, $request->user()));
+
+        Log::info('Integration access details delivered by email.', [
+            'integration_id' => $integration->id,
+            'integration_type' => $integration->integration_type,
+            'recipient_email' => $targetEmail,
+            'requested_by_user_id' => $request->user()?->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Access details sent successfully.',
+        ]);
+    }
+
     // ── Private ────────────────────────────────────────
 
     /**
@@ -134,13 +178,25 @@ class IntegrationController extends Controller
             'username'         => $integration->username,
             'has_password'     => ! empty($integration->password_encrypted),
             'has_api_key'      => ! empty($integration->api_key_encrypted),
-            'password'         => $integration->password_encrypted ? '●●●●●●●●' : null,
-            'api_key'          => $integration->api_key_encrypted  ? '●●●●●●●●' : null,
             'environment'      => $integration->environment,
             'status'           => $integration->status,
             'location_id'      => $integration->location_id,
             'created_at'       => $integration->created_at,
             'updated_at'       => $integration->updated_at,
         ];
+    }
+
+    private function allowedDeliveryEmails(): array
+    {
+        $configured = config('services.integrations.access_delivery_allowed_emails', []);
+
+        if (!is_array($configured)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn ($email): string => trim((string) $email),
+            $configured,
+        )));
     }
 }

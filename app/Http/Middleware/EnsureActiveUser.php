@@ -19,7 +19,12 @@ class EnsureActiveUser
             return $next($request);
         }
 
-        if (! $user->isActive()) {
+        if (! $user->isActive() && !in_array($user->status, [
+            \App\Enums\UserStatus::PENDING_APPROVAL, 
+            \App\Enums\UserStatus::PENDING,
+            \App\Enums\UserStatus::EMAIL_PENDING,
+            \App\Enums\UserStatus::VERIFYING
+        ], true)) {
             $token = $user->currentAccessToken();
             if ($token) {
                 $token->delete();

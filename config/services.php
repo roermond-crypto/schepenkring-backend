@@ -129,6 +129,13 @@ return [
         'application_id' => env('TELNYX_APPLICATION_ID'),
     ],
 
+    'integrations' => [
+        'access_delivery_allowed_emails' => array_filter(array_map(
+            'trim',
+            explode(',', env('INTEGRATION_ACCESS_DELIVERY_ALLOWED_EMAILS', 'nauticsecure@gmail.com'))
+        )),
+    ],
+
     'yext' => [
         'api_key' => env('YEXT_API_KEY'),
         'account_id' => env('YEXT_ACCOUNT_ID'),
@@ -139,6 +146,18 @@ return [
         'use_video_upload' => env('YEXT_USE_VIDEO_UPLOAD', false),
         'video_publishers' => array_filter(array_map('trim', explode(',', env('YEXT_VIDEO_PUBLISHERS', 'facebook,instagram')))),
         'analytics_endpoint' => env('YEXT_ANALYTICS_ENDPOINT'),
+    ],
+
+    'mollie' => [
+        'base_url' => env('MOLLIE_BASE_URL', 'https://api.mollie.com/v2'),
+        'api_key' => env('MOLLIE_API_KEY'),
+        'api_key_test' => env('MOLLIE_API_KEY_TEST'),
+        'api_key_live' => env('MOLLIE_API_KEY_LIVE'),
+        'webhook_url' => env('MOLLIE_WEBHOOK_URL'),
+    ],
+
+    'seller_onboarding' => [
+        'payment_amount' => env('SELLER_ONBOARDING_PAYMENT_AMOUNT', 395.00),
     ],
 
 ];

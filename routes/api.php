@@ -20,6 +20,9 @@ use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationCo
 use App\Http\Controllers\Api\Admin\YachtshiftImportController;
 use App\Http\Controllers\Api\AiPipelineController;
 
+use App\Http\Controllers\Api\Onboarding\SellerOnboardingController;
+use App\Http\Controllers\Api\Onboarding\BuyerVerificationController;
+use App\Http\Controllers\Api\Onboarding\OnboardingWebhookController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\RegisterController;
@@ -47,6 +50,7 @@ use App\Http\Controllers\Api\ImagePipelineController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadConversionController;
 use App\Http\Controllers\Api\KnowledgeBrainController;
+use App\Http\Controllers\Api\AiKnowledgeArticleController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
 use App\Http\Controllers\Api\SocialVideoController;
@@ -325,6 +329,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('faqs/knowledge-brain/suggestions', [KnowledgeBrainController::class, 'suggestions']);
     Route::post('faqs/knowledge-brain/refresh', [KnowledgeBrainController::class, 'refresh']);
     Route::patch('faqs/knowledge-brain/suggestions/{suggestion}', [KnowledgeBrainController::class, 'review']);
+
+    Route::middleware(['auth:sanctum', 'onboarding.active', 'admin.errors'])->prefix('admin/knowledge-articles')->group(function () {
+        Route::get('/', [AiKnowledgeArticleController::class, 'index']);
+        Route::post('/', [AiKnowledgeArticleController::class, 'store']);
+        Route::post('/translate', [AiKnowledgeArticleController::class, 'translate']);
+        Route::post('/seed-starter-brands-models', [AiKnowledgeArticleController::class, 'seedStarterBrandsAndModels']);
+        Route::put('/{article}', [AiKnowledgeArticleController::class, 'update']);
+        Route::delete('/{article}', [AiKnowledgeArticleController::class, 'destroy']);
+    });
     Route::put('faqs/{faq}', [FaqController::class, 'update']);
     Route::delete('faqs/{faq}', [FaqController::class, 'destroy']);
 
@@ -408,7 +421,38 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{error}/note', [PlatformErrorController::class, 'note']);
         Route::post('/{error}/assign', [PlatformErrorController::class, 'assign']);
     });
+
+    // Onboarding
+    Route::post('/seller-onboarding/start', [SellerOnboardingController::class, 'start']);
+    Route::get('/seller-onboarding/status', [SellerOnboardingController::class, 'status']);
+    Route::put('/seller-onboarding/profile', [SellerOnboardingController::class, 'updateProfile']);
+    Route::post('/seller-onboarding/payment/session', [SellerOnboardingController::class, 'paymentSession']);
+    Route::get('/seller-onboarding/payment/status', [SellerOnboardingController::class, 'paymentStatus']);
+    Route::post('/seller-onboarding/contract/generate', [SellerOnboardingController::class, 'generateContract']);
+    Route::post('/seller-onboarding/signhost/start', [SellerOnboardingController::class, 'startSignhost']);
+    Route::get('/seller-onboarding/verification/redirect', [SellerOnboardingController::class, 'verificationRedirect']);
+    Route::get('/seller-onboarding/kyc/questions', [SellerOnboardingController::class, 'kycQuestions']);
+    Route::post('/seller-onboarding/kyc/answers', [SellerOnboardingController::class, 'answerKyc']);
+    Route::post('/seller-onboarding/submit', [SellerOnboardingController::class, 'submit']);
+
+    Route::post('/buyer-verification/start', [BuyerVerificationController::class, 'start']);
+    Route::get('/buyer-verification/status', [BuyerVerificationController::class, 'status']);
+    Route::put('/buyer-verification/profile', [BuyerVerificationController::class, 'updateProfile']);
+    Route::post('/buyer-verification/signhost/start', [BuyerVerificationController::class, 'startSignhost']);
+    Route::get('/buyer-verification/verification/redirect', [BuyerVerificationController::class, 'verificationRedirect']);
+    Route::get('/buyer-verification/kyc/questions', [BuyerVerificationController::class, 'kycQuestions']);
+    Route::post('/buyer-verification/kyc/answers', [BuyerVerificationController::class, 'answerKyc']);
+    Route::post('/buyer-verification/submit', [BuyerVerificationController::class, 'submit']);
+
+    // Profile setup status — used by frontend to decide which onboarding panel to show
+    Route::get('/profile-setup/status', [\App\Http\Controllers\Api\ProfileSetupController::class, 'status']);
+    Route::get('/profile-setup/address/search', [\App\Http\Controllers\Api\ProfileSetupController::class, 'search']);
+    Route::put('/profile-setup/address', [\App\Http\Controllers\Api\ProfileSetupController::class, 'saveAddress']);
 });
+
+// Onboarding Webhooks
+Route::post('/onboarding/webhooks/mollie', [OnboardingWebhookController::class, 'mollie']);
+Route::post('/onboarding/webhooks/signhost', [OnboardingWebhookController::class, 'signhost']);
 
 
 // ──────────────────────────────────────────────────────────
@@ -506,6 +550,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     // Integrations (central credential management)
     Route::apiResource('integrations', IntegrationController::class);
+    Route::post('integrations/{id}/send-access-details', [IntegrationController::class, 'sendAccessDetails']);
 });
 
 Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->group(function () {

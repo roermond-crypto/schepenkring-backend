@@ -18,7 +18,20 @@
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;">
                     <tr>
                         <td style="padding-bottom:18px;text-align:center;">
-                            @if(!empty($logoUrl))
+                            @php
+                                $cidLogo = null;
+                                $logoFile = public_path('schepenkring-logo.png');
+                                if (file_exists($logoFile) && isset($message)) {
+                                    try {
+                                        $cidLogo = $message->embed($logoFile);
+                                    } catch (\Throwable $e) {
+                                        // fallback below
+                                    }
+                                }
+                            @endphp
+                            @if($cidLogo)
+                                <img src="{{ $cidLogo }}" alt="{{ $appName ?? config('app.name', 'Schepenkring') }}" style="display:block;margin:0 auto 10px auto;max-width:200px;width:100%;height:auto;border:0;">
+                            @elseif(!empty($logoUrl))
                                 <img src="{{ $logoUrl }}" alt="{{ $appName ?? config('app.name', 'Schepenkring') }}" style="display:block;margin:0 auto 10px auto;max-width:200px;width:100%;height:auto;border:0;">
                             @endif
                             <div style="font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:#4f6b7d;font-weight:700;">
