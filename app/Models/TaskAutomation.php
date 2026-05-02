@@ -9,6 +9,7 @@ class TaskAutomation extends Model
 {
     protected $fillable = [
         'template_id',
+        'rule_id',
         'trigger_event',
         'related_type',
         'related_id',
@@ -27,6 +28,11 @@ class TaskAutomation extends Model
     public function template(): BelongsTo
     {
         return $this->belongsTo(TaskAutomationTemplate::class, 'template_id');
+    }
+
+    public function rule(): BelongsTo
+    {
+        return $this->belongsTo(TaskAutomationRule::class, 'rule_id');
     }
 
     public function assignedUser(): BelongsTo

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TaskAutomationTemplate extends Model
@@ -45,9 +46,18 @@ class TaskAutomationTemplate extends Model
         return $this->hasMany(TaskAutomationTemplateItem::class, 'template_id')->orderBy('position');
     }
 
+    public function rules(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            TaskAutomationRule::class,
+            'task_automation_rule_template',
+            'template_id',
+            'rule_id'
+        )->withPivot('sort_order')->orderBy('task_automation_rule_template.sort_order');
+    }
+
     public function location(): BelongsTo
     {
         return $this->belongsTo(Location::class);
     }
 }
-
