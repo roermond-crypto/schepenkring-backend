@@ -17,6 +17,8 @@ class LocationController extends Controller
             $query->where('status', 'ACTIVE');
         }
 
+        $query->where('code', '!=', 'HQ');
+
         return response()->json($query->orderBy('name')->get());
     }
 }

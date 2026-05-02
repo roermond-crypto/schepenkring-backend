@@ -70,6 +70,11 @@ class BuyerVerification extends Model
         return $this->hasMany(BuyerVerificationFlag::class);
     }
 
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(BuyerVerificationReview::class);
+    }
+
     public function latestSignhostPhase(): BelongsTo
     {
         return $this->belongsTo(BuyerVerificationSignhostTransaction::class, 'latest_signhost_phase_id');

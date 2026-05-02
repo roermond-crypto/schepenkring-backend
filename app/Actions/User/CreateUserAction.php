@@ -6,9 +6,17 @@ use App\Enums\LocationRole;
 use App\Enums\RiskLevel;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
+use App\Mail\AdminClientOnboardingMail;
+use App\Models\BuyerProfile;
+use App\Models\BuyerVerification;
+use App\Models\SellerOnboarding;
+use App\Models\SellerProfile;
 use App\Models\User;
 use App\Repositories\UserRepository;
 use App\Services\ActionSecurity;
+use App\Support\BuyerVerificationStatus;
+use App\Support\SellerOnboardingStatus;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class CreateUserAction
@@ -37,6 +45,7 @@ class CreateUserAction
             'password' => $data['password'],
             'type' => $type,
             'status' => UserStatus::from($data['status'] ?? UserStatus::ACTIVE->value),
+            'email_verified_at' => now(),
             'email_changed_at' => now(),
             'phone_changed_at' => array_key_exists('phone', $data) ? now() : null,
             'password_changed_at' => now(),
@@ -60,7 +69,7 @@ class CreateUserAction
             }
         }
 
-        if ($type === UserType::CLIENT) {
+        if (in_array($type, [UserType::CLIENT, UserType::BUYER, UserType::SELLER], true)) {
             if (empty($data['location_id'])) {
                 throw ValidationException::withMessages([
                     'location_id' => 'Client users must belong to a location.',
@@ -70,6 +79,20 @@ class CreateUserAction
         }
 
         $user = $this->users->create($payload);
+
+        if (in_array($type, [UserType::BUYER, UserType::SELLER], true)) {
+            $needsOnboarding = filter_var($data['needs_onboarding'] ?? true, FILTER_VALIDATE_BOOL);
+            $this->createClientOnboardingRecords($user, $type, $needsOnboarding);
+
+            if ($needsOnboarding) {
+                Mail::to($user->email)->send(new AdminClientOnboardingMail(
+                    $user,
+                    (string) $data['password'],
+                    $type === UserType::SELLER ? 'seller' : 'buyer',
+                    $user->locale
+                ));
+            }
+        }
 
         if ($type === UserType::EMPLOYEE && ! empty($data['location_id'])) {
             $this->users->syncLocations($user, [[
@@ -88,5 +111,62 @@ class CreateUserAction
         ]);
 
         return $user;
+    }
+
+    private function createClientOnboardingRecords(User $user, UserType $type, bool $needsOnboarding): void
+    {
+        $profileAttributes = [
+            'user_id' => $user->id,
+            'full_name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+        ];
+
+        if ($type === UserType::SELLER) {
+            SellerProfile::query()->firstOrCreate(['user_id' => $user->id], $profileAttributes);
+            SellerOnboarding::query()->firstOrCreate(
+                ['user_id' => $user->id],
+                $needsOnboarding
+                    ? ['status' => SellerOnboardingStatus::CREATED]
+                    : $this->approvedOnboardingAttributes(SellerOnboardingStatus::APPROVED, [
+                        'payment_status' => 'APPROVED',
+                        'idin_status' => 'APPROVED',
+                        'ideal_status' => 'APPROVED',
+                        'kyc_status' => 'APPROVED',
+                        'contract_status' => 'APPROVED',
+                        'can_publish_boat' => true,
+                    ])
+            );
+
+            return;
+        }
+
+        BuyerProfile::query()->firstOrCreate(['user_id' => $user->id], $profileAttributes);
+        BuyerVerification::query()->firstOrCreate(
+            ['user_id' => $user->id],
+            $needsOnboarding
+                ? ['status' => BuyerVerificationStatus::CREATED]
+                : $this->approvedOnboardingAttributes(BuyerVerificationStatus::APPROVED, [
+                    'idin_status' => 'APPROVED',
+                    'ideal_status' => 'APPROVED',
+                    'kyc_status' => 'APPROVED',
+                ])
+        );
+    }
+
+    private function approvedOnboardingAttributes(string $status, array $extra = []): array
+    {
+        $now = now();
+
+        return array_merge([
+            'status' => $status,
+            'decision' => 'approved',
+            'decision_reason' => 'Approved directly by admin during client creation.',
+            'manual_review_required' => false,
+            'submitted_at' => $now,
+            'approved_at' => $now,
+            'verified_at' => $now,
+            'expires_at' => $now->copy()->addYear(),
+        ], $extra);
     }
 }

@@ -15,11 +15,20 @@ class AdminUserStoreRequest extends ApiRequest
             'type' => ['required', Rule::in([
                 UserType::EMPLOYEE->value,
                 UserType::CLIENT->value,
+                UserType::BUYER->value,
+                UserType::SELLER->value,
             ])],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:25'],
             'password' => ['required', 'string', 'min:8'],
+            'needs_onboarding' => [
+                Rule::requiredIf(fn () => in_array($this->input('type'), [
+                    UserType::BUYER->value,
+                    UserType::SELLER->value,
+                ], true)),
+                'boolean',
+            ],
             'first_name' => ['nullable', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
             'address_line1' => ['nullable', 'string', 'max:255'],
@@ -30,10 +39,14 @@ class AdminUserStoreRequest extends ApiRequest
             'country' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', Rule::in(array_map(fn (UserStatus $status) => $status->value, UserStatus::cases()))],
             'location_id' => [
-                Rule::requiredIf(fn () => $this->input('type') === UserType::CLIENT->value),
+                Rule::requiredIf(fn () => in_array($this->input('type'), [
+                    UserType::CLIENT->value,
+                    UserType::BUYER->value,
+                    UserType::SELLER->value,
+                ], true)),
                 'nullable',
                 'integer',
-                'exists:locations,id',
+                Rule::exists('locations', 'id')->where(fn ($query) => $query->where('code', '!=', 'HQ')),
             ],
             'location_role' => [
                 'nullable',

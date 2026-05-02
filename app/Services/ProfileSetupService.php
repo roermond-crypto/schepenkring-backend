@@ -50,6 +50,14 @@ class ProfileSetupService
             return true;
         }
 
+        if ($role === 'seller' && $user->sellerOnboarding?->isCurrentlyValid()) {
+            return true;
+        }
+
+        if ($role === 'buyer' && $user->buyerVerification?->isCurrentlyValid()) {
+            return true;
+        }
+
         $profile = $role === 'seller' ? $user->sellerProfile : $user->buyerProfile;
 
         // Basic Profile Check

@@ -2,271 +2,749 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Process\Exception\ProcessFailedException;
+use Symfony\Component\Process\Process;
 
 class FFmpegService
 {
-    private string $ffmpegBin;
+    /**
+     * Render a slideshow with xfade transitions and per-image Ken Burns motion.
+     * Each image is first converted to a short clip with zoompan, then clips are
+     * joined with xfade. Falls back to basic slideshow if < 2 images.
+     *
+     * @param array  $imagePaths       Ordered list of absolute image paths
+     * @param string $outputPath       Destination .mp4
+     * @param array  $durations        Per-image durations in seconds (same length as $imagePaths)
+     * @param string $transition       xfade transition type: fade|fadeblack|dissolve|slideright|slideleft
+     * @param float  $transitionDur    Overlap duration for xfade in seconds
+     * @param string $resolution       WxH e.g. 1920:1080
+     * @return string
+     */
+    public function renderSlideshowWithTransitions(
+        array  $imagePaths,
+        string $outputPath,
+        array  $durations = [],
+        string $transition = 'fade',
+        float  $transitionDur = 0.8,
+        string $resolution = '1920:1080'
+    ): string {
+        $validPaths = array_values(array_filter($imagePaths, 'file_exists'));
 
-    public function __construct()
-    {
-        $this->ffmpegBin = env('FFMPEG_BINARY', '/usr/bin/ffmpeg');
+        if (count($validPaths) < 2) {
+            // Fall back to basic slideshow
+            $dur = $durations[0] ?? 3;
+            return $this->renderGenericSlideshow($validPaths, $outputPath, (int) $dur, $resolution);
+        }
+
+        $uniqueId  = uniqid();
+        $tempDisk  = 'local';
+        $tempDir   = "ffmpeg_phase1_{$uniqueId}";
+        Storage::disk($tempDisk)->makeDirectory($tempDir);
+        $tempBase  = Storage::disk($tempDisk)->path($tempDir);
+
+        try {
+            // Step 1: Render each image into its own short clip with Ken Burns
+            $clipPaths = [];
+            foreach ($validPaths as $i => $imgPath) {
+                $dur      = (float) ($durations[$i] ?? 3.0);
+                $clipPath = "{$tempBase}/clip_{$i}.mp4";
+                $this->renderKenBurnsClip($imgPath, $clipPath, $dur, $resolution, $i);
+                $clipPaths[] = $clipPath;
+            }
+
+            // Step 2: Chain clips together with xfade
+            $this->chainWithXfade($clipPaths, $durations, $outputPath, $transition, $transitionDur);
+        } finally {
+            Storage::disk($tempDisk)->deleteDirectory($tempDir);
+        }
+
+        return $outputPath;
+    }
+
+    /**
+     * Render a single image into a video clip with Ken Burns (zoompan) effect.
+     *
+     * @param string $imagePath
+     * @param string $outputPath
+     * @param float  $duration     Clip length in seconds
+     * @param string $resolution   WxH e.g. 1920:1080
+     * @param int    $index        Used to alternate zoom direction
+     * @return void
+     */
+    public function renderKenBurnsClip(
+        string $imagePath,
+        string $outputPath,
+        float  $duration,
+        string $resolution = '1920:1080',
+        int    $index = 0
+    ): void {
+        $this->ensureParentDirectoryExists($outputPath);
+
+        [$w, $h] = explode(':', $resolution);
+        $fps    = 25;
+        $frames = (int) ceil($duration * $fps);
+
+        // Alternate zoom direction per scene for variety
+        $zoompan = ($index % 2 === 0)
+            ? "zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={$frames}:s={$w}x{$h}:fps={$fps}"
+            : "zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.0015))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={$frames}:s={$w}x{$h}:fps={$fps}";
+
+        $scaleFilter = "scale=8000:-1,{$zoompan},scale={$w}:{$h}:force_original_aspect_ratio=decrease,pad={$w}:{$h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p";
+
+        $this->runFfmpeg([
+            '-y',
+            '-loop', '1',
+            '-i', $imagePath,
+            '-vf', $scaleFilter,
+            '-t', (string) $duration,
+            '-r', (string) $fps,
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-an',
+            '-movflags', '+faststart',
+            $outputPath,
+        ]);
+    }
+
+    /**
+     * Chain pre-rendered clips together using xfade transitions.
+     *
+     * @param array  $clipPaths
+     * @param array  $durations       Per-clip durations in seconds
+     * @param string $outputPath
+     * @param string $transition
+     * @param float  $transitionDur
+     * @return void
+     */
+    public function chainWithXfade(        array  $clipPaths,
+        array  $durations,
+        string $outputPath,
+        string $transition,
+        float  $transitionDur
+    ): void {
+        $this->ensureParentDirectoryExists($outputPath);
+
+        // Sanitize transition — crossfade is not valid in FFmpeg 4.x, map to dissolve
+        $validTransitions = ['fade','dissolve','fadeblack','fadewhite','slideleft','slideright','slideup','slidedown','wipeleft','wiperight'];
+        if (!in_array($transition, $validTransitions, true)) {
+            $transition = 'fade';
+        }
+
+        if (count($clipPaths) === 1) {
+            copy($clipPaths[0], $outputPath);
+            return;
+        }
+
+        // Build ffmpeg inputs + filter_complex for chained xfade
+        $inputs = [];
+        foreach ($clipPaths as $clip) {
+            $inputs[] = '-i';
+            $inputs[] = $clip;
+        }
+
+        // Build xfade chain: [0][1]xfade=...[x01]; [x01][2]xfade=...[x02]; ...
+        $filterParts = [];
+        $offset      = 0.0;
+        $lastLabel   = '[0:v]';
+
+        for ($i = 1; $i < count($clipPaths); $i++) {
+            $dur     = (float) ($durations[$i - 1] ?? 3.0);
+            $offset  = round($offset + $dur - $transitionDur, 4);
+            $outLabel = ($i === count($clipPaths) - 1) ? '[vout]' : "[x{$i}]";
+            $filterParts[] = "{$lastLabel}[{$i}:v]xfade=transition={$transition}:duration={$transitionDur}:offset={$offset}{$outLabel}";
+            $lastLabel = $outLabel;
+        }
+
+        $filterComplex = implode(';', $filterParts);
+
+        $this->runFfmpeg(array_merge(
+            ['-y'],
+            $inputs,
+            [
+                '-filter_complex', $filterComplex,
+                '-map', '[vout]',
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                '-movflags', '+faststart',
+                $outputPath,
+            ]
+        ));
     }
 
     /**
      * Render a slideshow MP4 from a list of image paths.
-     * Each image is shown for $secondsPerImage seconds.
-     * Output: H264 1920x1080 @ 30fps.
+     *
+     * @param array $imagePaths
+     * @param string $outputPath
+     * @param int $secondsPerImage
+     * @return string
      */
     public function renderSlideshow(array $imagePaths, string $outputPath, int $secondsPerImage = 3): string
     {
-        // Create a temp directory for numbered images
-        $tempDir = sys_get_temp_dir() . '/ffmpeg_' . uniqid();
-        mkdir($tempDir, 0777, true);
+        return $this->renderGenericSlideshow($imagePaths, $outputPath, $secondsPerImage, '1920:1080');
+    }
 
-        // Copy/convert images to temp dir with sequential numbering
-        foreach ($imagePaths as $idx => $path) {
-            $num = str_pad($idx + 1, 3, '0', STR_PAD_LEFT);
-            $ext = pathinfo($path, PATHINFO_EXTENSION);
-            $dest = "{$tempDir}/img_{$num}.{$ext}";
+    /**
+     * Render a vertical slideshow (1080x1920) with optional overlay text lines.
+     *
+     * @param array $imagePaths
+     * @param string $outputPath
+     * @param int $secondsPerImage
+     * @param array $overlayLines
+     * @return string
+     */
+    public function renderVerticalSlideshow(array $imagePaths, string $outputPath, int $secondsPerImage = 2, array $overlayLines = []): string
+    {
+        return $this->renderGenericSlideshow($imagePaths, $outputPath, $secondsPerImage, '1080:1920', $overlayLines);
+    }
 
+    /**
+     * Internal helper to render a slideshow using the concat demuxer.
+     * This is more reliable than pattern matching or multiple inputs.
+     *
+     * @param array $imagePaths
+     * @param string $outputPath
+     * @param int $secondsPerImage
+     * @param string $resolution
+     * @param array $overlayLines
+     * @return string
+     */
+    protected function renderGenericSlideshow(array $imagePaths, string $outputPath, int $secondsPerImage, string $resolution, array $overlayLines = []): string
+    {
+        $uniqueId = uniqid();
+        $tempDisk = 'local';
+        $tempPath = "ffmpeg_tmp_{$uniqueId}";
+        Storage::disk($tempDisk)->makeDirectory($tempPath);
+
+        // 1. Create a concat file
+        $concatFile = "{$tempPath}/inputs.txt";
+        $contents = "";
+        foreach ($imagePaths as $path) {
             if (file_exists($path)) {
-                copy($path, $dest);
-            } elseif (Storage::disk('public')->exists($path)) {
-                copy(Storage::disk('public')->path($path), $dest);
+                $contents .= "file '" . str_replace("'", "'\\''", $path) . "'\n";
+                $contents .= "duration {$secondsPerImage}\n";
             }
         }
+        // Re-add the last file without duration to close the stream correctly (FFmpeg requirement)
+        if (!empty($imagePaths)) {
+            $contents .= "file '" . str_replace("'", "'\\''", end($imagePaths)) . "'\n";
+        }
 
-        // Build FFmpeg command for slideshow with zoom effect
-        $duration = count($imagePaths) * $secondsPerImage;
-        $framerate = "1/{$secondsPerImage}";
+        Storage::disk($tempDisk)->put($concatFile, $contents);
+        try {
+            $overlayFilterString = $this->buildPackageOverlayFilter($overlayLines);
+            $scaleFilter = "scale={$resolution}:force_original_aspect_ratio=decrease,pad={$resolution}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p";
 
-        // Simple slideshow (compatible with all image formats)
-        $cmd = sprintf(
-            '%s -y -framerate %s -pattern_type glob -i "%s/img_*.*" ' .
-            '-vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p" ' .
-            '-c:v libx264 -preset medium -crf 23 -r 30 -pix_fmt yuv420p -t %d "%s" 2>&1',
-            $this->ffmpegBin,
-            $framerate,
-            $tempDir,
-            $duration,
-            $outputPath
-        );
+            if ($resolution === '1080:1920') {
+                $scaleFilter .= ",gradfun=1";
+            }
 
-        $output = [];
-        $returnCode = 0;
-        exec($cmd, $output, $returnCode);
+            $this->ensureParentDirectoryExists($outputPath);
 
-        // Cleanup temp dir
-        array_map('unlink', glob("{$tempDir}/*"));
-        rmdir($tempDir);
-
-        if ($returnCode !== 0) {
-            throw new \RuntimeException("FFmpeg slideshow failed (code {$returnCode}): " . implode("\n", array_slice($output, -10)));
+            $this->runFfmpeg([
+                '-y',
+                '-f',
+                'concat',
+                '-safe',
+                '0',
+                '-i',
+                Storage::disk($tempDisk)->path($concatFile),
+                '-vf',
+                $scaleFilter . $overlayFilterString,
+                '-r',
+                '30',
+                '-c:v',
+                'libx264',
+                '-pix_fmt',
+                'yuv420p',
+                '-an',
+                '-movflags',
+                '+faststart',
+                $outputPath,
+            ]);
+        } finally {
+            Storage::disk($tempDisk)->deleteDirectory($tempPath);
         }
 
         return $outputPath;
+    }
+
+    /**
+     * Add background music with fade-in and fade-out instead of hard cut.
+     */
+    public function addBackgroundMusicWithFade(
+        string $videoPath,
+        string $musicPath,
+        string $outputPath,
+        float  $fadeIn  = 1.5,
+        float  $fadeOut = 2.0,
+        float  $volume  = 0.35
+    ): string {
+        $this->ensureParentDirectoryExists($outputPath);
+
+        $duration = $this->getDuration($videoPath);
+        $fadeOutStart = max(0, $duration - $fadeOut);
+
+        $this->runFfmpeg([
+            '-y',
+            '-i', $videoPath,
+            '-stream_loop', '-1',
+            '-i', $musicPath,
+            '-filter_complex',
+            "[1:a]volume={$volume},afade=t=in:st=0:d={$fadeIn},afade=t=out:st={$fadeOutStart}:d={$fadeOut}[looped]",
+            '-map', '0:v',
+            '-map', '[looped]',
+            '-c:v', 'copy',
+            '-shortest',
+            $outputPath,
+        ]);
+
+        return $outputPath;
+    }
+
+    /**
+     * Render a short teaser clip from the best (first N) images.
+     * No intro/outro — faster pacing, strong first impression.
+     */
+    public function renderTeaserClip(
+        array  $imagePaths,
+        string $outputPath,
+        int    $maxScenes   = 3,
+        float  $sceneDur    = 2.5,
+        string $resolution  = '1920:1080'
+    ): string {
+        $validPaths = array_slice(array_filter($imagePaths, 'file_exists'), 0, $maxScenes);
+        $durations  = array_fill(0, count($validPaths), $sceneDur);
+
+        return $this->renderSlideshowWithTransitions(
+            array_values($validPaths),
+            $outputPath,
+            $durations,
+            'fade',
+            0.5,
+            $resolution
+        );
     }
 
     /**
      * Add background music to a video.
-     * Music volume is reduced if voiceover is present.
+     *
+     * @param string $videoPath
+     * @param string $musicPath
+     * @param string $outputPath
+     * @return string
      */
     public function addBackgroundMusic(string $videoPath, string $musicPath, string $outputPath): string
     {
-        $cmd = sprintf(
-            '%s -y -i "%s" -i "%s" ' .
-            '-c:v copy -c:a aac -b:a 128k -shortest "%s" 2>&1',
-            $this->ffmpegBin,
+        $this->ensureParentDirectoryExists($outputPath);
+
+        $this->runFfmpeg([
+            '-y',
+            '-i',
             $videoPath,
+            '-i',
             $musicPath,
-            $outputPath
-        );
-
-        $output = [];
-        $returnCode = 0;
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            throw new \RuntimeException("FFmpeg music failed (code {$returnCode}): " . implode("\n", array_slice($output, -10)));
-        }
+            '-map',
+            '0:v',
+            '-map',
+            '1:a',
+            '-c:v',
+            'copy',
+            '-shortest',
+            $outputPath,
+        ]);
 
         return $outputPath;
     }
 
     /**
-     * Mix background music + voiceover together with a video.
-     * Music at 30% volume, voice at 100%.
+     * Mix background music and voiceover with a video.
+     *
+     * @param string $videoPath
+     * @param string $musicPath
+     * @param string $voicePath
+     * @param string $outputPath
+     * @return string
      */
     public function mixAudioTracks(string $videoPath, string $musicPath, string $voicePath, string $outputPath): string
     {
-        $cmd = sprintf(
-            '%s -y -i "%s" -i "%s" -i "%s" ' .
-            '-filter_complex "[1:a]volume=0.3[music];[2:a]volume=1.0[voice];[music][voice]amix=inputs=2:duration=shortest[a]" ' .
-            '-map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest "%s" 2>&1',
-            $this->ffmpegBin,
+        $this->ensureParentDirectoryExists($outputPath);
+
+        $this->runFfmpeg([
+            '-y',
+            '-i',
             $videoPath,
+            '-i',
             $musicPath,
+            '-i',
             $voicePath,
-            $outputPath
-        );
-
-        $output = [];
-        $returnCode = 0;
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            throw new \RuntimeException("FFmpeg audio mix failed (code {$returnCode}): " . implode("\n", array_slice($output, -10)));
-        }
+            '-filter_complex',
+            '[1:a]volume=0.3[music];[2:a]volume=1.0[voice];[music][voice]amix=inputs=2:duration=shortest[a]',
+            '-map',
+            '0:v',
+            '-map',
+            '[a]',
+            '-c:v',
+            'copy',
+            '-shortest',
+            $outputPath,
+        ]);
 
         return $outputPath;
     }
 
     /**
      * Add a watermark logo to the bottom-right corner.
+     *
+     * @param string $videoPath
+     * @param string $logoPath
+     * @param string $outputPath
+     * @return string
      */
     public function addWatermark(string $videoPath, string $logoPath, string $outputPath): string
     {
-        $cmd = sprintf(
-            '%s -y -i "%s" -i "%s" ' .
-            '-filter_complex "overlay=W-w-20:H-h-20" ' .
-            '-c:v libx264 -preset medium -crf 23 -c:a copy "%s" 2>&1',
-            $this->ffmpegBin,
+        $this->ensureParentDirectoryExists($outputPath);
+
+        $this->runFfmpeg([
+            '-y',
+            '-i',
             $videoPath,
+            '-i',
             $logoPath,
-            $outputPath
-        );
-
-        $output = [];
-        $returnCode = 0;
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            throw new \RuntimeException("FFmpeg watermark failed (code {$returnCode}): " . implode("\n", array_slice($output, -10)));
-        }
+            '-filter_complex',
+            'overlay=W-w-20:H-h-20',
+            $outputPath,
+        ]);
 
         return $outputPath;
     }
 
     /**
      * Get video duration in seconds.
+     *
+     * @param string $videoPath
+     * @return int
      */
     public function getDuration(string $videoPath): int
     {
-        $cmd = sprintf(
-            '%s -i "%s" 2>&1 | grep "Duration"',
-            $this->ffmpegBin,
-            $videoPath
-        );
+        $process = $this->runProcess(array_merge(
+            [$this->ffprobeBinary()],
+            ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', $videoPath]
+        ));
 
-        $output = [];
-        exec($cmd, $output);
-        $line = $output[0] ?? '';
-
-        if (preg_match('/Duration: (\d{2}):(\d{2}):(\d{2})/', $line, $m)) {
-            return ($m[1] * 3600) + ($m[2] * 60) + $m[3];
-        }
-
-        return 0;
+        return (int) round((float) trim($process->getOutput()));
     }
 
     /**
      * Check if FFmpeg is installed and accessible.
+     *
+     * @return bool
      */
     public function isAvailable(): bool
     {
-        $output = [];
-        $returnCode = 0;
-        exec("{$this->ffmpegBin} -version 2>&1", $output, $returnCode);
-        return $returnCode === 0;
-    }
-
-    /**
-     * Render a vertical slideshow (1080x1920) with optional overlay text lines.
-     */
-    public function renderVerticalSlideshow(array $imagePaths, string $outputPath, int $secondsPerImage = 2, array $overlayLines = []): string
-    {
-        $tempDir = sys_get_temp_dir() . '/ffmpeg_vertical_' . uniqid();
-        mkdir($tempDir, 0777, true);
-
-        foreach ($imagePaths as $idx => $path) {
-            $num = str_pad($idx + 1, 3, '0', STR_PAD_LEFT);
-            $ext = pathinfo($path, PATHINFO_EXTENSION);
-            $dest = "{$tempDir}/img_{$num}.{$ext}";
-
-            if (file_exists($path)) {
-                copy($path, $dest);
-            } elseif (Storage::disk('public')->exists($path)) {
-                copy(Storage::disk('public')->path($path), $dest);
-            }
+        try {
+            $this->runProcess([$this->ffmpegBinary(), '-version']);
+            return true;
+        } catch (\Exception $e) {
+            return false;
         }
-
-        $duration = count($imagePaths) * $secondsPerImage;
-        $framerate = "1/{$secondsPerImage}";
-
-        $overlayFilter = $this->buildOverlayFilter($overlayLines);
-        $filter = 'scale=1080:1920:force_original_aspect_ratio=decrease,' .
-            'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p' .
-            $overlayFilter;
-
-        $cmd = sprintf(
-            '%s -y -framerate %s -pattern_type glob -i "%s/img_*.*" ' .
-            '-vf "%s" -c:v libx264 -preset medium -crf 23 -r 30 -pix_fmt yuv420p -t %d "%s" 2>&1',
-            $this->ffmpegBin,
-            $framerate,
-            $tempDir,
-            $filter,
-            $duration,
-            $outputPath
-        );
-
-        $output = [];
-        $returnCode = 0;
-        exec($cmd, $output, $returnCode);
-
-        array_map('unlink', glob("{$tempDir}/*"));
-        rmdir($tempDir);
-
-        if ($returnCode !== 0) {
-            throw new \RuntimeException("FFmpeg vertical slideshow failed (code {$returnCode}): " . implode("\n", array_slice($output, -10)));
-        }
-
-        return $outputPath;
     }
 
     /**
      * Create a thumbnail image from a video.
+     *
+     * @param string $videoPath
+     * @param string $outputPath
+     * @param int $second
+     * @return string
      */
     public function createThumbnail(string $videoPath, string $outputPath, int $second = 1): string
     {
-        $cmd = sprintf(
-            '%s -y -ss %d -i "%s" -vframes 1 -q:v 2 "%s" 2>&1',
-            $this->ffmpegBin,
-            $second,
+        $this->ensureParentDirectoryExists($outputPath);
+
+        $this->runFfmpeg([
+            '-y',
+            '-ss',
+            (string) $second,
+            '-i',
             $videoPath,
-            $outputPath
-        );
+            '-frames:v',
+            '1',
+            $outputPath,
+        ]);
 
-        $output = [];
-        $returnCode = 0;
-        exec($cmd, $output, $returnCode);
+        return $outputPath;
+    }
 
-        if ($returnCode !== 0) {
-            throw new \RuntimeException("FFmpeg thumbnail failed (code {$returnCode}): " . implode("\n", array_slice($output, -10)));
+    private function ffmpegBinary(): string
+    {
+        return config('laravel-ffmpeg.ffmpeg.binaries', 'ffmpeg');
+    }
+
+    private function ffprobeBinary(): string
+    {
+        return config('laravel-ffmpeg.ffprobe.binaries', 'ffprobe');
+    }
+
+    private function runFfmpeg(array $arguments): Process
+    {
+        return $this->runProcess(array_merge([$this->ffmpegBinary()], $arguments));
+    }
+
+    private function runProcess(array $command): Process
+    {
+        $process = new Process($command);
+        $process->setTimeout((float) config('laravel-ffmpeg.timeout', 3600));
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            throw new ProcessFailedException($process);
+        }
+
+        return $process;
+    }
+
+    private function ensureParentDirectoryExists(string $path): void
+    {
+        $directory = dirname($path);
+
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+    }
+
+    /**
+     * Render a branded intro title card clip.
+     * Black background with yacht name, subtitle, fade-in.
+     */
+    public function renderIntroClip(
+        string $outputPath,
+        string $title,
+        string $subtitle = '',
+        float  $duration = 3.0,
+        string $resolution = '1920:1080'
+    ): void {
+        $this->ensureParentDirectoryExists($outputPath);
+        [$w, $h] = explode(':', $resolution);
+        $font   = $this->fontPath();
+        $fps    = 25;
+        $frames = (int) ceil($duration * $fps);
+
+        $filters = "color=c=black:s={$w}x{$h}:r={$fps}:d={$duration}[base]";
+
+        if ($font) {
+            $safeTitle    = $this->escapeDrawText($title);
+            $safeSubtitle = $this->escapeDrawText($subtitle);
+            $titleY  = (int) ($h * 0.42);
+            $subY    = (int) ($h * 0.56);
+            $filters .= ";[base]drawtext=fontfile='{$font}':text='{$safeTitle}':x=(w-text_w)/2:y={$titleY}:fontsize=72:fontcolor=white:alpha='if(lt(t,0.8),t/0.8,1)'";
+            if ($safeSubtitle !== '') {
+                $filters .= ",drawtext=fontfile='{$font}':text='{$safeSubtitle}':x=(w-text_w)/2:y={$subY}:fontsize=42:fontcolor=white@0.85:alpha='if(lt(t,1.2),t/1.2,1)'";
+            }
+            $filters .= '[vout]';
+            $map = '[vout]';
+        } else {
+            $filters .= '[vout]';
+            $map = '[vout]';
+        }
+
+        $this->runFfmpeg([
+            '-y',
+            '-f', 'lavfi',
+            '-i', "color=c=black:s={$w}x{$h}:r={$fps}:d={$duration}",
+            '-vf', $font
+                ? "drawtext=fontfile='{$font}':text='{$this->escapeDrawText($title)}':x=(w-text_w)/2:y=" . (int)($h*0.42) . ":fontsize=72:fontcolor=white,drawtext=fontfile='{$font}':text='{$this->escapeDrawText($subtitle)}':x=(w-text_w)/2:y=" . (int)($h*0.56) . ":fontsize=42:fontcolor=white@0.85,format=yuv420p"
+                : 'format=yuv420p',
+            '-t', (string) $duration,
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-an',
+            '-movflags', '+faststart',
+            $outputPath,
+        ]);
+    }
+
+    /**
+     * Render a branded outro/CTA clip.
+     * Black background with CTA text and optional logo.
+     */
+    public function renderOutroClip(
+        string  $outputPath,
+        string  $ctaText,
+        string  $subText = '',
+        float   $duration = 4.0,
+        string  $resolution = '1920:1080',
+        ?string $logoPath = null
+    ): void {
+        $this->ensureParentDirectoryExists($outputPath);
+        [$w, $h] = explode(':', $resolution);
+        $font = $this->fontPath();
+        $fps  = 25;
+
+        $vfParts = [];
+        if ($font) {
+            $safeCta = $this->escapeDrawText($ctaText);
+            $safeSub = $this->escapeDrawText($subText);
+            $ctaY    = (int) ($h * 0.42);
+            $subY    = (int) ($h * 0.56);
+            $vfParts[] = "drawtext=fontfile='{$font}':text='{$safeCta}':x=(w-text_w)/2:y={$ctaY}:fontsize=64:fontcolor=white";
+            if ($safeSub !== '') {
+                $vfParts[] = "drawtext=fontfile='{$font}':text='{$safeSub}':x=(w-text_w)/2:y={$subY}:fontsize=38:fontcolor=white@0.8";
+            }
+        }
+        $vfParts[] = 'format=yuv420p';
+        $vf = implode(',', $vfParts);
+
+        $this->runFfmpeg([
+            '-y',
+            '-f', 'lavfi',
+            '-i', "color=c=black:s={$w}x{$h}:r={$fps}:d={$duration}",
+            '-vf', $vf,
+            '-t', (string) $duration,
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-an',
+            '-movflags', '+faststart',
+            $outputPath,
+        ]);
+    }
+
+    /**
+     * Add a single-line text overlay (headline) to an existing video clip.
+     * Used for per-scene labels on the hero/feature scenes.
+     */
+    public function addSceneOverlay(
+        string $inputPath,
+        string $outputPath,
+        string $headline,
+        string $position = 'bottom' // 'bottom' or 'top'
+    ): void {
+        $this->ensureParentDirectoryExists($outputPath);
+        $font = $this->fontPath();
+        if (!$font) {
+            copy($inputPath, $outputPath);
+            return;
+        }
+
+        $safeText = $this->escapeDrawText($headline);
+        $y        = $position === 'top' ? '60' : 'h-text_h-60';
+
+        $this->runFfmpeg([
+            '-y',
+            '-i', $inputPath,
+            '-vf', "drawtext=fontfile='{$font}':text='{$safeText}':x=(w-text_w)/2:y={$y}:fontsize=52:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=14,format=yuv420p",
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-an',
+            '-movflags', '+faststart',
+            $outputPath,
+        ]);
+    }
+
+    /**
+     * Build a full video: intro + scenes (Ken Burns + transitions) + outro.
+     *
+     * @param array  $imagePaths
+     * @param string $outputPath
+     * @param array  $durations        Per-scene durations
+     * @param array  $sceneOverlays    Per-scene headline text (empty string = no overlay)
+     * @param string $introTitle
+     * @param string $introSubtitle
+     * @param string $ctaText
+     * @param string $ctaSubText
+     * @param string $transition
+     * @param float  $transitionDur
+     * @param string $resolution
+     * @return string
+     */
+    public function renderFullVideo(
+        array  $imagePaths,
+        string $outputPath,
+        array  $durations    = [],
+        array  $sceneOverlays = [],
+        string $introTitle   = '',
+        string $introSubtitle = '',
+        string $ctaText      = '',
+        string $ctaSubText   = '',
+        string $transition   = 'fade',
+        float  $transitionDur = 0.8,
+        string $resolution   = '1920:1080'
+    ): string {
+        $validPaths = array_values(array_filter($imagePaths, 'file_exists'));
+
+        $uniqueId = uniqid();
+        $tempDisk = 'local';
+        $tempDir  = "ffmpeg_full_{$uniqueId}";
+        Storage::disk($tempDisk)->makeDirectory($tempDir);
+        $tempBase = Storage::disk($tempDisk)->path($tempDir);
+
+        try {
+            $allClips     = [];
+            $allDurations = [];
+
+            // Intro
+            if ($introTitle !== '') {
+                $introPath = "{$tempBase}/intro.mp4";
+                $this->renderIntroClip($introPath, $introTitle, $introSubtitle, 3.0, $resolution);
+                $allClips[]     = $introPath;
+                $allDurations[] = 3.0;
+            }
+
+            // Scene clips with Ken Burns
+            foreach ($validPaths as $i => $imgPath) {
+                $dur      = (float) ($durations[$i] ?? 3.0);
+                $clipPath = "{$tempBase}/clip_{$i}.mp4";
+                $this->renderKenBurnsClip($imgPath, $clipPath, $dur, $resolution, $i);
+
+                // Add overlay if provided
+                $headline = $sceneOverlays[$i] ?? '';
+                if ($headline !== '') {
+                    $overlayPath = "{$tempBase}/clip_{$i}_ov.mp4";
+                    $this->addSceneOverlay($clipPath, $overlayPath, $headline);
+                    $allClips[]     = $overlayPath;
+                } else {
+                    $allClips[]     = $clipPath;
+                }
+                $allDurations[] = $dur;
+            }
+
+            // Outro
+            if ($ctaText !== '') {
+                $outroPath = "{$tempBase}/outro.mp4";
+                $this->renderOutroClip($outroPath, $ctaText, $ctaSubText, 4.0, $resolution);
+                $allClips[]     = $outroPath;
+                $allDurations[] = 4.0;
+            }
+
+            if (count($allClips) < 2) {
+                copy($allClips[0] ?? $validPaths[0], $outputPath);
+                return $outputPath;
+            }
+
+            $this->chainWithXfade($allClips, $allDurations, $outputPath, $transition, $transitionDur);
+        } finally {
+            Storage::disk($tempDisk)->deleteDirectory($tempDir);
         }
 
         return $outputPath;
     }
 
-    private function buildOverlayFilter(array $lines): string
+    /**
+     * Build the overlay filter for text lines.
+     *
+     * @param array $lines
+     * @return string
+     */
+    private function buildPackageOverlayFilter(array $lines): string
     {
         if (empty($lines)) {
             return '';
         }
 
-        $font = env('FFMPEG_FONT_PATH', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf');
+        $font = config('laravel-ffmpeg.font_path', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf');
         if (!file_exists($font)) {
+            // Log warning or use a simpler filter if font is missing
             return '';
         }
         $font = str_replace(':', '\\:', $font);
@@ -283,9 +761,20 @@ class FFmpegService
         return ',' . implode(',', $filters);
     }
 
+    /**
+     * Escape text for drawtext filter.
+     *
+     * @param string $text
+     * @return string
+     */
     private function escapeDrawText(string $text): string
     {
-        $text = str_replace(['\\', ':', "'", '"', '%'], ['\\\\', '\\:', "\\'", '\\"', '\\%'], $text);
-        return $text;
+        return str_replace(['\\', ':', "'", '"', '%'], ['\\\\', '\\:', "\\'", '\\"', '\\%'], $text);
+    }
+
+    private function fontPath(): ?string
+    {
+        $font = config('laravel-ffmpeg.font_path', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf');
+        return file_exists($font) ? str_replace(':', '\\:', $font) : null;
     }
 }
