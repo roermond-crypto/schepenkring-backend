@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\Admin\ImpersonationController as AdminImpersonation
 use App\Http\Controllers\Api\Admin\PlatformErrorController;
 use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\UserLocationController as AdminUserLocationController;
+use App\Http\Controllers\Api\Admin\BoatAuctionController as AdminBoatAuctionController;
 use App\Http\Controllers\Api\Admin\YachtshiftImportController;
 use App\Http\Controllers\Api\AiPipelineController;
 
@@ -32,6 +33,7 @@ use App\Http\Controllers\Api\BidWidgetController;
 use App\Http\Controllers\Api\BoatDocumentController;
 use App\Http\Controllers\Api\BoatFormConfigController;
 use App\Http\Controllers\Api\BoatVideoController;
+use App\Http\Controllers\Api\BoatVideoSettingController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
 use App\Http\Controllers\Api\CatalogAutocompleteController;
 use App\Http\Controllers\Api\ChatConversationController;
@@ -54,6 +56,7 @@ use App\Http\Controllers\Api\AiKnowledgeArticleController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\LockscreenController;
 use App\Http\Controllers\Api\SocialVideoController;
+use App\Http\Controllers\Api\VideoPlanController;
 use App\Http\Controllers\Api\Me\AddressController as MeAddressController;
 use App\Http\Controllers\Api\Me\MeController;
 use App\Http\Controllers\Api\Me\PasswordController as MePasswordController;
@@ -107,6 +110,7 @@ Route::prefix('public/conversations/{conversationId}')->group(function () {
 
 Route::get('yachts/{yachtId}/fields/{fieldName}/history', [\App\Http\Controllers\Api\YachtFieldHistoryController::class, 'show']);
 Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']); // Legacy gallery route
+Route::get('/video/music-tracks/{slug}/stream', [VideoPlanController::class, 'streamMusicTrack']);
 
 // AI pipeline
 Route::post('ai/pipeline-extract', [AiPipelineController::class, 'extractAndEnrich']);
@@ -179,6 +183,9 @@ Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'sto
 // ──────────────────────────────────────────────────────────
 // Authenticated routes
 // ──────────────────────────────────────────────────────────
+// Public media streaming endpoints (HTML <video>/<audio> cannot send Authorization headers reliably).
+Route::get('/video-plans/{id}/stream', [VideoPlanController::class, 'streamRenderedPlan']);
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('boat-form-config', [BoatFormConfigController::class, 'index']);
 
@@ -229,6 +236,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'store']);
     Route::delete('boat-videos/{id}', [BoatVideoController::class, 'destroy']);
     Route::post('boat-videos/{id}/publish', [BoatVideoController::class, 'publish']);
+    Route::get('yachts/{id}/video-settings', [BoatVideoSettingController::class, 'show']);
+    Route::put('yachts/{id}/video-settings', [BoatVideoSettingController::class, 'update']);
 
     // Current user & lockscreen
     Route::get('user', function (Request $request) {
@@ -269,6 +278,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/social/posts/{id}/retry', [SocialVideoController::class, 'retry']);
     Route::post('/social/videos/{id}/regenerate', [SocialVideoController::class, 'regenerate']);
     Route::post('/social/videos/{id}/notify-owner', [SocialVideoController::class, 'notifyOwner']);
+
+    // Video Templates & AI Plans
+    Route::get('/video-templates', [VideoPlanController::class, 'templates']);
+    Route::post('/video-templates', [VideoPlanController::class, 'storeTemplate']);
+    Route::put('/video-templates/{id}', [VideoPlanController::class, 'updateTemplate']);
+    Route::get('/yachts/{id}/video-plans', [VideoPlanController::class, 'index']);
+    Route::post('/yachts/{id}/video-plans', [VideoPlanController::class, 'generate']);
+    Route::get('/video-plans/{id}', [VideoPlanController::class, 'show']);
+    Route::patch('/video-plans/{id}', [VideoPlanController::class, 'update']);
+    Route::post('/video-plans/{id}/approve', [VideoPlanController::class, 'approve']);
+    Route::post('/video-plans/{id}/render', [VideoPlanController::class, 'render']);
+    Route::post('/video-plans/{id}/retry', [VideoPlanController::class, 'retry']);
+    Route::post('/video-plans/{id}/preview', [VideoPlanController::class, 'preview']);
+    Route::delete('/video-plans/{id}', [VideoPlanController::class, 'destroy']);
+    Route::get('/video/music-tracks', [VideoPlanController::class, 'musicTracks']);
+    Route::post('/video/music-tracks', [VideoPlanController::class, 'uploadMusicTrack']);
+    Route::delete('/video/music-tracks/{slug}', [VideoPlanController::class, 'deleteMusicTrack']);
 
     // Audit logs
     Route::get('audit-logs', [AuditLogController::class, 'index']);

@@ -32,7 +32,8 @@ class BoatVideoSettingController extends Controller
 
         return response()->json([
             'settings' => $settings,
-            'social_posts' => $socialPosts
+            'social_posts' => $socialPosts,
+            'image_count' => $yacht->images()->count(),
         ]);
     }
 
