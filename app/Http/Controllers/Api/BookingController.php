@@ -64,6 +64,12 @@ class BookingController extends Controller
 
         $booking = Booking::create($validated);
 
+        try {
+            app(\App\Services\TaskAutomationRuleEngine::class)->handle('booking_created', $booking, $request->user());
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[TaskAutomationRuleEngine] Booking trigger failed: ' . $e->getMessage());
+        }
+
         if (!empty($validated['conversation_id'])) {
             try {
                 $conversation = \App\Models\Conversation::find($validated['conversation_id']);

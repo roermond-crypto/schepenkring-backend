@@ -325,10 +325,21 @@ class YachtController extends Controller
                 }
             }
 
-            $this->triggerAutomaticVideoFlows($yacht, ! $isUpdate);
-
             $oldStatusStr = strtolower((string) ($beforeSnapshot['status'] ?? 'draft'));
             $newStatusStr = strtolower((string) ($yacht->status ?? ''));
+
+            try {
+                if (! $isUpdate) {
+                    app(\App\Services\TaskAutomationRuleEngine::class)->handle('boat_created', $yacht, $actor);
+                } elseif ($oldStatusStr !== $newStatusStr && in_array($newStatusStr, ['active', 'for sale'], true)) {
+                    app(\App\Services\TaskAutomationRuleEngine::class)->handle('boat_status_activated', $yacht, $actor);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[TaskAutomationRuleEngine] Non-critical failure: ' . $e->getMessage());
+            }
+
+            $this->triggerAutomaticVideoFlows($yacht, ! $isUpdate);
+
             if ($oldStatusStr !== $newStatusStr && in_array($newStatusStr, ['active', 'for sale'], true)) {
                 $this->triggerSignhostContract($yacht, $actor);
             }

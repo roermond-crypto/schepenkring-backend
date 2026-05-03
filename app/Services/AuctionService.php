@@ -459,6 +459,12 @@ class AuctionService
             $winningBid->status = 'won';
             $winningBid->save();
 
+            try {
+                app(TaskAutomationRuleEngine::class)->handle('bid_accepted', $winningBid, $actor);
+            } catch (\Throwable $error) {
+                \Illuminate\Support\Facades\Log::warning('[TaskAutomationRuleEngine] Bid trigger failed: ' . $error->getMessage());
+            }
+
             $session->highest_bid = $winningBid->amount;
             $session->highest_bidder_id = $winningBid->bidder_id;
         }
