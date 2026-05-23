@@ -599,4 +599,12 @@ Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->gro
 });
 
 
+// AI Helpdesk — voice sessions via Vonage + OpenAI Realtime
+Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
+    Route::post('voice/session', [\App\Http\Controllers\Api\HelpdeskController::class, 'voiceSession']);
+    Route::post('events', [\App\Http\Controllers\Api\HelpdeskController::class, 'recordEvent']);
+    Route::get('sessions', [\App\Http\Controllers\Api\HelpdeskController::class, 'sessions']);
+    Route::get('sessions/{id}/transcript', [\App\Http\Controllers\Api\HelpdeskController::class, 'transcript']);
+});
+
 // crape 3000+ boats
