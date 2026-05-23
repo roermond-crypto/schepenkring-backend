@@ -82,6 +82,7 @@ use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
 
@@ -254,6 +255,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('me/address', [MeAddressController::class, 'update']);
     Route::patch('me/security', [MeSecurityController::class, 'update']);
     Route::patch('me/password', [MePasswordController::class, 'update']);
+
+    // Seller dashboard
+    Route::get('dashboard/seller/summary', [SellerDashboardController::class, 'summary']);
 
     // Notifications
     Route::prefix('notifications')->group(function () {
