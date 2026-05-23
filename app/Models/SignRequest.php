@@ -38,4 +38,9 @@ class SignRequest extends Model
     {
         return $this->belongsTo(User::class, 'requested_by_user_id');
     }
+
+    public function yacht(): BelongsTo
+    {
+        return $this->belongsTo(Yacht::class, 'entity_id');
+    }
 }

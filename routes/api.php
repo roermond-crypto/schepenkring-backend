@@ -386,6 +386,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('signhost/cancel', [SignhostController::class, 'cancel']);
     Route::get('signhost/status', [SignhostController::class, 'status']);
     Route::get('signhost/documents', [SignhostController::class, 'documents']);
+    Route::post('signhost/refresh-url', [SignhostController::class, 'refreshSignUrl']);
     Route::post('yachts/{yachtId}/contract/generate', [SignhostController::class, 'generateYachtContract']);
     Route::post('yachts/{yachtId}/signhost/create', [SignhostController::class, 'createYachtSignhost']);
     Route::get('yachts/{yachtId}/signhost/status', [SignhostController::class, 'yachtStatus']);
