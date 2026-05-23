@@ -2,22 +2,22 @@
 
 | # | Task Title | Branch | PR Link | Status | Requires Frontend |
 |---|------------|--------|---------|--------|-------------------|
-| 279 | BIDS Page Visibility (location settings) | `feature/279-bids-page-visibility` | — | Done | Yes |
-| 270 | Fix "Report an Issue" Modal (async AI job) | `feature/270-report-issue-async-ai` | — | Done | No |
-| 268 | Seller Dashboard Aggregated API | `feature/268-seller-dashboard-api` | — | Done | Yes |
-| 265 | Onboarding Corrections (remove payment/contract/verification) | `feature/265-onboarding-corrections` | — | Done | Yes |
-| 266 | Bidding System (counter offer, chat, deal creation) | `feature/266-bidding-system` | — | Done | Yes |
-| 271 | Selectable AI Boat Matches | `feature/271-selectable-ai-boat-matches` | — | Done | Yes |
-| 267 | Client Onboarding & AI Draft Boat Flow | `feature/267-client-onboarding-ai-flow` | — | Done | Yes |
-| 269 | Dashboard Chat Upgrade (message types, Signhost, filters) | `feature/269-dashboard-chat-upgrade` | — | Done | Yes |
-| 272 | YachtShift Sync Layer (two-way, audit, conflict) | `feature/272-yachtshift-sync` | — | Done | No |
-| 273 | Fix AI Boat Library/Scraper (Pinecone re-index) | `feature/273-fix-ai-boat-scraper` | — | Done | No |
-| 274 | Full Seller Onboarding Test (Bayliner 2855) | `feature/274-seller-onboarding-e2e-test` | — | Done | No |
-| 275 | AI Helpdesk (Vonage + OpenAI Realtime) | `feature/275-ai-helpdesk` | — | Done | Yes |
-| 276 | Location-Based Bidding Modes | `feature/276-location-based-bidding` | — | Done | Yes |
-| 277 | Full Platform QA Checklist | `feature/277-platform-qa-checklist` | — | Done | No |
-| 281 | Client Contract Card Improvement | `feature/281-contract-card-improvement` | — | Done | Yes |
-| 148 | Co-pilot "Create Boat" Bug Fix | `fix/148-copilot-create-boat` | — | Done | No |
+| 279 | BIDS Page Visibility (location settings) | `feature/279-bids-page-visibility` | [#68](https://github.com/roermond-crypto/schepenkring-backend/pull/68) | Done | Yes |
+| 270 | Fix "Report an Issue" Modal (async AI job) | `feature/270-report-issue-async-ai` | [#69](https://github.com/roermond-crypto/schepenkring-backend/pull/69) | Done | No |
+| 268 | Seller Dashboard Aggregated API | `feature/268-seller-dashboard-api` | [#70](https://github.com/roermond-crypto/schepenkring-backend/pull/70) | Done | Yes |
+| 265 | Onboarding Corrections (remove payment/contract/verification) | `feature/265-onboarding-corrections` | [#71](https://github.com/roermond-crypto/schepenkring-backend/pull/71) | Done | Yes |
+| 266 | Bidding System (counter offer, chat, deal creation) | `feature/266-bidding-system` | [#72](https://github.com/roermond-crypto/schepenkring-backend/pull/72) | Done | Yes |
+| 271 | Selectable AI Boat Matches | `feature/271-selectable-ai-boat-matches` | [#73](https://github.com/roermond-crypto/schepenkring-backend/pull/73) | Done | Yes |
+| 267 | Client Onboarding & AI Draft Boat Flow | `feature/267-client-onboarding-ai-flow` | [#74](https://github.com/roermond-crypto/schepenkring-backend/pull/74) | Done | Yes |
+| 269 | Dashboard Chat Upgrade (message types, Signhost, filters) | `feature/269-dashboard-chat-upgrade` | [#75](https://github.com/roermond-crypto/schepenkring-backend/pull/75) | Done | Yes |
+| 272 | YachtShift Sync Layer (two-way, audit, conflict) | `feature/272-yachtshift-sync` | [#76](https://github.com/roermond-crypto/schepenkring-backend/pull/76) | Done | No |
+| 273 | Fix AI Boat Library/Scraper (Pinecone re-index) | `feature/273-fix-ai-boat-scraper` | [#77](https://github.com/roermond-crypto/schepenkring-backend/pull/77) | Done | No |
+| 274 | Full Seller Onboarding Test (Bayliner 2855) | `feature/274-seller-onboarding-e2e-test` | [#78](https://github.com/roermond-crypto/schepenkring-backend/pull/78) | Done | No |
+| 275 | AI Helpdesk (Vonage + OpenAI Realtime) | `feature/275-ai-helpdesk` | [#79](https://github.com/roermond-crypto/schepenkring-backend/pull/79) | Done | Yes |
+| 276 | Location-Based Bidding Modes | `feature/276-location-based-bidding` | [#80](https://github.com/roermond-crypto/schepenkring-backend/pull/80) | Done | Yes |
+| 277 | Full Platform QA Checklist | `feature/277-platform-qa-checklist` | [#81](https://github.com/roermond-crypto/schepenkring-backend/pull/81) | Done | No |
+| 281 | Client Contract Card Improvement | `feature/281-contract-card-improvement` | [#82](https://github.com/roermond-crypto/schepenkring-backend/pull/82) | Done | Yes |
+| 148 | Co-pilot "Create Boat" Bug Fix | `fix/148-copilot-create-boat` | [#83](https://github.com/roermond-crypto/schepenkring-backend/pull/83) | Done | No |
 
 ---
 
