@@ -485,6 +485,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/profile-setup/address', [\App\Http\Controllers\Api\ProfileSetupController::class, 'saveAddress']);
 });
 
+// Client onboarding — public quick-register (no auth needed)
+Route::post('onboarding/quick-register', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'quickRegister']);
+
+// Client onboarding — authenticated actions
+Route::middleware('auth:sanctum')->prefix('onboarding')->group(function () {
+    Route::post('ai-draft', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'aiDraft']);
+    Route::post('deeplink', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'deeplink']);
+    Route::get('thank-you', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'thankYou']);
+});
+
 // Onboarding Webhooks
 Route::post('/onboarding/webhooks/mollie', [OnboardingWebhookController::class, 'mollie']);
 Route::post('/onboarding/webhooks/signhost', [OnboardingWebhookController::class, 'signhost']);
