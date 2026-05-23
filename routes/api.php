@@ -538,6 +538,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
     Route::put('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
+    Route::get('locations/{id}/bid-settings', [\App\Http\Controllers\Api\Admin\LocationBidSettingsController::class, 'show']);
+    Route::put('locations/{id}/bid-settings', [\App\Http\Controllers\Api\Admin\LocationBidSettingsController::class, 'update']);
     
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
