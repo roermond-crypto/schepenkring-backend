@@ -599,4 +599,9 @@ Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->gro
 });
 
 
+// QA Health
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/qa')->group(function () {
+    Route::get('health', [\App\Http\Controllers\Api\Admin\QaHealthController::class, 'health']);
+});
+
 // crape 3000+ boats
