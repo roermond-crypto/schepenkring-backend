@@ -351,6 +351,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
     Route::patch('chat/conversations/{id}/contact', [ChatConversationController::class, 'updateContact']);
     Route::get('chat/conversations/{id}/stream', [ChatConversationController::class, 'stream']);
+    Route::get('chat/conversations/{id}/ai-summary', [ChatConversationController::class, 'aiSummary']);
     Route::post('chat/messages/{id}/thumbs-up', [ChatMessageController::class, 'thumbsUp']);
 
     // Location FAQ training
