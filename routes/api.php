@@ -83,6 +83,7 @@ use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\IssueController;
+use App\Http\Controllers\Api\OwnerBidController;
 use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
@@ -259,6 +260,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Seller dashboard
     Route::get('dashboard/seller/summary', [SellerDashboardController::class, 'summary']);
+
+    // Owner bids (direct buyer→seller bidding)
+    Route::post('owner-bids', [OwnerBidController::class, 'store']);
+    Route::post('owner-bids/{id}/counter', [OwnerBidController::class, 'counter']);
+    Route::post('owner-bids/{id}/accept', [OwnerBidController::class, 'accept']);
+    Route::post('owner-bids/{id}/reject', [OwnerBidController::class, 'reject']);
 
     // Notifications
     Route::prefix('notifications')->group(function () {
