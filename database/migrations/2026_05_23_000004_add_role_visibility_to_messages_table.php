@@ -9,15 +9,19 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('messages', function (Blueprint $table) {
-            $table->json('role_visibility')->nullable()->after('message_type');
-            // message_type values: chat | email | system | signhost | contract | boat | admin_note
+            if (!Schema::hasColumn('messages', 'role_visibility')) {
+                // message_type values: chat | email | system | signhost | contract | boat | admin_note
+                $table->json('role_visibility')->nullable()->after('message_type');
+            }
         });
     }
 
     public function down(): void
     {
         Schema::table('messages', function (Blueprint $table) {
-            $table->dropColumn('role_visibility');
+            if (Schema::hasColumn('messages', 'role_visibility')) {
+                $table->dropColumn('role_visibility');
+            }
         });
     }
 };
