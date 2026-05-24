@@ -602,6 +602,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('issues', [IssueController::class, 'index'])->missing(fn () => response()->json(['message' => 'Not found'], 404));
     Route::post('issues/{id}/retry-ai', [IssueController::class, 'retryAi']);
 
+    // AI Library stats and Pinecone re-index
+    Route::get('ai-library/stats', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'stats']);
+    Route::post('ai-library/re-index', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'reIndex']);
+
+    // YachtShift two-way sync
+    Route::post('yachtshift/sync', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'trigger']);
+    Route::get('yachtshift/sync/status', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'status']);
+
     // Copilot admin
     Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);
     Route::post('copilot/draft', [CopilotActionWorkflowController::class, 'draft']);
