@@ -82,6 +82,9 @@ use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\IssueController;
+use App\Http\Controllers\Api\OwnerBidController;
+use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
 
@@ -255,6 +258,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('me/security', [MeSecurityController::class, 'update']);
     Route::patch('me/password', [MePasswordController::class, 'update']);
 
+    // Seller dashboard
+    Route::get('dashboard/seller/summary', [SellerDashboardController::class, 'summary']);
+
+    // Owner bids (direct buyer→seller bidding)
+    Route::post('owner-bids', [OwnerBidController::class, 'store']);
+    Route::post('owner-bids/{id}/counter', [OwnerBidController::class, 'counter']);
+    Route::post('owner-bids/{id}/accept', [OwnerBidController::class, 'accept']);
+    Route::post('owner-bids/{id}/reject', [OwnerBidController::class, 'reject']);
+
     // Notifications
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
@@ -339,6 +351,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('chat/conversations/{id}', [ChatConversationController::class, 'update']);
     Route::patch('chat/conversations/{id}/contact', [ChatConversationController::class, 'updateContact']);
     Route::get('chat/conversations/{id}/stream', [ChatConversationController::class, 'stream']);
+    Route::get('chat/conversations/{id}/ai-summary', [ChatConversationController::class, 'aiSummary']);
     Route::post('chat/messages/{id}/thumbs-up', [ChatMessageController::class, 'thumbsUp']);
 
     // Location FAQ training
@@ -479,10 +492,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/buyer-verification/kyc/answers', [BuyerVerificationController::class, 'answerKyc']);
     Route::post('/buyer-verification/submit', [BuyerVerificationController::class, 'submit']);
 
+    // Issue reporting (async AI analysis)
+    Route::post('issues', [IssueController::class, 'store']);
+
     // Profile setup status — used by frontend to decide which onboarding panel to show
     Route::get('/profile-setup/status', [\App\Http\Controllers\Api\ProfileSetupController::class, 'status']);
     Route::get('/profile-setup/address/search', [\App\Http\Controllers\Api\ProfileSetupController::class, 'search']);
     Route::put('/profile-setup/address', [\App\Http\Controllers\Api\ProfileSetupController::class, 'saveAddress']);
+});
+
+// Client onboarding — public quick-register (no auth needed)
+Route::post('onboarding/quick-register', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'quickRegister']);
+
+// Client onboarding — authenticated actions
+Route::middleware('auth:sanctum')->prefix('onboarding')->group(function () {
+    Route::post('ai-draft', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'aiDraft']);
+    Route::post('deeplink', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'deeplink']);
+    Route::get('thank-you', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'thankYou']);
 });
 
 // Onboarding Webhooks
@@ -538,10 +564,16 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
     Route::put('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
+    Route::put('locations/{id}/bid-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
     
     // YachtShift two-way sync
     Route::post('yachtshift/sync', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'trigger']);
     Route::get('yachtshift/sync/status', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'status']);
+
+    // Yacht draft AI (selectable matches + autofill)
+    Route::get('yachts/draft/{draftId}/ai-matches', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiMatches']);
+    Route::post('yachts/draft/{draftId}/select-reference-boat', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'selectReferenceBoat']);
+    Route::post('yachts/draft/{draftId}/ai-autofill', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiAutofill']);
 
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
@@ -565,6 +597,10 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
     Route::get('boat-audit', [\App\Http\Controllers\Api\Admin\BoatAuditController::class, 'index']);
+
+    // Issue management (admin)
+    Route::get('issues', [IssueController::class, 'index'])->missing(fn () => response()->json(['message' => 'Not found'], 404));
+    Route::post('issues/{id}/retry-ai', [IssueController::class, 'retryAi']);
 
     // Copilot admin
     Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);
