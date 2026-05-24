@@ -32,10 +32,12 @@ class Message extends Model
         'body',
         'client_message_id',
         'delivery_state',
+        'role_visibility',
     ];
 
     protected $casts = [
         'metadata' => 'array',
+        'role_visibility' => 'array',
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
         'ai_confidence' => 'decimal:2',

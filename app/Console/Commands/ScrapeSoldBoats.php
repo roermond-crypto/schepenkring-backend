@@ -75,9 +75,16 @@ class ScrapeSoldBoats extends Command
                 }
 
                 $crawler = new Crawler($response->body());
-                $boatLinks = $crawler->filter('a.botenloop')->each(function (Crawler $node) {
-                    return $node->attr('href');
-                });
+
+                // Primary selector; fall back to broader anchor patterns
+                // that cover alternative templates (grid view, list view, etc.)
+                $boatLinks = $crawler->filter('a.botenloop')->each(fn (Crawler $n) => $n->attr('href'));
+
+                if (empty($boatLinks)) {
+                    $boatLinks = $crawler->filter('a[href*="/boot/"], a[href*="/boten/"], a[href*="/boot-te-koop/"]')
+                        ->each(fn (Crawler $n) => $n->attr('href'));
+                }
+
                 $boatLinks = collect($boatLinks)
                     ->map(fn($href) => $this->normalizeExternalUrl($href, $url))
                     ->filter()

@@ -20,10 +20,17 @@ class Location extends Model
         'chat_widget_enabled',
         'chat_widget_welcome_text',
         'chat_widget_theme',
+        'bids_page_enabled',
+        'seller_bid_notifications_enabled',
+        'direct_buyer_seller_chat_enabled',
+        'bid_routing_mode',
     ];
 
     protected $casts = [
         'chat_widget_enabled' => 'boolean',
+        'bids_page_enabled' => 'boolean',
+        'seller_bid_notifications_enabled' => 'boolean',
+        'direct_buyer_seller_chat_enabled' => 'boolean',
     ];
 
     public function users(): BelongsToMany

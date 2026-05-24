@@ -5,11 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Location;
+use App\Models\Message;
 use App\Services\ChatAccessService;
 use App\Services\ChatContactService;
 use App\Services\ChatConversationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class ChatConversationController extends Controller
@@ -296,5 +300,42 @@ class ChatConversationController extends Controller
 
         $conversation->lead->fill($updates);
         $conversation->lead->save();
+    }
+
+    public function aiSummary(Request $request, string $id, ChatAccessService $access): JsonResponse
+    {
+        $user = $request->user();
+        $conversation = Conversation::findOrFail($id);
+        $access->assertCanView($user, $conversation);
+
+        $messages = Message::where('conversation_id', $id)
+            ->orderBy('created_at')
+            ->limit(50)
+            ->get(['sender_type', 'body', 'text', 'message_type', 'created_at']);
+
+        $transcript = $messages->map(fn ($m) => "[{$m->sender_type}] " . ($m->body ?: $m->text))->implode("\n");
+
+        if (blank($transcript)) {
+            return response()->json(['summary' => 'No messages to summarize.']);
+        }
+
+        $response = Http::withToken(config('services.openai.api_key'))
+            ->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    ['role' => 'system', 'content' => 'You summarize boat marketplace conversations in 2-3 sentences. Be factual and concise.'],
+                    ['role' => 'user', 'content' => "Summarize this conversation:\n\n{$transcript}"],
+                ],
+                'max_tokens' => 200,
+            ]);
+
+        if ($response->failed()) {
+            Log::error('ChatConversationController: AI summary failed', ['status' => $response->status()]);
+            return response()->json(['summary' => 'Summary unavailable.'], 502);
+        }
+
+        return response()->json([
+            'summary' => $response->json('choices.0.message.content', 'Summary unavailable.'),
+        ]);
     }
 }
