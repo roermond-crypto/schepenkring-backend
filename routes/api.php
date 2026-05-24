@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\IssueController;
 use App\Http\Controllers\Api\OwnerBidController;
+use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
 

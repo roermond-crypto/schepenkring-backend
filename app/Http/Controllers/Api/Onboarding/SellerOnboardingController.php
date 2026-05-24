@@ -283,9 +283,8 @@ class SellerOnboardingController extends Controller
         $user = $this->ensureSeller($request);
         $onboarding = $orchestrator->getOrCreate($user);
 
-        if ($onboarding->idin_status !== 'completed' || $onboarding->ideal_status !== 'completed') {
-            return response()->json(['message' => 'Verification must be completed before KYC submission.'], 422);
-        }
+        // Payment, contract, and iDIN/iDEAL verification are no longer required.
+        // The flow is: profile → KYC answers → submit.
 
         $requiredQuestionIds = KycQuestion::query()
             ->where('is_active', true)
@@ -324,27 +323,16 @@ class SellerOnboardingController extends Controller
 
     private function formatStatus(SellerOnboarding $onboarding): array
     {
-        $providerRedirect = $onboarding->latestSignhostPhase?->redirect_url
-            ?: $onboarding->signhostTransactions()
-                ->whereIn('status', ['pending', 'started', 'signing'])
-                ->latest('id')
-                ->value('redirect_url');
-
         return [
             'onboarding_id' => $onboarding->id,
             'status' => $onboarding->status,
             'next_step' => $this->nextStep($onboarding),
             'seller_type' => $onboarding->profile?->seller_type,
-            'payment_status' => $onboarding->payment_status,
-            'idin_status' => $onboarding->idin_status,
-            'ideal_status' => $onboarding->ideal_status,
             'kyc_status' => $onboarding->kyc_status,
-            'contract_status' => $onboarding->contract_status,
             'risk_score' => $onboarding->risk_score,
             'manual_review_required' => $onboarding->manual_review_required,
             'decision' => $onboarding->decision,
             'verified_at' => $onboarding->verified_at?->toIso8601String(),
-            'expires_at' => $onboarding->expires_at?->toIso8601String(),
             'is_currently_valid' => $onboarding->isCurrentlyValid(),
             'profile' => $onboarding->profile ? [
                 'seller_type' => $onboarding->profile->seller_type,
@@ -362,20 +350,6 @@ class SellerOnboardingController extends Controller
                 'company_name' => $onboarding->profile->company_name,
                 'kvk_number' => $onboarding->profile->kvk_number,
             ] : null,
-            'payment' => $onboarding->payments()->latest('id')->first() ? [
-                'status' => $onboarding->payments()->latest('id')->value('status'),
-                'checkout_url' => $onboarding->payments()->latest('id')->value('checkout_url'),
-                'paid_at' => optional($onboarding->payments()->latest('id')->first()?->paid_at)?->toIso8601String(),
-            ] : null,
-            'contract' => $onboarding->latestContract ? [
-                'id' => $onboarding->latestContract->id,
-                'type' => $onboarding->latestContract->contract_type,
-                'status' => $onboarding->latestContract->status,
-                'pdf_path' => $onboarding->latestContract->contract_pdf_path,
-                'sign_url' => $onboarding->latestContract->sign_url,
-                'generated_at' => $onboarding->latestContract->generated_at?->toIso8601String(),
-                'signed_at' => $onboarding->latestContract->signed_at?->toIso8601String(),
-            ] : null,
             'flags' => $onboarding->flags->map(fn ($flag) => [
                 'flag_code' => $flag->flag_code,
                 'severity' => $flag->severity,
@@ -383,16 +357,16 @@ class SellerOnboardingController extends Controller
                 'is_blocking' => $flag->is_blocking,
             ])->values(),
             'can_publish_boat' => $onboarding->can_publish_boat,
-            'provider_redirect_url' => $providerRedirect,
+            'steps' => [
+                'profile' => $onboarding->profile?->seller_type ? 'complete' : 'pending',
+                'kyc' => $onboarding->kyc_status === 'completed' ? 'complete' : 'pending',
+            ],
         ];
     }
 
     private function nextStep(SellerOnboarding $onboarding): ?string
     {
         if ($onboarding->status === SellerOnboardingStatus::APPROVED) {
-            if ($onboarding->expires_at?->isPast()) {
-                return 'reverification';
-            }
             return null;
         }
 
@@ -408,24 +382,8 @@ class SellerOnboardingController extends Controller
             return 'rejected';
         }
 
-        if ($onboarding->payment_status !== 'paid') {
-            return 'payment';
-        }
-
-        if (!$onboarding->latestContract || !in_array($onboarding->contract_status, ['generated', 'signing', 'signed'], true)) {
-            return 'contract';
-        }
-
-        if ($onboarding->idin_status !== 'completed' || $onboarding->ideal_status !== 'completed') {
-            return 'verification';
-        }
-
         if ($onboarding->kyc_status !== 'completed') {
             return 'kyc';
-        }
-
-        if ($onboarding->contract_status !== 'signed') {
-            return 'signing';
         }
 
         return null;
