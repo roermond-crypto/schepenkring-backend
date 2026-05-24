@@ -566,6 +566,10 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::put('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
     Route::put('locations/{id}/bid-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
     
+    // YachtShift two-way sync
+    Route::post('yachtshift/sync', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'trigger']);
+    Route::get('yachtshift/sync/status', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'status']);
+
     // Yacht draft AI (selectable matches + autofill)
     Route::get('yachts/draft/{draftId}/ai-matches', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiMatches']);
     Route::post('yachts/draft/{draftId}/select-reference-boat', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'selectReferenceBoat']);
