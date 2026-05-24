@@ -16,7 +16,9 @@ use App\Http\Requests\Api\Signhost\SignhostRequestQuery;
 use App\Http\Resources\SignDocumentResource;
 use App\Http\Resources\SignRequestResource;
 use App\Models\SignRequest;
+use App\Services\SignhostService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class SignhostController extends Controller
 {
@@ -93,13 +95,78 @@ class SignhostController extends Controller
         ]);
     }
 
-    public function documents(SignhostRequestQuery $request, ListSignhostDocumentsAction $action)
+    public function documents(SignhostRequestQuery $request, ListSignhostDocumentsAction $action, GetSignhostStatusAction $statusAction)
     {
         $documents = $action->execute($request->user(), $request->validated());
 
+        $yacht = null;
+        try {
+            $signRequest = $statusAction->execute($request->user(), $request->validated());
+            if ($signRequest->entity_type === 'Yacht') {
+                $signRequest->load('yacht');
+                $yr = $signRequest->yacht;
+                $yacht = $yr ? [
+                    'id' => $yr->id,
+                    'name' => $yr->name,
+                    'type' => $yr->type,
+                    'year' => $yr->year,
+                    'asking_price' => $yr->asking_price,
+                ] : null;
+            }
+        } catch (\Throwable) {
+        }
+
         return response()->json([
+            'yacht' => $yacht,
             'documents' => SignDocumentResource::collection($documents),
         ]);
+    }
+
+    public function refreshSignUrl(Request $request, SignhostService $signhost): \Illuminate\Http\JsonResponse
+    {
+        $request->validate([
+            'sign_request_id' => 'required_without:yacht_id|nullable|integer',
+            'yacht_id' => 'required_without:sign_request_id|nullable|integer',
+        ]);
+
+        $query = SignRequest::query();
+        if ($request->filled('sign_request_id')) {
+            $signRequest = $query->findOrFail($request->integer('sign_request_id'));
+        } else {
+            $signRequest = $query
+                ->where('entity_type', 'Yacht')
+                ->where('entity_id', $request->integer('yacht_id'))
+                ->latest()
+                ->firstOrFail();
+        }
+
+        if (! $signRequest->signhost_transaction_id) {
+            return response()->json(['message' => 'No Signhost transaction linked to this sign request.'], 422);
+        }
+
+        try {
+            $transaction = $signhost->getTransaction($signRequest->signhost_transaction_id);
+            $newUrl = $this->extractFirstSignerUrl($transaction);
+
+            if ($newUrl) {
+                $signRequest->update(['sign_url' => $newUrl]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('SignhostController: refreshSignUrl failed', ['error' => $e->getMessage()]);
+        }
+
+        return response()->json([
+            'sign_request' => new SignRequestResource($signRequest->fresh()->load('documents')),
+        ]);
+    }
+
+    private function extractFirstSignerUrl(array $transaction): ?string
+    {
+        $signers = $transaction['Signers'] ?? $transaction['signers'] ?? [];
+        if (empty($signers)) {
+            return null;
+        }
+        return $signers[0]['SignUrl'] ?? $signers[0]['signUrl'] ?? null;
     }
 
     // Compatibility: NauticSecure yacht endpoints
