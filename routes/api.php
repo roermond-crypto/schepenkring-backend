@@ -82,6 +82,7 @@ use App\Http\Controllers\Api\VoiceTranscriptController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
+use App\Http\Controllers\Api\IssueController;
 use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
@@ -483,6 +484,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/buyer-verification/kyc/answers', [BuyerVerificationController::class, 'answerKyc']);
     Route::post('/buyer-verification/submit', [BuyerVerificationController::class, 'submit']);
 
+    // Issue reporting (async AI analysis)
+    Route::post('issues', [IssueController::class, 'store']);
+
     // Profile setup status — used by frontend to decide which onboarding panel to show
     Route::get('/profile-setup/status', [\App\Http\Controllers\Api\ProfileSetupController::class, 'status']);
     Route::get('/profile-setup/address/search', [\App\Http\Controllers\Api\ProfileSetupController::class, 'search']);
@@ -542,6 +546,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('users/{id}/locations', [AdminUserLocationController::class, 'update']);
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
     Route::put('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
+    Route::put('locations/{id}/bid-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'update']);
     
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
@@ -565,6 +570,10 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
     Route::get('boat-audit', [\App\Http\Controllers\Api\Admin\BoatAuditController::class, 'index']);
+
+    // Issue management (admin)
+    Route::get('issues', [IssueController::class, 'index'])->missing(fn () => response()->json(['message' => 'Not found'], 404));
+    Route::post('issues/{id}/retry-ai', [IssueController::class, 'retryAi']);
 
     // Copilot admin
     Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);
