@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Bids\BidderRegisterRequest;
 use App\Http\Requests\Api\Bids\BidderVerifyRequest;
 use App\Http\Requests\Api\Bids\BidPlaceRequest;
+use App\Models\Location;
 use App\Models\Yacht;
 use App\Services\AuctionService;
 use App\Services\BidRulesService;
@@ -158,8 +159,16 @@ class BidWidgetController extends Controller
             return response()->json(['message' => 'Listing not found.'], 404);
         }
 
-        $amount = (float) $request->validated()['amount'];
         $locationId = $request->integer('location_id') ?: null;
+
+        if ($locationId) {
+            $location = Location::find($locationId);
+            if ($location && ! $location->bids_page_enabled) {
+                return response()->json(['message' => 'Bidding is not enabled for this location.'], 403);
+            }
+        }
+
+        $amount = (float) $request->validated()['amount'];
         $bid = $action->execute($bidder, $yacht, $amount, $request, $locationId);
 
         $yacht->refresh();
