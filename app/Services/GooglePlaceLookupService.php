@@ -93,7 +93,8 @@ class GooglePlaceLookupService
                 ])
                 ->post('https://places.googleapis.com/v1/places:autocomplete', [
                     'input' => $query,
-                    'languageCode' => 'en',
+                    'languageCode' => 'nl',
+                    'includedRegionCodes' => ['nl'],
                 ]);
 
             if ($response->successful()) {
@@ -127,7 +128,8 @@ class GooglePlaceLookupService
                 ->get('https://maps.googleapis.com/maps/api/place/autocomplete/json', [
                     'input' => $query,
                     'types' => 'geocode',
-                    'language' => 'en',
+                    'language' => 'nl',
+                    'components' => 'country:NL',
                     'key' => $this->apiKey,
                 ]);
 
