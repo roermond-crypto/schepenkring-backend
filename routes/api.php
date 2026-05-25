@@ -602,6 +602,11 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     // Issue management (admin)
     Route::get('issues', [IssueController::class, 'index'])->missing(fn () => response()->json(['message' => 'Not found'], 404));
+    Route::get('issues/{id}/screenshot', [IssueController::class, 'screenshot'])
+        ->middleware('signed')
+        ->name('admin.issues.screenshot');
+    Route::get('issues/{id}', [IssueController::class, 'show']);
+    Route::patch('issues/{id}', [IssueController::class, 'update']);
     Route::post('issues/{id}/retry-ai', [IssueController::class, 'retryAi']);
 
     // AI Library stats and Pinecone re-index
