@@ -46,6 +46,34 @@ class BoatAuditController extends Controller
             $query->where('reason', 'like', '%' . $request->input('reason') . '%');
         }
 
+        if ($request->filled('direction')) {
+            $query->where('meta', 'like', '%"direction":"' . addcslashes((string) $request->input('direction'), '%_\\') . '"%');
+        }
+
+        if ($request->filled('source')) {
+            $query->where('meta', 'like', '%"source":"' . addcslashes((string) $request->input('source'), '%_\\') . '"%');
+        }
+
+        if ($request->filled('target')) {
+            $query->where('meta', 'like', '%"target":"' . addcslashes((string) $request->input('target'), '%_\\') . '"%');
+        }
+
+        if ($request->filled('sync_type')) {
+            $query->where('meta', 'like', '%"sync_type":"' . addcslashes((string) $request->input('sync_type'), '%_\\') . '"%');
+        }
+
+        if ($request->boolean('errors')) {
+            $query->where(function ($builder) {
+                $builder->where('correction_label', 'sync_error')
+                    ->orWhere('meta', 'like', '%"error"%');
+            });
+        }
+
+        if ($request->boolean('price_changes')) {
+            $query->where('field_name', 'price')
+                ->whereColumn('old_value', '!=', 'new_value');
+        }
+
         // Custom pagination limit, default to 50
         $perPage = (int) $request->input('per_page', 50);
 

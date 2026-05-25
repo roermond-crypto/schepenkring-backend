@@ -82,6 +82,24 @@ class AuditLogRepository
             }
         }
 
+        foreach (['direction', 'source', 'target', 'sync_type'] as $metaFilter) {
+            if (! empty($filters[$metaFilter])) {
+                $query->where('meta', 'like', '%"' . $metaFilter . '":"' . addcslashes((string) $filters[$metaFilter], '%_\\') . '"%');
+            }
+        }
+
+        if (! empty($filters['errors'])) {
+            $query->where(function (Builder $builder) {
+                $builder->where('result', 'FAIL')
+                    ->orWhere('meta', 'like', '%"error"%')
+                    ->orWhere('meta', 'like', '%"errors"%');
+            });
+        }
+
+        if (! empty($filters['price_changes'])) {
+            $query->where('meta', 'like', '%"price_changed":true%');
+        }
+
         $search = $filters['search'] ?? $filters['query'] ?? null;
         if (! empty($search)) {
             $search = mb_strtolower($search);

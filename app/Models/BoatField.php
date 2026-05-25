@@ -25,6 +25,9 @@ class BoatField extends Model
         'storage_column',
         'ai_relevance',
         'is_active',
+        'can_import',
+        'can_export',
+        'never_export',
     ];
 
     protected $casts = [
@@ -34,6 +37,9 @@ class BoatField extends Model
         'sort_order' => 'integer',
         'ai_relevance' => 'boolean',
         'is_active' => 'boolean',
+        'can_import' => 'boolean',
+        'can_export' => 'boolean',
+        'never_export' => 'boolean',
         'mappings_count' => 'integer',
         'value_observations_count' => 'integer',
         'value_observations_total' => 'integer',

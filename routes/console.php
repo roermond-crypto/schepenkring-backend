@@ -13,4 +13,8 @@ Schedule::command('app:generate-ai-insights')
     ->dailyAt('02:00')
     ->timezone(config('app.timezone', 'UTC'))
     ->withoutOverlapping();
+Schedule::command('yachtshift:sync --direction=both')
+    ->dailyAt('03:00')
+    ->timezone(config('app.timezone', 'UTC'))
+    ->withoutOverlapping();
 Schedule::command('social:publish-scheduled')->everyMinute();

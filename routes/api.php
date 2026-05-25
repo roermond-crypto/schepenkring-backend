@@ -571,6 +571,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // YachtShift two-way sync
     Route::post('yachtshift/sync', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'trigger']);
     Route::get('yachtshift/sync/status', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'status']);
+    Route::post('yachts/{yacht}/publish-yachtshift', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'publish']);
+    Route::post('yachts/{yacht}/retry-yachtshift-export', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'retryExport']);
+    Route::post('yachtshift/conflicts/{conflictId}/resolve', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'resolveConflict']);
 
     // Yacht draft AI (selectable matches + autofill)
     Route::get('yachts/draft/{draftId}/ai-matches', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiMatches']);
@@ -607,10 +610,6 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // AI Library stats and Pinecone re-index
     Route::get('ai-library/stats', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'stats']);
     Route::post('ai-library/re-index', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'reIndex']);
-
-    // YachtShift two-way sync
-    Route::post('yachtshift/sync', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'trigger']);
-    Route::get('yachtshift/sync/status', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'status']);
 
     // Copilot admin
     Route::get('copilot/action-catalog', [CopilotActionCatalogController::class, 'index']);
