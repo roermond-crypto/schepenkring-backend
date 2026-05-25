@@ -576,6 +576,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('yachts/draft/{draftId}/ai-matches', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiMatches']);
     Route::post('yachts/draft/{draftId}/select-reference-boat', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'selectReferenceBoat']);
     Route::post('yachts/draft/{draftId}/ai-autofill', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiAutofill']);
+    Route::post('yachts/draft/{draftId}/ai-autofill/apply', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'applyAiAutofill']);
 
     // Yachts (Admin)
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
@@ -606,6 +607,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     // AI Library stats and Pinecone re-index
     Route::get('ai-library/stats', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'stats']);
+    Route::get('ai-library/qa-comparison', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'qaComparison']);
+    Route::post('ai-library/reindex', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'reIndex']);
     Route::post('ai-library/re-index', [\App\Http\Controllers\Api\Admin\AiLibraryController::class, 'reIndex']);
 
     // YachtShift two-way sync

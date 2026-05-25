@@ -116,7 +116,7 @@ class Yacht extends Model
         'advertising_channels',
 
         // URLs and references
-        'external_url', 'print_url', 'owners_comment', 'reg_details',
+        'external_url', 'print_url', 'source', 'source_identifier', 'owners_comment', 'reg_details',
         'known_defects', 'last_serviced',
 
         // CE Certification
