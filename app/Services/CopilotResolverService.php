@@ -98,6 +98,12 @@ class CopilotResolverService
 
     private function resolveDeterministic(string $input, User $user): ?array
     {
+        if ($this->isCreateBoatIntent($input)) {
+            $action = $this->createBoatAction($user);
+
+            return $action ? ['action' => $action] : null;
+        }
+
         $patterns = [
             'invoice' => '/\b(invoice|factuur|rechnung)\s*#?\s*(\d+)\b/i',
             'boat' => '/\b(boat|boot|yacht)\s*#?\s*(\d+)\b/i',
@@ -139,6 +145,56 @@ class CopilotResolverService
         }
 
         return null;
+    }
+
+    private function isCreateBoatIntent(string $input): bool
+    {
+        $normalized = $this->matcher->normalize($input);
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        $patterns = [
+            '/\b(create|add|new|register)\s+(a\s+|new\s+)?(boat|yacht)\b/i',
+            '/\b(open|start)\s+(the\s+)?(new\s+)?(boat|yacht)\s+(form|flow)\b/i',
+            '/\b(boat|yacht)\s+(create|creation|registration)\b/i',
+            '/\b(boot|jacht)\s+(aanmaken|toevoegen|registreren)\b/i',
+            '/\bnieuwe\s+(boot|jacht|yacht)\b/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function createBoatAction(User $user): ?array
+    {
+        $action = $this->actionFromCatalog('create.boat', [], $user);
+
+        if ($action) {
+            $action['reason'] = 'Matched create boat intent';
+
+            return $action;
+        }
+
+        if (! $user->isAdmin()) {
+            return null;
+        }
+
+        return [
+            'action_id' => 'create.boat',
+            'title' => 'Create boat',
+            'deeplink' => '/admin/yachts/new',
+            'risk_level' => 'low',
+            'confirmation_required' => false,
+            'params' => [],
+            'reason' => 'Matched built-in create boat intent',
+        ];
     }
 
     private function resolveByPhrases(string $input, User $user, ?string $language, array $context): array
