@@ -18,7 +18,19 @@ class Location extends Model
     protected $fillable = [
         'name',
         'code',
+        'slug',
         'status',
+        'public_visible',
+        'location_color',
+        'hero_image',
+        'description_nl',
+        'description_en',
+        'description_de',
+        'opening_hours',
+        'default_seller_id',
+        'seo_title',
+        'seo_description',
+        'seo_keywords',
         'chat_widget_enabled',
         'chat_widget_welcome_text',
         'chat_widget_theme',
@@ -45,8 +57,10 @@ class Location extends Model
         'bids_page_enabled'                  => 'boolean',
         'seller_bid_notifications_enabled'   => 'boolean',
         'direct_buyer_seller_chat_enabled'   => 'boolean',
+        'public_visible'                     => 'boolean',
         'latitude'                           => 'float',
         'longitude'                          => 'float',
+        'opening_hours'                      => 'array',
     ];
 
     public function users(): BelongsToMany
@@ -92,9 +106,19 @@ class Location extends Model
         return $this->hasMany(KnowledgeBrainSuggestion::class);
     }
 
+    public function defaultSeller(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'default_seller_id');
+    }
+
     public function deletedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'deleted_by');
+    }
+
+    public function isPartner(): bool
+    {
+        return false; // Location is not a user — kept for type-safety callers
     }
 
     private function userRelation(): BelongsToMany

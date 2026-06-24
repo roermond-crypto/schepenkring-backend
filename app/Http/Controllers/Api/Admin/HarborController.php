@@ -760,6 +760,22 @@ class HarborController extends Controller
             'website'              => $harbor->website,
             'latitude'             => $harbor->latitude,
             'longitude'            => $harbor->longitude,
+            // Rich content
+            'slug'                 => $harbor->slug,
+            'public_visible'       => (bool) $harbor->public_visible,
+            'location_color'       => $harbor->location_color,
+            'hero_image'           => $harbor->hero_image,
+            'description_nl'       => $harbor->description_nl,
+            'description_en'       => $harbor->description_en,
+            'description_de'       => $harbor->description_de,
+            'opening_hours'        => $harbor->opening_hours,
+            'default_seller_id'    => $harbor->default_seller_id,
+            'default_seller'       => $harbor->relationLoaded('defaultSeller') && $harbor->defaultSeller
+                ? ['id' => $harbor->defaultSeller->id, 'name' => $harbor->defaultSeller->name, 'email' => $harbor->defaultSeller->email]
+                : null,
+            'seo_title'            => $harbor->seo_title,
+            'seo_description'      => $harbor->seo_description,
+            'seo_keywords'         => $harbor->seo_keywords,
             // Counts
             'clients_total'        => $counts['clients'][$id] ?? 0,
             'staff_total'          => $counts['staff'][$id] ?? 0,
@@ -804,18 +820,31 @@ class HarborController extends Controller
 
     private function addressRules(bool $sometimes = false): array
     {
-        $prefix = $sometimes ? ['sometimes'] : [];
+        $p = $sometimes ? ['sometimes'] : [];
         return [
-            'address_line1'  => array_merge($prefix, ['nullable', 'string', 'max:255']),
-            'street_number'  => array_merge($prefix, ['nullable', 'string', 'max:20']),
-            'postal_code'    => array_merge($prefix, ['nullable', 'string', 'max:20']),
-            'city'           => array_merge($prefix, ['nullable', 'string', 'max:120']),
-            'country'        => array_merge($prefix, ['nullable', 'string', 'max:120']),
-            'phone'          => array_merge($prefix, ['nullable', 'string', 'max:30']),
-            'email'          => array_merge($prefix, ['nullable', 'email', 'max:255']),
-            'website'        => array_merge($prefix, ['nullable', 'string', 'max:500']),
-            'latitude'       => array_merge($prefix, ['nullable', 'numeric', 'between:-90,90']),
-            'longitude'      => array_merge($prefix, ['nullable', 'numeric', 'between:-180,180']),
+            'address_line1'     => array_merge($p, ['nullable', 'string', 'max:255']),
+            'street_number'     => array_merge($p, ['nullable', 'string', 'max:20']),
+            'postal_code'       => array_merge($p, ['nullable', 'string', 'max:20']),
+            'city'              => array_merge($p, ['nullable', 'string', 'max:120']),
+            'country'           => array_merge($p, ['nullable', 'string', 'max:120']),
+            'phone'             => array_merge($p, ['nullable', 'string', 'max:30']),
+            'email'             => array_merge($p, ['nullable', 'email', 'max:255']),
+            'website'           => array_merge($p, ['nullable', 'string', 'max:500']),
+            'latitude'          => array_merge($p, ['nullable', 'numeric', 'between:-90,90']),
+            'longitude'         => array_merge($p, ['nullable', 'numeric', 'between:-180,180']),
+            // Rich content
+            'slug'              => array_merge($p, ['nullable', 'string', 'max:255', 'alpha_dash']),
+            'public_visible'    => array_merge($p, ['nullable', 'boolean']),
+            'location_color'    => array_merge($p, ['nullable', 'string', 'max:20']),
+            'hero_image'        => array_merge($p, ['nullable', 'string', 'max:500']),
+            'description_nl'    => array_merge($p, ['nullable', 'string']),
+            'description_en'    => array_merge($p, ['nullable', 'string']),
+            'description_de'    => array_merge($p, ['nullable', 'string']),
+            'opening_hours'     => array_merge($p, ['nullable', 'array']),
+            'default_seller_id' => array_merge($p, ['nullable', 'integer', 'exists:users,id']),
+            'seo_title'         => array_merge($p, ['nullable', 'string', 'max:255']),
+            'seo_description'   => array_merge($p, ['nullable', 'string']),
+            'seo_keywords'      => array_merge($p, ['nullable', 'string', 'max:500']),
         ];
     }
 
@@ -831,22 +860,101 @@ class HarborController extends Controller
         }
         if (array_key_exists('status', $validated)) {
             $payload['status'] = $validated['status'] ?? 'ACTIVE';
-        } elseif (! array_key_exists('code', $payload)) {
-            // store (not update) default
         }
 
-        $addressFields = ['address_line1', 'street_number', 'postal_code', 'city', 'country', 'phone', 'email', 'website', 'latitude', 'longitude'];
-        foreach ($addressFields as $field) {
+        // Auto-generate slug from name when creating (not updating)
+        if (array_key_exists('slug', $validated)) {
+            $payload['slug'] = $validated['slug'] ? Str::slug($validated['slug']) : null;
+        } elseif (array_key_exists('name', $payload) && ! array_key_exists('code', array_diff_key($validated, array_flip(['name', 'code', 'status'])))) {
+            // Only auto-set on store (no slug key sent at all)
+        }
+
+        $scalarFields = [
+            'address_line1', 'street_number', 'postal_code', 'city', 'country',
+            'phone', 'email', 'website', 'latitude', 'longitude',
+            'public_visible', 'location_color', 'hero_image',
+            'description_nl', 'description_en', 'description_de',
+            'opening_hours', 'default_seller_id',
+            'seo_title', 'seo_description', 'seo_keywords',
+        ];
+        foreach ($scalarFields as $field) {
             if (array_key_exists($field, $validated)) {
                 $payload[$field] = $validated[$field];
             }
         }
 
-        if (! array_key_exists('status', $payload) && ! array_key_exists('code', $payload)) {
+        if (! array_key_exists('status', $payload) && ! array_key_exists('code', array_diff_key($validated, ['name' => 1]))) {
             $payload['status'] = 'ACTIVE';
         }
 
         return $payload;
+    }
+
+    /**
+     * GET /api/admin/locations/{harbor}/stats
+     */
+    public function stats(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $id = $harbor->id;
+        $now = CarbonImmutable::now();
+        $monthStart = $now->startOfMonth();
+
+        $activeYachts       = Yacht::where('ref_harbor_id', $id)->where('status', 'ACTIVE')->count();
+        $totalYachts        = Yacht::where('ref_harbor_id', $id)->count();
+        $activeBoats        = Boat::where('location_id', $id)->where('status', 'ACTIVE')->count();
+        $newLeadsMonth      = Lead::where('location_id', $id)->where('created_at', '>=', $monthStart)->count();
+        $openLeads          = Lead::where('location_id', $id)->whereNotIn('status', ['CLOSED', 'LOST', 'WON'])->count();
+        $openChats          = Conversation::where('location_id', $id)->where('status', 'OPEN')->count();
+        $totalChats         = Conversation::where('location_id', $id)->count();
+        $staffCount         = DB::table('location_user')->where('location_id', $id)->count();
+        $clientCount        = User::where('client_location_id', $id)->count();
+        $openTasks          = Task::where('location_id', $id)->whereNull('completed_at')->count();
+
+        $harbor->load(['defaultSeller', 'employees' => fn ($q) => $q->select('users.id', 'users.name', 'users.email', 'users.type')->orderBy('users.name')]);
+
+        return response()->json([
+            'location'            => $this->serializeHarbor($harbor, $this->buildSnapshotCounts(collect([$id]))),
+            'stats'               => [
+                'active_yachts'   => $activeYachts,
+                'total_yachts'    => $totalYachts,
+                'active_boats'    => $activeBoats,
+                'new_leads_month' => $newLeadsMonth,
+                'open_leads'      => $openLeads,
+                'open_chats'      => $openChats,
+                'total_chats'     => $totalChats,
+                'staff_count'     => $staffCount,
+                'client_count'    => $clientCount,
+                'open_tasks'      => $openTasks,
+            ],
+        ]);
+    }
+
+    /**
+     * GET /api/admin/locations/{harbor}/timeline
+     */
+    public function timeline(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $entries = AuditLog::query()
+            ->where('entity_type', 'location')
+            ->where('entity_id', $harbor->id)
+            ->orderByDesc('created_at')
+            ->limit(100)
+            ->get()
+            ->map(fn (AuditLog $log) => [
+                'id'          => $log->id,
+                'action'      => $log->action,
+                'risk_level'  => $log->risk_level,
+                'result'      => $log->result,
+                'actor_id'    => $log->actor_id,
+                'meta'        => $log->meta,
+                'created_at'  => $log->created_at,
+            ]);
+
+        return response()->json(['data' => $entries]);
     }
 
     /**
