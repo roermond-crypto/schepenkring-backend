@@ -604,7 +604,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('yachts/draft/{draftId}/ai-autofill', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'aiAutofill']);
     Route::post('yachts/draft/{draftId}/ai-autofill/apply', [\App\Http\Controllers\Api\Admin\YachtDraftAiController::class, 'applyAiAutofill']);
 
-    // Yachts (Admin)
+    // Yachts (Admin) — brochure import + completeness score
+    Route::post('yachts/import-brochure', [\App\Http\Controllers\Api\Admin\YachtBrochureImportController::class, 'import']);
+    Route::get('yachts/{yacht}/score', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'show']);
+    Route::post('yachts/{yacht}/recalculate-score', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'recalculate']);
+    Route::post('yachts/{yacht}/publish-validated', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'publish']);
+    Route::get('yachts/{yacht}/audit', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'audit']);
+
+    // Yachts (Admin) — bulk import
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);
     Route::get('boat-fields', [AdminBoatFieldController::class, 'index']);
     Route::post('boat-fields', [AdminBoatFieldController::class, 'store']);
