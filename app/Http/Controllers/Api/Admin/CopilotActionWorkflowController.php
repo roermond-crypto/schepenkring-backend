@@ -73,6 +73,14 @@ class CopilotActionWorkflowController extends Controller
             if ($aiResult && !empty($aiResult['action_id'])) {
                 $selected = $this->buildSelection($aiResult['action_id'], $aiResult['params'] ?? [], $user);
             }
+
+            if (! $selected && ($candidates[0]['score'] ?? 0) >= 0.75) {
+                $selected = $this->buildSelection(
+                    $candidates[0]['action_id'],
+                    $this->extractDefaultParams($candidates[0]),
+                    $user
+                );
+            }
         }
 
         $draftId = (string) Str::uuid();
@@ -252,6 +260,19 @@ class CopilotActionWorkflowController extends Controller
             'input_schema' => $action->input_schema,
             'example_inputs' => $action->example_inputs ?? [],
         ];
+    }
+
+    private function extractDefaultParams(array $candidate): array
+    {
+        $params = [];
+
+        foreach (($candidate['required_params'] ?? []) as $param) {
+            if (array_key_exists($param, $candidate)) {
+                $params[$param] = $candidate[$param];
+            }
+        }
+
+        return $params;
     }
 
     private function authorizeAdmin(Request $request): void
