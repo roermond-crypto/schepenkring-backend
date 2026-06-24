@@ -14,6 +14,7 @@ class AdminUserStoreRequest extends ApiRequest
         return [
             'type' => ['required', Rule::in([
                 UserType::EMPLOYEE->value,
+                UserType::PARTNER->value,
                 UserType::CLIENT->value,
                 UserType::BUYER->value,
                 UserType::SELLER->value,

@@ -28,13 +28,25 @@ class Location extends Model
         'bid_routing_mode',
         'deleted_by',
         'delete_reason',
+        'address_line1',
+        'street_number',
+        'postal_code',
+        'city',
+        'country',
+        'phone',
+        'email',
+        'website',
+        'latitude',
+        'longitude',
     ];
 
     protected $casts = [
-        'chat_widget_enabled' => 'boolean',
-        'bids_page_enabled' => 'boolean',
-        'seller_bid_notifications_enabled' => 'boolean',
-        'direct_buyer_seller_chat_enabled' => 'boolean',
+        'chat_widget_enabled'                => 'boolean',
+        'bids_page_enabled'                  => 'boolean',
+        'seller_bid_notifications_enabled'   => 'boolean',
+        'direct_buyer_seller_chat_enabled'   => 'boolean',
+        'latitude'                           => 'float',
+        'longitude'                          => 'float',
     ];
 
     public function users(): BelongsToMany

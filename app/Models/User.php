@@ -224,11 +224,16 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function resolvedLocationRole(): ?string
     {
-        if (! $this->isEmployee()) {
+        if (! $this->isEmployee() && $this->type !== \App\Enums\UserType::PARTNER) {
             return null;
         }
 
         return $this->primaryEmployeeLocation()?->pivot?->role;
+    }
+
+    public function isPartner(): bool
+    {
+        return $this->type === \App\Enums\UserType::PARTNER;
     }
 
     public function notifications(): BelongsToMany

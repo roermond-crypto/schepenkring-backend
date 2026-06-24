@@ -589,6 +589,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::patch('locations/{harbor}', [AdminHarborController::class, 'update']);
     Route::get('locations/{harbor}', [AdminHarborController::class, 'show']);
     Route::get('locations/{harbor}/impact', [AdminHarborController::class, 'impact']);
+    Route::get('locations/{harbor}/users', [AdminHarborController::class, 'locationUsers']);
+    Route::post('locations/{harbor}/users', [AdminHarborController::class, 'addLocationUser']);
+    Route::delete('locations/{harbor}/users/{userId}', [AdminHarborController::class, 'removeLocationUser']);
     Route::post('locations/{harbor}/request-delete', [AdminHarborController::class, 'requestDeletion']);
     Route::post('locations/{id}/restore', [AdminHarborController::class, 'restore']);
     Route::delete('locations/{id}/permanent', [AdminHarborController::class, 'permanentDelete']);

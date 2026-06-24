@@ -38,6 +38,11 @@ class CreateUserAction
             ]);
         }
 
+        // PARTNER: location-pivot user, like EMPLOYEE but with different type
+        if ($type === UserType::PARTNER) {
+            return $this->createPartnerUser($data, $actor, $idempotencyKey);
+        }
+
         $payload = [
             'name' => $data['name'],
             'email' => $data['email'],
@@ -107,6 +112,54 @@ class CreateUserAction
         ], [
             'location_id' => $user->location_id,
             'snapshot_after' => $user->toArray(),
+            'idempotency_key' => $idempotencyKey,
+        ]);
+
+        return $user;
+    }
+
+    private function createPartnerUser(array $data, User $actor, ?string $idempotencyKey): User
+    {
+        if (empty($data['location_id'])) {
+            throw ValidationException::withMessages([
+                'location_id' => 'Partner users must be assigned to a location.',
+            ]);
+        }
+
+        $payload = [
+            'name'                 => $data['name'],
+            'email'                => $data['email'],
+            'phone'                => $data['phone'] ?? null,
+            'password'             => $data['password'],
+            'type'                 => UserType::PARTNER,
+            'status'               => UserStatus::from($data['status'] ?? UserStatus::ACTIVE->value),
+            'email_verified_at'    => now(),
+            'email_changed_at'     => now(),
+            'phone_changed_at'     => array_key_exists('phone', $data) ? now() : null,
+            'password_changed_at'  => now(),
+        ];
+
+        foreach (['first_name', 'last_name', 'locale', 'timezone', 'address_line1', 'city', 'postal_code', 'country'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $payload[$field] = $data[$field];
+            }
+        }
+
+        $user = $this->users->create($payload);
+
+        $this->users->syncLocations($user, [[
+            'location_id' => (int) $data['location_id'],
+            'role'        => $data['location_role'] ?? LocationRole::LOCATION_EMPLOYEE->value,
+        ]]);
+
+        $user->load('locations');
+
+        $this->security->log('admin.user.create', RiskLevel::MEDIUM, $actor, $user, [
+            'type'        => UserType::PARTNER->value,
+            'location_id' => (int) $data['location_id'],
+        ], [
+            'location_id'     => (int) $data['location_id'],
+            'snapshot_after'  => $user->toArray(),
             'idempotency_key' => $idempotencyKey,
         ]);
 

@@ -66,9 +66,9 @@ class AssignUserLocationsAction
             return $target;
         }
 
-        if ($target->type !== UserType::EMPLOYEE) {
+        if (! in_array($target->type, [UserType::EMPLOYEE, UserType::PARTNER], true)) {
             throw ValidationException::withMessages([
-                'type' => 'Location assignments are only supported for employees and clients.',
+                'type' => 'Location assignments are only supported for employees, partners and clients.',
             ]);
         }
 

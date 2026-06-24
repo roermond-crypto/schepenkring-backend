@@ -70,19 +70,25 @@ class HarborController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('locations', 'code')],
-            'status' => ['nullable', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
-        ]);
+        $validated = $request->validate(array_merge(
+            $this->coreLocationRules(null),
+            $this->addressRules()
+        ));
 
-        $harbor = Location::create([
-            'name' => trim((string) $validated['name']),
-            'code' => strtoupper(trim((string) $validated['code'])),
-            'status' => $validated['status'] ?? 'ACTIVE',
-        ]);
+        $harbor = Location::create($this->buildLocationPayload($validated));
 
         $this->syncLocationKnowledgeSafely($harbor);
+
+        AuditLog::create([
+            'action'      => 'location.created',
+            'risk_level'  => 'medium',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'location',
+            'entity_id'   => $harbor->id,
+            'meta'        => ['name' => $harbor->name, 'code' => $harbor->code],
+            'ip_address'  => $request->ip(),
+        ]);
 
         return response()->json([
             'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
@@ -93,26 +99,164 @@ class HarborController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $validated = $request->validate([
-            'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'code' => ['sometimes', 'required', 'string', 'max:255', 'alpha_dash', Rule::unique('locations', 'code')->ignore($harbor->id)],
-            'status' => ['sometimes', 'required', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
-        ]);
+        $before = $harbor->toArray();
 
-        if (array_key_exists('name', $validated)) {
-            $validated['name'] = trim((string) $validated['name']);
-        }
+        $validated = $request->validate(array_merge(
+            $this->coreLocationRules($harbor->id),
+            $this->addressRules(true)
+        ));
 
-        if (array_key_exists('code', $validated)) {
-            $validated['code'] = strtoupper(trim((string) $validated['code']));
-        }
-
-        $harbor->update($validated);
+        $harbor->update($this->buildLocationPayload($validated));
         $this->syncLocationKnowledgeSafely($harbor);
+
+        AuditLog::create([
+            'action'          => 'location.updated',
+            'risk_level'      => 'low',
+            'result'          => 'success',
+            'actor_id'        => $request->user()?->id,
+            'entity_type'     => 'location',
+            'entity_id'       => $harbor->id,
+            'meta'            => ['name' => $harbor->name],
+            'snapshot_before' => $before,
+            'snapshot_after'  => $harbor->fresh()->toArray(),
+            'ip_address'      => $request->ip(),
+        ]);
 
         return response()->json([
             'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
         ]);
+    }
+
+    /**
+     * GET /api/admin/locations/{harbor}/users
+     */
+    public function locationUsers(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $users = $harbor->users()
+            ->select('users.id', 'users.name', 'users.email', 'users.type', 'users.status', 'users.phone', 'users.last_login_at')
+            ->orderBy('users.name')
+            ->get()
+            ->map(fn (User $user) => [
+                'id'             => $user->id,
+                'name'           => $user->name,
+                'email'          => $user->email,
+                'type'           => $user->type?->value ?? $user->type,
+                'status'         => $user->status?->value ?? $user->status,
+                'phone'          => $user->phone,
+                'location_role'  => $user->pivot?->role,
+                'last_login_at'  => $user->last_login_at,
+            ]);
+
+        // Also include clients assigned to this location
+        $clients = User::query()
+            ->where('client_location_id', $harbor->id)
+            ->select('id', 'name', 'email', 'type', 'status', 'phone', 'last_login_at')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (User $user) => [
+                'id'             => $user->id,
+                'name'           => $user->name,
+                'email'          => $user->email,
+                'type'           => $user->type?->value ?? $user->type,
+                'status'         => $user->status?->value ?? $user->status,
+                'phone'          => $user->phone,
+                'location_role'  => 'client',
+                'last_login_at'  => $user->last_login_at,
+            ]);
+
+        return response()->json([
+            'data'    => $users->concat($clients)->values(),
+            'total'   => $users->count() + $clients->count(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/locations/{harbor}/users
+     * Add an existing user to this location.
+     */
+    public function addLocationUser(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'user_id'  => 'required|integer|exists:users,id',
+            'role'     => 'nullable|string',
+        ]);
+
+        $user = User::findOrFail($validated['user_id']);
+        $role = $validated['role'] ?? \App\Enums\LocationRole::LOCATION_EMPLOYEE->value;
+
+        // For CLIENT types use client_location_id instead
+        if ($user->isClient()) {
+            $user->update(['client_location_id' => $harbor->id]);
+        } else {
+            $existingLocations = $user->locations->map(fn ($l) => [
+                'location_id' => $l->id,
+                'role'        => $l->pivot?->role ?? \App\Enums\LocationRole::LOCATION_EMPLOYEE->value,
+            ])->toArray();
+
+            $alreadyLinked = collect($existingLocations)->firstWhere('location_id', $harbor->id);
+            if (! $alreadyLinked) {
+                $existingLocations[] = ['location_id' => $harbor->id, 'role' => $role];
+                app(\App\Repositories\UserRepository::class)->syncLocations($user, $existingLocations);
+            }
+        }
+
+        AuditLog::create([
+            'action'      => 'location.user_added',
+            'risk_level'  => 'medium',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'location',
+            'entity_id'   => $harbor->id,
+            'meta'        => [
+                'user_id'   => $user->id,
+                'user_name' => $user->name,
+                'role'      => $role,
+            ],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => "User {$user->name} added to {$harbor->name}."]);
+    }
+
+    /**
+     * DELETE /api/admin/locations/{harbor}/users/{userId}
+     * Remove a user from this location.
+     */
+    public function removeLocationUser(Request $request, Location $harbor, int $userId): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $user = User::findOrFail($userId);
+
+        if ($user->isClient()) {
+            $user->update(['client_location_id' => null]);
+        } else {
+            $remainingLocations = $user->locations
+                ->filter(fn ($l) => $l->id !== $harbor->id)
+                ->map(fn ($l) => [
+                    'location_id' => $l->id,
+                    'role'        => $l->pivot?->role ?? \App\Enums\LocationRole::LOCATION_EMPLOYEE->value,
+                ])->values()->toArray();
+
+            app(\App\Repositories\UserRepository::class)->syncLocations($user, $remainingLocations);
+        }
+
+        AuditLog::create([
+            'action'      => 'location.user_removed',
+            'risk_level'  => 'medium',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'location',
+            'entity_id'   => $harbor->id,
+            'meta'        => ['user_id' => $user->id, 'user_name' => $user->name],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json(['success' => true, 'message' => "User {$user->name} removed from {$harbor->name}."]);
     }
 
     /**
@@ -601,28 +745,108 @@ class HarborController extends Controller
             : collect();
 
         return [
-            'id' => $id,
-            'name' => $harbor->name,
-            'code' => $harbor->code,
-            'status' => $harbor->status,
-            'clients_total' => $counts['clients'][$id] ?? 0,
-            'staff_total' => $counts['staff'][$id] ?? 0,
-            'employee_count' => $employees->count(),
-            'employees' => $employees->map(fn (User $employee) => [
-                'id' => $employee->id,
-                'name' => $employee->name,
-                'email' => $employee->email,
-                'role' => $employee->role,
+            'id'                   => $id,
+            'name'                 => $harbor->name,
+            'code'                 => $harbor->code,
+            'status'               => $harbor->status,
+            // Address
+            'address_line1'        => $harbor->address_line1,
+            'street_number'        => $harbor->street_number,
+            'postal_code'          => $harbor->postal_code,
+            'city'                 => $harbor->city,
+            'country'              => $harbor->country,
+            'phone'                => $harbor->phone,
+            'email'                => $harbor->email,
+            'website'              => $harbor->website,
+            'latitude'             => $harbor->latitude,
+            'longitude'            => $harbor->longitude,
+            // Counts
+            'clients_total'        => $counts['clients'][$id] ?? 0,
+            'staff_total'          => $counts['staff'][$id] ?? 0,
+            'employee_count'       => $employees->count(),
+            'employees'            => $employees->map(fn (User $employee) => [
+                'id'            => $employee->id,
+                'name'          => $employee->name,
+                'email'         => $employee->email,
+                'role'          => $employee->role,
                 'location_role' => $employee->pivot?->role,
             ])->values(),
-            'boats_total' => $counts['boats'][$id] ?? 0,
-            'yachts_total' => $counts['yachts'][$id] ?? 0,
-            'open_leads' => $counts['open_leads'][$id] ?? 0,
-            'open_conversations' => $counts['open_conversations'][$id] ?? 0,
-            'open_tasks' => $counts['open_tasks'][$id] ?? 0,
-            'created_at' => $harbor->created_at,
-            'updated_at' => $harbor->updated_at,
+            'boats_total'          => $counts['boats'][$id] ?? 0,
+            'yachts_total'         => $counts['yachts'][$id] ?? 0,
+            'open_leads'           => $counts['open_leads'][$id] ?? 0,
+            'open_conversations'   => $counts['open_conversations'][$id] ?? 0,
+            'open_tasks'           => $counts['open_tasks'][$id] ?? 0,
+            'created_at'           => $harbor->created_at,
+            'updated_at'           => $harbor->updated_at,
         ];
+    }
+
+    // ── Shared validation rules ─────────────────────────────────
+
+    private function coreLocationRules(?int $ignoreId = null): array
+    {
+        $codeRule = ['string', 'max:255', 'alpha_dash'];
+        if ($ignoreId !== null) {
+            $codeRule[] = Rule::unique('locations', 'code')->ignore($ignoreId);
+            return [
+                'name'   => ['sometimes', 'required', 'string', 'max:255'],
+                'code'   => array_merge(['sometimes', 'required'], $codeRule),
+                'status' => ['sometimes', 'required', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
+            ];
+        }
+        $codeRule[] = Rule::unique('locations', 'code');
+        return [
+            'name'   => ['required', 'string', 'max:255'],
+            'code'   => array_merge(['required'], $codeRule),
+            'status' => ['nullable', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
+        ];
+    }
+
+    private function addressRules(bool $sometimes = false): array
+    {
+        $prefix = $sometimes ? ['sometimes'] : [];
+        return [
+            'address_line1'  => array_merge($prefix, ['nullable', 'string', 'max:255']),
+            'street_number'  => array_merge($prefix, ['nullable', 'string', 'max:20']),
+            'postal_code'    => array_merge($prefix, ['nullable', 'string', 'max:20']),
+            'city'           => array_merge($prefix, ['nullable', 'string', 'max:120']),
+            'country'        => array_merge($prefix, ['nullable', 'string', 'max:120']),
+            'phone'          => array_merge($prefix, ['nullable', 'string', 'max:30']),
+            'email'          => array_merge($prefix, ['nullable', 'email', 'max:255']),
+            'website'        => array_merge($prefix, ['nullable', 'string', 'max:500']),
+            'latitude'       => array_merge($prefix, ['nullable', 'numeric', 'between:-90,90']),
+            'longitude'      => array_merge($prefix, ['nullable', 'numeric', 'between:-180,180']),
+        ];
+    }
+
+    private function buildLocationPayload(array $validated): array
+    {
+        $payload = [];
+
+        if (array_key_exists('name', $validated)) {
+            $payload['name'] = trim((string) $validated['name']);
+        }
+        if (array_key_exists('code', $validated)) {
+            $payload['code'] = strtoupper(trim((string) $validated['code']));
+        }
+        if (array_key_exists('status', $validated)) {
+            $payload['status'] = $validated['status'] ?? 'ACTIVE';
+        } elseif (! array_key_exists('code', $payload)) {
+            // store (not update) default
+        }
+
+        $addressFields = ['address_line1', 'street_number', 'postal_code', 'city', 'country', 'phone', 'email', 'website', 'latitude', 'longitude'];
+        foreach ($addressFields as $field) {
+            if (array_key_exists($field, $validated)) {
+                $payload[$field] = $validated[$field];
+            }
+        }
+
+        if (! array_key_exists('status', $payload) && ! array_key_exists('code', $payload)) {
+            $payload['status'] = 'ACTIVE';
+        }
+
+        return $payload;
     }
 
     /**
