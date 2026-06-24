@@ -262,10 +262,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('dashboard/seller/summary', [SellerDashboardController::class, 'summary']);
 
     // Owner bids (direct buyer→seller bidding)
+    Route::get('owner-bids', [OwnerBidController::class, 'index']);
     Route::post('owner-bids', [OwnerBidController::class, 'store']);
     Route::post('owner-bids/{id}/counter', [OwnerBidController::class, 'counter']);
     Route::post('owner-bids/{id}/accept', [OwnerBidController::class, 'accept']);
     Route::post('owner-bids/{id}/reject', [OwnerBidController::class, 'reject']);
+    Route::post('owner-bids/{id}/accept-counter', [OwnerBidController::class, 'acceptCounter']);
+    Route::post('owner-bids/{id}/reject-counter', [OwnerBidController::class, 'rejectCounter']);
+
+    Route::prefix('admin')->middleware('role:admin')->group(function () {
+        Route::get('owner-bids', [OwnerBidController::class, 'adminIndex']);
+        Route::patch('owner-bids/{id}', [OwnerBidController::class, 'adminUpdate']);
+        Route::post('owner-bids/{id}/pause', [OwnerBidController::class, 'pause']);
+    });
 
     // Notifications
     Route::prefix('notifications')->group(function () {
