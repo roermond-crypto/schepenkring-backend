@@ -133,6 +133,14 @@ class Yacht extends Model
         // Google Merchant Sync
         'google_offer_id', 'google_product_id', 'google_status',
         'google_last_sync_at', 'google_last_error',
+
+        // Seller & offer settings
+        'seller_id',
+        'minimum_offer_amount',
+        'seller_login_enabled',
+        'seller_invite_enabled',
+        'seller_email_notifications',
+        'seller_counter_offer_enabled',
     ];
 
     protected $casts = [
@@ -158,6 +166,11 @@ class Yacht extends Model
         'yachtshift_last_exported_at' => 'datetime',
         'auction_duration_minutes' => 'integer',
         'auction_extension_seconds' => 'integer',
+        'minimum_offer_amount' => 'float',
+        'seller_login_enabled' => 'boolean',
+        'seller_invite_enabled' => 'boolean',
+        'seller_email_notifications' => 'boolean',
+        'seller_counter_offer_enabled' => 'boolean',
     ];
 
     // Eager-load all sub-tables by default
@@ -247,6 +260,16 @@ class Yacht extends Model
 
     public function location(): BelongsTo {
         return $this->belongsTo(Location::class);
+    }
+
+    public function seller(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'seller_id');
+    }
+
+    public function offers(): HasMany
+    {
+        return $this->hasMany(Offer::class);
     }
 
     public function signRequests(): HasMany

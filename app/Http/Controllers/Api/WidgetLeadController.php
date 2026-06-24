@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\SellerOfferNotificationMail;
 use App\Models\AuditLog;
 use App\Models\Booking;
 use App\Models\Contact;
@@ -10,6 +11,8 @@ use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Location;
 use App\Models\Message;
+use App\Models\Offer;
+use App\Models\OfferToken;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Services\ChatContactService;
@@ -150,15 +153,77 @@ class WidgetLeadController extends Controller
 
             $contact = $this->resolveContact($data, $request);
 
+            $offerAmount = (float) $data['offer_amount'];
+            $belowMin = $boat->minimum_offer_amount && $offerAmount < $boat->minimum_offer_amount;
+
             $body = $this->buildOfferMessage($data, $boat);
             $conversation = $this->createConversation($contact, $boat, $locationId, $data, 'offer', $body, $request);
-            $conversation->widget_offer_amount = $data['offer_amount'];
+            $conversation->widget_offer_amount = $offerAmount;
             $conversation->save();
 
             $lead = $this->ensureLead($conversation, $contact, $boat, $locationId, $data, 'offer');
 
+            // Create the formal Offer record
+            $offer = Offer::create([
+                'yacht_id'       => $boat->id,
+                'location_id'    => $locationId,
+                'seller_id'      => $boat->seller_id ?? $boat->user_id,
+                'amount'         => $offerAmount,
+                'asking_price'   => $boat->price,
+                'minimum_amount' => $boat->minimum_offer_amount,
+                'buyer_name'     => $data['name'],
+                'buyer_email'    => $data['email'] ?? null,
+                'buyer_phone'    => $data['phone'],
+                'message'        => $data['message'] ?? null,
+                'status'         => 'new',
+                'source'         => 'widget',
+                'source_url'     => $data['source_url'] ?? null,
+                'below_minimum'  => $belowMin,
+                'lead_id'        => $lead->id,
+                'conversation_id' => $conversation->id,
+                'ip_address'     => $request->ip(),
+                'user_agent'     => substr($request->userAgent() ?? '', 0, 250),
+            ]);
+
+            // Auto-notify seller if email notifications enabled
+            if ($boat->seller_email_notifications ?? true) {
+                $seller = $offer->seller_id
+                    ? User::find($offer->seller_id)
+                    : null;
+
+                if ($seller && $seller->email) {
+                    try {
+                        $expiresAt = now()->addDays(7);
+                        $acceptToken = OfferToken::create([
+                            'offer_id' => $offer->id, 'token' => \Illuminate\Support\Str::random(64),
+                            'action' => 'accept', 'expires_at' => $expiresAt,
+                        ]);
+                        $rejectToken = OfferToken::create([
+                            'offer_id' => $offer->id, 'token' => \Illuminate\Support\Str::random(64),
+                            'action' => 'reject', 'expires_at' => $expiresAt,
+                        ]);
+                        OfferToken::create([
+                            'offer_id' => $offer->id, 'token' => \Illuminate\Support\Str::random(64),
+                            'action' => 'counter', 'expires_at' => $expiresAt,
+                        ]);
+
+                        Mail::to($seller->email)->send(new SellerOfferNotificationMail($offer, $seller, $acceptToken, $rejectToken));
+
+                        $offer->update([
+                            'status' => 'sent_to_seller',
+                            'seller_notified' => true,
+                            'seller_notified_at' => now(),
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::warning('[WidgetLeadController] Seller offer notification failed: ' . $e->getMessage());
+                    }
+                }
+            }
+
             $this->logTimeline('offer_submitted', $conversation, $boat, $locationId, $contact, [
-                'offer_amount' => $data['offer_amount'],
+                'offer_id'     => $offer->id,
+                'offer_amount' => $offerAmount,
+                'below_minimum' => $belowMin,
             ], $request);
 
             $this->trackEvent('widget_offer_submitted', 'offer', $locationId, $boat->id, $request);
@@ -167,6 +232,8 @@ class WidgetLeadController extends Controller
             return response()->json([
                 'success'         => true,
                 'flow'            => 'offer',
+                'offer_id'        => $offer->id,
+                'below_minimum'   => $belowMin,
                 'conversation_id' => $conversation->id,
                 'lead_id'         => $lead->id,
             ], 201);

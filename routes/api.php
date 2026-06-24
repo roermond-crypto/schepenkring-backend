@@ -83,6 +83,7 @@ use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WhatsApp360DialogWebhookController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\IssueController;
+use App\Http\Controllers\Api\OfferReplyController;
 use App\Http\Controllers\Api\OwnerBidController;
 use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
@@ -120,6 +121,14 @@ Route::prefix('widget')->group(function () {
     Route::post('brochure', [WidgetLeadController::class, 'brochure'])->middleware('throttle:10,1');
     Route::post('callback', [WidgetLeadController::class, 'callback'])->middleware('throttle:10,1');
     Route::post('question', [WidgetLeadController::class, 'question'])->middleware('throttle:10,1');
+});
+
+// ── Offer reply (public, token-gated — seller responds via email link) ──
+Route::prefix('offers')->group(function () {
+    Route::get('reply', [\App\Http\Controllers\Api\OfferReplyController::class, 'show'])
+        ->middleware('throttle:20,1');
+    Route::post('reply', [\App\Http\Controllers\Api\OfferReplyController::class, 'reply'])
+        ->middleware('throttle:5,1');
 });
 
 // ── CRM Public Chat Widget ──────────
@@ -571,6 +580,16 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     // Widget performance (admin)
     Route::get('widget/performance', [WidgetLeadController::class, 'performance']);
+
+    // Offers (admin)
+    Route::get('offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'index']);
+    Route::post('offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'store']);
+    Route::get('offers/{offer}', [\App\Http\Controllers\Api\Admin\OfferController::class, 'show']);
+    Route::patch('offers/{offer}/status', [\App\Http\Controllers\Api\Admin\OfferController::class, 'updateStatus']);
+    Route::post('offers/{offer}/notify-seller', [\App\Http\Controllers\Api\Admin\OfferController::class, 'notifySeller']);
+    Route::delete('offers/{offer}', [\App\Http\Controllers\Api\Admin\OfferController::class, 'destroy']);
+    Route::get('yachts/{yacht}/offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'byYacht']);
+    Route::get('sellers/{seller}/offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'bySeller']);
 
     // Bookings
     Route::get('bookings', [AdminBookingController::class, 'index']);
