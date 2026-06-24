@@ -4,6 +4,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\EmailTemplateController;
+use App\Http\Controllers\Api\Admin\ContractTemplateController;
+use App\Http\Controllers\Api\Admin\ContractInstanceController;
 use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
 use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
@@ -756,6 +758,28 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('email-templates/{template}/restore-version', [EmailTemplateController::class, 'restoreVersion']);
     Route::post('email-templates/{template}/preview', [EmailTemplateController::class, 'preview']);
     Route::post('email-templates/{template}/test-send', [EmailTemplateController::class, 'testSend']);
+
+    // Contract templates
+    Route::get('contract-templates/types', [ContractTemplateController::class, 'types']);
+    Route::get('contract-templates/tags', [ContractTemplateController::class, 'tags']);
+    Route::get('contract-templates/default-for-location', [ContractTemplateController::class, 'defaultForLocation']);
+    Route::get('contract-templates', [ContractTemplateController::class, 'index']);
+    Route::post('contract-templates', [ContractTemplateController::class, 'store']);
+    Route::get('contract-templates/{template}', [ContractTemplateController::class, 'show']);
+    Route::patch('contract-templates/{template}', [ContractTemplateController::class, 'update']);
+    Route::delete('contract-templates/{template}', [ContractTemplateController::class, 'destroy']);
+    Route::post('contract-templates/{template}/duplicate', [ContractTemplateController::class, 'duplicate']);
+    Route::post('contract-templates/{template}/assign-to-location', [ContractTemplateController::class, 'assignToLocation']);
+    Route::post('contract-templates/{template}/set-default', [ContractTemplateController::class, 'setDefault']);
+    Route::get('contract-templates/{template}/versions', [ContractTemplateController::class, 'versions']);
+    Route::post('contract-templates/{template}/restore-version', [ContractTemplateController::class, 'restoreVersion']);
+    Route::post('contract-templates/{template}/preview', [ContractTemplateController::class, 'preview']);
+
+    // Contract instances (per sign request)
+    Route::get('contract-instances/{signRequestId}', [ContractInstanceController::class, 'show']);
+    Route::put('contract-instances/{signRequestId}', [ContractInstanceController::class, 'update']);
+    Route::post('contract-instances/{signRequestId}/preview', [ContractInstanceController::class, 'preview']);
+    Route::get('contract-instances/{signRequestId}/tags', [ContractInstanceController::class, 'tags']);
 });
 
 Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->group(function () {
