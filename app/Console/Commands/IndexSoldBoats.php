@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Yacht;
+use App\Models\ScrapeRun;
 use App\Services\YachtEnrichmentService;
 use App\Services\PineconeMatcherService;
 use Illuminate\Console\Command;
@@ -14,7 +15,13 @@ class IndexSoldBoats extends Command
      *
      * @var string
      */
-    protected $signature = 'app:index-sold-boats {--id= : Process a single yacht ID} {--limit=50 : Limit number of yachts to process}';
+    protected $signature = 'app:index-sold-boats
+        {--id= : Process a single yacht ID}
+        {--limit= : Limit number of yachts to process}
+        {--scrape-run-id= : Require this scrape run to pass the completeness gate}
+        {--min-completeness=0.98 : Required scrape completeness before full indexing}
+        {--force : Bypass the scrape completeness gate}
+        {--rebuild : Delete existing Pinecone yacht vectors before indexing}';
 
     /**
      * The console command description.
@@ -29,18 +36,27 @@ class IndexSoldBoats extends Command
     public function handle(YachtEnrichmentService $enrichmentService, PineconeMatcherService $pineconeService)
     {
         $yachtId = $this->option('id');
-        $limit = (int) $this->option('limit');
+        $limit = $this->option('limit') !== null ? (int) $this->option('limit') : null;
+        $minimumCompleteness = (float) $this->option('min-completeness');
+
+        if (! $yachtId && ! $this->option('force') && ! $this->hasPassingScrapeRun($minimumCompleteness)) {
+            $this->error('Latest Schepenkring scrape did not pass the completeness gate. Re-run scraper or pass --force.');
+
+            return 1;
+        }
+
+        if ($this->option('rebuild') && ! $pineconeService->deleteAllYachtVectors()) {
+            $this->error('Failed to delete old Pinecone vectors. Indexing stopped to avoid mixing stale and fresh data.');
+
+            return 1;
+        }
 
         if ($yachtId) {
             $yachts = Yacht::where('id', $yachtId)->get();
         } else {
-            // Process sold boats that haven't been successfully indexed yet
-            // (We could use a flag, but for now we'll just process those from schepenkring_sold_archive)
             $yachts = Yacht::where('status', 'sold')
                 ->where('source', 'schepenkring_sold_archive')
-                // For safety, we can filter by lack of owners_comment (where AI summary is stored)
-                ->whereNull('owners_comment') 
-                ->limit($limit)
+                ->when($limit !== null, fn ($query) => $query->limit($limit))
                 ->get();
         }
 
@@ -69,5 +85,17 @@ class IndexSoldBoats extends Command
 
         $this->info('Done.');
         return 0;
+    }
+
+    private function hasPassingScrapeRun(float $minimumCompleteness): bool
+    {
+        $run = $this->option('scrape-run-id')
+            ? ScrapeRun::query()->find((int) $this->option('scrape-run-id'))
+            : ScrapeRun::query()
+                ->where('source', 'schepenkring_sold_archive')
+                ->latest('started_at')
+                ->first();
+
+        return $run?->passedCompletenessGate($minimumCompleteness) ?? false;
     }
 }

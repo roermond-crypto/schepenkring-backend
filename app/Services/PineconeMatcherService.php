@@ -290,6 +290,36 @@ class PineconeMatcherService
         }
     }
 
+    public function deleteAllYachtVectors(): bool
+    {
+        if (!$this->pineconeKey || !$this->pineconeHost) {
+            Log::info('[PineconeMatcher] Delete skipped: missing Pinecone API keys');
+
+            return false;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Api-Key' => $this->pineconeKey,
+                'Content-Type' => 'application/json',
+            ])->timeout(30)->post("{$this->pineconeHost}/vectors/delete", [
+                'deleteAll' => true,
+            ]);
+
+            if (!$response->successful()) {
+                Log::warning('[PineconeMatcher] Pinecone delete-all failed: ' . $response->status() . ' ' . $response->body());
+
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('[PineconeMatcher] Delete-all exception: ' . $e->getMessage());
+
+            return false;
+        }
+    }
+
     private function buildMetadata(\App\Models\Yacht $yacht): array
     {
         $data = $yacht->toArray();

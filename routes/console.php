@@ -14,3 +14,11 @@ Schedule::command('app:generate-ai-insights')
     ->timezone(config('app.timezone', 'UTC'))
     ->withoutOverlapping();
 Schedule::command('social:publish-scheduled')->everyMinute();
+Schedule::command('app:scrape-sold-boats --update-existing')
+    ->dailyAt('01:00')
+    ->timezone(config('app.timezone', 'UTC'))
+    ->withoutOverlapping();
+Schedule::command('app:index-sold-boats --rebuild')
+    ->dailyAt('02:30')
+    ->timezone(config('app.timezone', 'UTC'))
+    ->withoutOverlapping();

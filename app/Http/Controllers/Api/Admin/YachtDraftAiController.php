@@ -84,12 +84,59 @@ PROMPT;
 
         $filled = json_decode($response->json('choices.0.message.content', '{}'), true) ?? [];
 
-        $draft->payload_json = array_merge($draftPayload, $filled);
+        $aiState = $draft->ai_state_json ?? [];
+        $aiState['autofill_suggestions'] = [
+            'status' => 'pending_review',
+            'reference_yacht_id' => $reference->id,
+            'confidence' => 0.88,
+            'fields' => $filled,
+            'source_log' => [
+                'source' => 'verified_schepenkring_ai_library',
+                'reference_yacht_id' => $reference->id,
+                'reference_boat_name' => $reference->boat_name,
+                'reference_external_url' => $reference->external_url,
+                'generated_at' => now()->toISOString(),
+            ],
+        ];
+        $draft->ai_state_json = $aiState;
         $draft->save();
 
         return response()->json([
-            'filled_fields' => array_keys($filled),
+            'suggested_fields' => array_keys($filled),
             'confidence' => 0.88,
+            'review_required' => true,
+            'source_log' => $aiState['autofill_suggestions']['source_log'],
+            'draft' => $draft->fresh(),
+        ]);
+    }
+
+    public function applyAiAutofill(Request $request, string $draftId): JsonResponse
+    {
+        $validated = $request->validate([
+            'fields' => 'nullable|array',
+            'fields.*' => 'string',
+        ]);
+
+        $draft = YachtDraft::where('draft_id', $draftId)->firstOrFail();
+        $aiState = $draft->ai_state_json ?? [];
+        $suggestions = $aiState['autofill_suggestions']['fields'] ?? [];
+
+        if (! is_array($suggestions) || empty($suggestions)) {
+            return response()->json(['message' => 'No pending AI autofill suggestions found.'], 422);
+        }
+
+        $selected = $validated['fields'] ?? array_keys($suggestions);
+        $approved = array_intersect_key($suggestions, array_flip($selected));
+
+        $draft->payload_json = array_merge($draft->payload_json ?? [], $approved);
+        $aiState['autofill_suggestions']['status'] = 'approved';
+        $aiState['autofill_suggestions']['approved_fields'] = array_keys($approved);
+        $aiState['autofill_suggestions']['approved_at'] = now()->toISOString();
+        $draft->ai_state_json = $aiState;
+        $draft->save();
+
+        return response()->json([
+            'applied_fields' => array_keys($approved),
             'draft' => $draft->fresh(),
         ]);
     }
@@ -105,19 +152,21 @@ PROMPT;
 
         try {
             $result = $this->pinecone->matchAndBuildConsensus($payload);
-            $matches = $result['matches'] ?? [];
+            $matches = $result['top_matches'] ?? [];
         } catch (\Throwable $e) {
             Log::error('YachtDraftAiController: Pinecone match failed', ['error' => $e->getMessage()]);
             return response()->json(['matches' => [], 'error' => 'Match service unavailable.'], 502);
         }
 
         $enriched = collect($matches)->map(function (array $match) {
-            $yacht = isset($match['yacht_id'])
-                ? Yacht::select('id', 'name', 'brand', 'model', 'year')->find($match['yacht_id'])
+            $metadata = $match['boat'] ?? [];
+            $yachtId = $metadata['id'] ?? $match['yacht_id'] ?? null;
+            $yacht = $yachtId
+                ? Yacht::select('id', 'boat_name', 'manufacturer', 'model', 'year')->find($yachtId)
                 : null;
 
             return [
-                'yacht_id' => $match['yacht_id'] ?? null,
+                'yacht_id' => $yachtId,
                 'score' => $match['score'] ?? null,
                 'yacht' => $yacht,
             ];
@@ -128,7 +177,16 @@ PROMPT;
 
     private function buildReferencePayload(Yacht $yacht): string
     {
-        $data = $yacht->only(['name', 'brand', 'model', 'year', 'length', 'beam', 'draft', 'fuel_type']);
+        $data = array_merge(
+            $yacht->only(['boat_name', 'manufacturer', 'model', 'year', 'boat_type', 'price', 'external_url']),
+            [
+                'loa' => $yacht->dimensions?->loa,
+                'beam' => $yacht->dimensions?->beam,
+                'draft' => $yacht->dimensions?->draft,
+                'fuel' => $yacht->engine?->fuel,
+                'engine_manufacturer' => $yacht->engine?->engine_manufacturer,
+            ]
+        );
 
         return json_encode($data, JSON_PRETTY_PRINT);
     }

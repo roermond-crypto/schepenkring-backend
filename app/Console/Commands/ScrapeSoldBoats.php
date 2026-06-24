@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Yacht;
 use App\Models\Location;
+use App\Models\ScrapeRun;
 use App\Services\BoatImportValidationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
@@ -22,7 +23,14 @@ class ScrapeSoldBoats extends Command
      *
      * @var string
      */
-    protected $signature = 'app:scrape-sold-boats {--limit= : Limit the number of boats to scrape} {--page=1 : Start page} {--max-pages= : Maximum number of pages to crawl} {--update-existing : Update boats that already exist instead of skipping them}';
+    protected $signature = 'app:scrape-sold-boats
+        {--limit= : Limit the number of boats to scrape}
+        {--page=1 : Start page}
+        {--max-pages= : Maximum number of pages to crawl}
+        {--update-existing : Update boats that already exist instead of skipping them}
+        {--expected-total=3100 : Expected full Schepenkring sold archive size}
+        {--min-completeness=0.98 : Required completeness ratio for full runs}
+        {--skip-completeness-gate : Do not fail a full run below the completeness gate}';
 
     /**
      * Backward-compatible alias.
@@ -42,6 +50,7 @@ class ScrapeSoldBoats extends Command
 
     private array $locationMap = [];
     private BoatImportValidationService $validator;
+    private ?ScrapeRun $scrapeRun = null;
 
     /**
      * Execute the console command.
@@ -54,6 +63,23 @@ class ScrapeSoldBoats extends Command
         $startPage = (int) $this->option('page');
         $maxPages = $this->option('max-pages') ? (int) $this->option('max-pages') : 1000;
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
+        $expectedTotal = (int) $this->option('expected-total');
+        $minimumCompleteness = (float) $this->option('min-completeness');
+        $enforceCompleteness = ! $limit && ! $this->option('skip-completeness-gate');
+
+        $this->scrapeRun = ScrapeRun::create([
+            'source' => 'schepenkring_sold_archive',
+            'status' => 'running',
+            'started_at' => now(),
+            'expected_total' => $expectedTotal,
+            'metadata' => [
+                'start_page' => $startPage,
+                'max_pages' => $maxPages,
+                'limit' => $limit,
+                'update_existing' => (bool) $this->option('update-existing'),
+                'min_completeness' => $minimumCompleteness,
+            ],
+        ]);
         
         $this->loadLocations();
         
@@ -61,72 +87,113 @@ class ScrapeSoldBoats extends Command
         $boatsImported = 0;
         $boatsUpdated = 0;
         $boatsSkipped = 0;
+        $boatsInvalid = 0;
+        $failedPages = 0;
+        $pagesCrawled = 0;
         $currentPage = $startPage;
 
-        while ($currentPage <= $maxPages) {
-            $url = "https://www.schepenkring.nl/verkochte-boten/?page-view={$currentPage}";
-            $this->info("Crawling page {$currentPage}: {$url}");
+        try {
+            while ($currentPage <= $maxPages) {
+                $url = "https://www.schepenkring.nl/verkochte-boten/?page-view={$currentPage}";
+                $this->info("Crawling page {$currentPage}: {$url}");
 
-            try {
-                $response = Http::timeout(20)->retry(2, 300)->get($url);
-                if ($response->failed()) {
-                    $this->error("Failed to fetch page {$currentPage}");
-                    break;
-                }
+                try {
+                    $response = Http::timeout(20)->retry(2, 300)->get($url);
+                    if ($response->failed()) {
+                        $this->error("Failed to fetch page {$currentPage}");
+                        $failedPages++;
+                        break;
+                    }
+                    $pagesCrawled++;
 
-                $crawler = new Crawler($response->body());
+                    $crawler = new Crawler($response->body());
 
-                // Primary selector; fall back to broader anchor patterns
-                // that cover alternative templates (grid view, list view, etc.)
-                $boatLinks = $crawler->filter('a.botenloop')->each(fn (Crawler $n) => $n->attr('href'));
+                    // Primary selector; fall back to broader anchor patterns
+                    // that cover alternative templates (grid view, list view, etc.)
+                    $boatLinks = $crawler->filter('a.botenloop')->each(fn (Crawler $n) => $n->attr('href'));
 
-                if (empty($boatLinks)) {
-                    $boatLinks = $crawler->filter('a[href*="/boot/"], a[href*="/boten/"], a[href*="/boot-te-koop/"]')
-                        ->each(fn (Crawler $n) => $n->attr('href'));
-                }
-
-                $boatLinks = collect($boatLinks)
-                    ->map(fn($href) => $this->normalizeExternalUrl($href, $url))
-                    ->filter()
-                    ->unique()
-                    ->values()
-                    ->all();
-
-                if (empty($boatLinks)) {
-                    $this->info("No more boats found on page {$currentPage}.");
-                    break;
-                }
-
-                foreach ($boatLinks as $boatUrl) {
-                    if ($limit && $boatsProcessed >= $limit) {
-                        $this->info("Reached limit of {$limit} boats.");
-                        return 0;
+                    if (empty($boatLinks)) {
+                        $boatLinks = $crawler->filter('a[href*="/boot/"], a[href*="/boten/"], a[href*="/boot-te-koop/"]')
+                            ->each(fn (Crawler $n) => $n->attr('href'));
                     }
 
-                    $result = $this->scrapeBoat($boatUrl);
-                    if ($result === 'imported') {
-                        $boatsImported++;
-                    } elseif ($result === 'updated') {
-                        $boatsUpdated++;
-                    } else {
-                        $boatsSkipped++;
+                    $boatLinks = collect($boatLinks)
+                        ->map(fn($href) => $this->normalizeExternalUrl($href, $url))
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+
+                    if (empty($boatLinks)) {
+                        $this->info("No more boats found on page {$currentPage}.");
+                        break;
                     }
-                    $boatsProcessed++;
+
+                    foreach ($boatLinks as $boatUrl) {
+                        if ($limit && $boatsProcessed >= $limit) {
+                            $this->info("Reached limit of {$limit} boats.");
+
+                            return $this->completeRun(
+                                $boatsProcessed,
+                                $boatsImported,
+                                $boatsUpdated,
+                                $boatsSkipped,
+                                $boatsInvalid,
+                                $failedPages,
+                                $pagesCrawled,
+                                $expectedTotal,
+                                $minimumCompleteness,
+                                false
+                            );
+                        }
+
+                        $result = $this->scrapeBoat($boatUrl);
+                        if ($result === 'imported') {
+                            $boatsImported++;
+                        } elseif ($result === 'updated') {
+                            $boatsUpdated++;
+                        } elseif ($result === 'invalid') {
+                            $boatsInvalid++;
+                            $boatsSkipped++;
+                        } else {
+                            $boatsSkipped++;
+                        }
+                        $boatsProcessed++;
+                    }
+
+                    $currentPage++;
+
+                    // Be nice to the server
+                    sleep(1);
+
+                } catch (\Exception $e) {
+                    $this->error("Error on page {$currentPage}: " . $e->getMessage());
+                    $failedPages++;
+                    break;
                 }
-
-                $currentPage++;
-                
-                // Be nice to the server
-                sleep(1);
-
-            } catch (\Exception $e) {
-                $this->error("Error on page {$currentPage}: " . $e->getMessage());
-                break;
             }
-        }
 
-        $this->info("Scraping completed. Processed: {$boatsProcessed}, Imported: {$boatsImported}, Updated: {$boatsUpdated}, Skipped: {$boatsSkipped}");
-        return 0;
+            return $this->completeRun(
+                $boatsProcessed,
+                $boatsImported,
+                $boatsUpdated,
+                $boatsSkipped,
+                $boatsInvalid,
+                $failedPages,
+                $pagesCrawled,
+                $expectedTotal,
+                $minimumCompleteness,
+                $enforceCompleteness
+            );
+        } catch (\Throwable $exception) {
+            $this->scrapeRun?->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+                'error' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
     }
 
     private function loadLocations()
@@ -140,6 +207,60 @@ class ScrapeSoldBoats extends Command
                 $this->locationMap[strtolower($loc->city)] = $loc->id;
             }
         }
+    }
+
+    private function completeRun(
+        int $processed,
+        int $imported,
+        int $updated,
+        int $skipped,
+        int $invalid,
+        int $failedPages,
+        int $pagesCrawled,
+        int $expectedTotal,
+        float $minimumCompleteness,
+        bool $enforceCompleteness
+    ): int {
+        $availableTotal = Yacht::query()
+            ->where('source', 'schepenkring_sold_archive')
+            ->count();
+        $ratio = $expectedTotal > 0 ? min(1, $availableTotal / $expectedTotal) : 1;
+        $passesGate = $ratio >= $minimumCompleteness && (! $enforceCompleteness || $processed > 0);
+        $status = $passesGate || ! $enforceCompleteness ? 'completed' : 'below_threshold';
+
+        $this->scrapeRun?->update([
+            'status' => $status,
+            'finished_at' => now(),
+            'pages_crawled' => $pagesCrawled,
+            'boats_seen' => $processed,
+            'boats_imported' => $imported,
+            'boats_updated' => $updated,
+            'boats_skipped' => $skipped,
+            'boats_invalid' => $invalid,
+            'failed_pages' => $failedPages,
+            'expected_total' => $expectedTotal,
+            'completeness_ratio' => $ratio,
+            'metadata' => array_merge($this->scrapeRun?->metadata ?? [], [
+                'available_total' => $availableTotal,
+                'enforced_completeness' => $enforceCompleteness,
+            ]),
+        ]);
+
+        $this->info("Scraping completed. Processed: {$processed}, Imported: {$imported}, Updated: {$updated}, Skipped: {$skipped}, Invalid: {$invalid}");
+
+        if ($enforceCompleteness && ! $passesGate) {
+            $this->error(sprintf(
+                'Completeness gate failed: %.2f%% available (%d/%d), required %.2f%%.',
+                $ratio * 100,
+                $availableTotal,
+                $expectedTotal,
+                $minimumCompleteness * 100
+            ));
+
+            return 1;
+        }
+
+        return 0;
     }
 
     private function scrapeBoat(string $url): string
@@ -164,7 +285,7 @@ class ScrapeSoldBoats extends Command
             $response = Http::timeout(20)->retry(2, 300)->get($url);
             if ($response->failed()) {
                 $this->error("Failed to fetch boat page: {$url}");
-                return 'skipped';
+                return 'invalid';
             }
 
             $crawler = new Crawler($response->body());
