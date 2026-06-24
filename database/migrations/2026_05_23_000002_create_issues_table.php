@@ -14,7 +14,7 @@ return new class extends Migration
             $table->foreignId('yacht_id')->nullable()->constrained()->nullOnDelete();
             $table->string('title');
             $table->text('description');
-            $table->string('status')->default('open'); // open, ai_analyzed, closed
+            $table->string('status')->default('new');
             $table->text('ai_analysis')->nullable();
             $table->timestamp('ai_analyzed_at')->nullable();
             $table->timestamps();
