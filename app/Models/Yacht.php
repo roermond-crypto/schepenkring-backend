@@ -117,6 +117,9 @@ class Yacht extends Model
         'short_description_nl', 'short_description_en', 'short_description_de', 'short_description_fr', 'advertise_as',
         'advertising_channels',
 
+        // Completeness scoring
+        'completeness_score', 'completeness_breakdown',
+
         // URLs and references
         'external_url', 'print_url', 'source', 'source_identifier', 'owners_comment', 'reg_details',
         'known_defects', 'last_serviced',

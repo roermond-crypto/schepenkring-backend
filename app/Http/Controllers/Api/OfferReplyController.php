@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Actions\Kyc\CreateKycCaseAction;
 use App\Mail\BuyerCounterOfferMail;
 use App\Models\AuditLog;
 use App\Models\Conversation;
@@ -132,6 +133,13 @@ class OfferReplyController extends Controller
         );
 
         $this->audit('offer_seller_accepted', $offer, $request);
+
+        // Auto-create KYC case when offer is accepted
+        try {
+            app(CreateKycCaseAction::class)->fromOffer($offer);
+        } catch (\Throwable $e) {
+            Log::warning('[OfferReplyController] KYC auto-create failed: ' . $e->getMessage());
+        }
 
         // Email buyer if they have an email
         if ($offer->buyer_email) {

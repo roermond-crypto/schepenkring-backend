@@ -131,6 +131,18 @@ Route::prefix('offers')->group(function () {
         ->middleware('throttle:5,1');
 });
 
+// ── Public boat intake (sell your boat form) ─────────────────
+Route::prefix('boat-intake')->group(function () {
+    Route::post('/', [\App\Http\Controllers\Api\BoatIntakeController::class, 'store'])
+        ->middleware('throttle:5,1');
+    Route::get('{token}', [\App\Http\Controllers\Api\BoatIntakeController::class, 'showByToken'])
+        ->middleware('throttle:30,1');
+    Route::post('{token}/photos', [\App\Http\Controllers\Api\BoatIntakeController::class, 'uploadPhotos'])
+        ->middleware('throttle:20,1');
+    Route::post('{token}/documents', [\App\Http\Controllers\Api\BoatIntakeController::class, 'uploadDocuments'])
+        ->middleware('throttle:20,1');
+});
+
 // ── CRM Public Chat Widget ──────────
 Route::post('public/leads', [PublicLeadController::class, 'store']);
 Route::prefix('public/conversations/{conversationId}')->group(function () {
@@ -580,6 +592,24 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     // Widget performance (admin)
     Route::get('widget/performance', [WidgetLeadController::class, 'performance']);
+
+    // KYC compliance cases (admin)
+    Route::prefix('kyc-cases')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'store']);
+        Route::get('{kycCase}', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'show']);
+        Route::get('{kycCase}/questions', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'questions']);
+        Route::post('{kycCase}/answers', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'saveAnswer']);
+        Route::post('{kycCase}/documents', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'uploadDocument']);
+        Route::post('{kycCase}/verify-document', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'verifyDocument']);
+        Route::patch('{kycCase}/status', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'updateStatus']);
+        Route::get('{kycCase}/pdf', [\App\Http\Controllers\Api\Admin\KycPdfController::class, 'show']);
+    });
+
+    // Boat intakes (admin)
+    Route::get('boat-intakes', [\App\Http\Controllers\Api\BoatIntakeController::class, 'adminIndex']);
+    Route::get('boat-intakes/{boatIntake}', [\App\Http\Controllers\Api\BoatIntakeController::class, 'adminShow']);
+    Route::post('boat-intakes/{boatIntake}/promote', [\App\Http\Controllers\Api\BoatIntakeController::class, 'promote']);
 
     // Offers (admin)
     Route::get('offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'index']);

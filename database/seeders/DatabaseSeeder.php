@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(BoatFieldSeeder::class);
         $this->call(BoatFieldMappingSeeder::class);
+        $this->call(KycQuestionSeeder::class);
 
         $location = Location::firstOrCreate([
             'code' => 'HQ',

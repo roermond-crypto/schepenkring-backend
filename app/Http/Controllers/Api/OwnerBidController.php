@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Kyc\CreateKycCaseAction;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
@@ -390,6 +391,13 @@ class OwnerBidController extends Controller
 
             return [$bid->fresh($this->bidRelations()), $conversation, $deal];
         });
+
+        // Auto-create KYC case for the new deal (outside transaction so KYC failure never rolls back the deal)
+        try {
+            app(CreateKycCaseAction::class)->fromDeal($deal);
+        } catch (\Throwable $e) {
+            Log::warning('[OwnerBidController] KYC auto-create failed for deal ' . $deal->id . ': ' . $e->getMessage());
+        }
 
         $this->notifyBuyer($acceptedBid, 'bid_accepted');
         $this->notifySellerOfBuyerDecision($acceptedBid, 'bid_accepted');

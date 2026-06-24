@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Kyc\CreateKycCaseAction;
 use App\Actions\Signhost\CancelSignhostRequestAction;
 use App\Actions\Signhost\CreateSignhostRequestAction;
 use App\Actions\Signhost\GenerateContractAction;
@@ -13,6 +14,9 @@ use App\Http\Requests\Api\Signhost\SignhostGenerateContractRequest;
 use App\Http\Requests\Api\Signhost\SignhostRequestActionRequest;
 use App\Http\Requests\Api\Signhost\SignhostRequestCreateRequest;
 use App\Http\Requests\Api\Signhost\SignhostRequestQuery;
+use App\Models\Deal;
+use App\Models\KycCase;
+use App\Models\Yacht;
 use App\Http\Resources\SignDocumentResource;
 use App\Http\Resources\SignRequestResource;
 use App\Models\SignRequest;
@@ -29,9 +33,16 @@ class SignhostController extends Controller
     )
     {
         $validated = $request->validated();
+
+        // Blocking KYC check — prevent contract generation if a KYC case is blocking
+        $this->abortIfKycBlocking($validated);
+
         $signRequest = $action->execute($request->user(), $validated);
         $signRequest = $this->maybeCreateSignhost($request, $signRequest, $validated, $createAction);
         $metadata = $signRequest->metadata ?? [];
+
+        // Auto-create KYC from the deal/entity when contract is started
+        $this->autoCreateKycFromContract($validated);
 
         return response()->json([
             'message' => $signRequest->signhost_transaction_id ? 'Contract generated and Signhost request created' : 'Contract generated',
@@ -169,6 +180,46 @@ class SignhostController extends Controller
         return $signers[0]['SignUrl'] ?? $signers[0]['signUrl'] ?? null;
     }
 
+    // ── KYC helpers ──────────────────────────────────────────────
+
+    private function abortIfKycBlocking(array $validated): void
+    {
+        $entityType = $validated['entity_type'] ?? null;
+        $entityId   = $validated['entity_id'] ?? null;
+
+        $blocking = match (strtolower((string) $entityType)) {
+            'deal'  => KycCase::where('deal_id', $entityId)->where('blocking', true)->exists(),
+            'yacht' => KycCase::where('yacht_id', $entityId)->where('blocking', true)->exists(),
+            default => false,
+        };
+
+        if ($blocking) {
+            abort(422, 'KYC-dossier blokkeert dit contract. Los de compliance problemen op voordat u verdergaat.');
+        }
+    }
+
+    private function autoCreateKycFromContract(array $validated): void
+    {
+        try {
+            $entityType = strtolower($validated['entity_type'] ?? '');
+            $entityId   = $validated['entity_id'] ?? null;
+
+            if ($entityType === 'deal' && $entityId) {
+                $deal = Deal::find($entityId);
+                if ($deal) {
+                    app(CreateKycCaseAction::class)->fromDeal($deal);
+                }
+            } elseif ($entityType === 'yacht' && $entityId) {
+                $yacht = Yacht::find($entityId);
+                if ($yacht) {
+                    app(CreateKycCaseAction::class)->fromYacht($yacht);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[SignhostController] KYC auto-create failed: ' . $e->getMessage());
+        }
+    }
+
     // Compatibility: NauticSecure yacht endpoints
     public function generateYachtContract(
         int $yachtId,
@@ -183,9 +234,15 @@ class SignhostController extends Controller
             'entity_id' => $yachtId,
         ]);
 
+        // Blocking KYC check for this yacht
+        $this->abortIfKycBlocking($payload);
+
         $signRequest = $action->execute($request->user(), $payload);
         $signRequest = $this->maybeCreateSignhost($request, $signRequest, $validated, $createAction);
         $metadata = $signRequest->metadata ?? [];
+
+        // Auto-create KYC for yacht contract
+        $this->autoCreateKycFromContract($payload);
 
         $response = [
             'message' => $signRequest->signhost_transaction_id ? 'Contract generated and Signhost request created' : 'Contract generated',
