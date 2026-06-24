@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
         $this->call(BoatFieldSeeder::class);
         $this->call(BoatFieldMappingSeeder::class);
         $this->call(KycQuestionSeeder::class);
+        $this->call(EmailTemplateSeeder::class);
 
         $location = Location::firstOrCreate([
             'code' => 'HQ',

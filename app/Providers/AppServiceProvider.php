@@ -6,6 +6,8 @@ use App\Events\BoatStatusActivated;
 use App\Events\TaskCreated;
 use App\Listeners\SendTaskNotification;
 use App\Listeners\TriggerAiVideoGeneration;
+use App\Models\Location;
+use App\Observers\LocationObserver;
 use App\Services\ImpersonationContext;
 use App\Support\AuthEmailSupport;
 use Illuminate\Support\Facades\Event;
@@ -40,5 +42,6 @@ class AppServiceProvider extends ServiceProvider
         Vite::prefetch(concurrency: 3);
         Event::listen(TaskCreated::class, SendTaskNotification::class);
         Event::listen(BoatStatusActivated::class, TriggerAiVideoGeneration::class);
+        Location::observe(LocationObserver::class);
     }
 }

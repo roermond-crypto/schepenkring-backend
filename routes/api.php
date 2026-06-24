@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\EmailTemplateController;
 use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
 use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
@@ -740,6 +741,21 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // Integrations (central credential management)
     Route::apiResource('integrations', IntegrationController::class);
     Route::post('integrations/{id}/send-access-details', [IntegrationController::class, 'sendAccessDetails']);
+
+    // Email templates
+    Route::get('email-templates/types', [EmailTemplateController::class, 'types']);
+    Route::get('email-templates/tags', [EmailTemplateController::class, 'tags']);
+    Route::get('email-templates', [EmailTemplateController::class, 'index']);
+    Route::post('email-templates', [EmailTemplateController::class, 'store']);
+    Route::get('email-templates/{template}', [EmailTemplateController::class, 'show']);
+    Route::patch('email-templates/{template}', [EmailTemplateController::class, 'update']);
+    Route::delete('email-templates/{template}', [EmailTemplateController::class, 'destroy']);
+    Route::post('email-templates/{template}/duplicate', [EmailTemplateController::class, 'duplicate']);
+    Route::post('email-templates/{template}/assign-to-location', [EmailTemplateController::class, 'assignToLocation']);
+    Route::get('email-templates/{template}/versions', [EmailTemplateController::class, 'versions']);
+    Route::post('email-templates/{template}/restore-version', [EmailTemplateController::class, 'restoreVersion']);
+    Route::post('email-templates/{template}/preview', [EmailTemplateController::class, 'preview']);
+    Route::post('email-templates/{template}/test-send', [EmailTemplateController::class, 'testSend']);
 });
 
 Route::middleware(['auth:sanctum', 'admin.errors'])->prefix('admin/errors')->group(function () {
