@@ -104,6 +104,14 @@ Route::prefix('auth')->group(function () {
 // PUBLIC routes (no auth needed for dev/testing)
 // ──────────────────────────────────────────────────────────
 
+// ── Location delete approval (public, token-gated) ──────────
+Route::prefix('locations/delete')->group(function () {
+    Route::get('approve/{token}', [\App\Http\Controllers\Api\LocationDeleteApprovalController::class, 'approve'])
+        ->middleware('throttle:5,1');
+    Route::get('cancel/{token}', [\App\Http\Controllers\Api\LocationDeleteApprovalController::class, 'cancel'])
+        ->middleware('throttle:5,1');
+});
+
 // ── Schepenkring Lead Widget (public, no auth) ──────────────
 Route::prefix('widget')->group(function () {
     Route::get('context', [WidgetLeadController::class, 'context'])->middleware('throttle:120,1');
@@ -577,9 +585,13 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
     Route::get('locations', [AdminHarborController::class, 'index']);
     Route::post('locations', [AdminHarborController::class, 'store']);
+    Route::get('locations/archived', [AdminHarborController::class, 'archived']);
     Route::patch('locations/{harbor}', [AdminHarborController::class, 'update']);
-    Route::delete('locations/{harbor}', [AdminHarborController::class, 'destroy']);
     Route::get('locations/{harbor}', [AdminHarborController::class, 'show']);
+    Route::get('locations/{harbor}/impact', [AdminHarborController::class, 'impact']);
+    Route::post('locations/{harbor}/request-delete', [AdminHarborController::class, 'requestDeletion']);
+    Route::post('locations/{id}/restore', [AdminHarborController::class, 'restore']);
+    Route::delete('locations/{id}/permanent', [AdminHarborController::class, 'permanentDelete']);
 
     // Users
     Route::post('users', [AdminUserController::class, 'store']);

@@ -5,13 +5,15 @@ namespace App\Models;
 use App\Enums\UserType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Schema;
 
 class Location extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -24,6 +26,8 @@ class Location extends Model
         'seller_bid_notifications_enabled',
         'direct_buyer_seller_chat_enabled',
         'bid_routing_mode',
+        'deleted_by',
+        'delete_reason',
     ];
 
     protected $casts = [
@@ -74,6 +78,11 @@ class Location extends Model
     public function knowledgeSuggestions(): HasMany
     {
         return $this->hasMany(KnowledgeBrainSuggestion::class);
+    }
+
+    public function deletedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
     }
 
     private function userRelation(): BelongsToMany

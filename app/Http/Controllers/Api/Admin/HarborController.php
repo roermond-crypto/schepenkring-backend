@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Enums\RiskLevel;
 use App\Http\Controllers\Controller;
+use App\Mail\LocationDeleteRequestMail;
+use App\Models\AuditLog;
 use App\Models\Boat;
 use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Location;
+use App\Models\LocationDeleteRequest;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Yacht;
@@ -21,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -111,15 +115,203 @@ class HarborController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, Location $harbor): JsonResponse
+    /**
+     * GET /api/admin/locations/{harbor}/impact
+     * Returns linked-record counts for the impact analysis panel.
+     */
+    public function impact(Request $request, Location $harbor): JsonResponse
     {
         $this->authorizeAdmin($request);
 
-        $harbor->delete();
-        $this->removeLocationKnowledgeSafely($harbor);
+        $counts    = $this->buildBlockingUsageCounts($harbor->id);
+        $total     = array_sum($counts);
+        $canForce  = $total === 0;
 
         return response()->json([
-            'message' => 'Location deleted.',
+            'location_id'          => $harbor->id,
+            'location_name'        => $harbor->name,
+            'impact'               => $counts,
+            'total_linked_records' => $total,
+            'safe_to_delete'       => $canForce,
+        ]);
+    }
+
+    /**
+     * POST /api/admin/locations/{harbor}/request-delete
+     * Creates a deletion request and e-mails all platform admins for approval.
+     */
+    public function requestDeletion(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'reason'               => 'required|string|max:1000',
+            'move_to_location_id'  => 'nullable|integer|exists:locations,id',
+        ]);
+
+        // Cancel any previous pending request for this location
+        LocationDeleteRequest::where('location_id', $harbor->id)
+            ->where('status', 'pending')
+            ->update(['status' => 'cancelled']);
+
+        $impact = $this->buildBlockingUsageCounts($harbor->id);
+        $token  = Str::random(64);
+
+        $deleteRequest = LocationDeleteRequest::create([
+            'location_id'          => $harbor->id,
+            'requested_by'         => $request->user()->id,
+            'move_to_location_id'  => $validated['move_to_location_id'] ?? null,
+            'reason'               => $validated['reason'],
+            'token'                => $token,
+            'status'               => 'pending',
+            'affected_records'     => $impact,
+            'ip_address'           => $request->ip(),
+            'user_agent'           => substr($request->userAgent() ?? '', 0, 500),
+            'expires_at'           => now()->addHours(24),
+        ]);
+
+        $approveUrl = url("/locations/delete/approve/{$token}");
+        $cancelUrl  = url("/locations/delete/cancel/{$token}");
+
+        // Send email to all ADMIN users
+        $admins = User::where('type', \App\Enums\UserType::ADMIN->value)->get();
+        foreach ($admins as $admin) {
+            try {
+                Mail::to($admin->email)->queue(
+                    new LocationDeleteRequestMail(
+                        $harbor,
+                        $deleteRequest,
+                        $request->user(),
+                        $approveUrl,
+                        $cancelUrl
+                    )
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[LocationDelete] Email failed for admin ' . $admin->id, ['error' => $e->getMessage()]);
+            }
+        }
+
+        // Audit log
+        AuditLog::create([
+            'action'      => 'location.delete_requested',
+            'risk_level'  => 'high',
+            'result'      => 'success',
+            'actor_id'    => $request->user()->id,
+            'entity_type' => 'location',
+            'entity_id'   => $harbor->id,
+            'meta'        => [
+                'reason'              => $validated['reason'],
+                'affected_records'    => $impact,
+                'request_id'          => $deleteRequest->id,
+                'move_to_location_id' => $validated['move_to_location_id'] ?? null,
+            ],
+            'ip_address'  => $request->ip(),
+            'user_agent'  => substr($request->userAgent() ?? '', 0, 500),
+        ]);
+
+        return response()->json([
+            'success'    => true,
+            'message'    => 'Verwijderingsverzoek ingediend. Admins ontvangen een e-mail ter goedkeuring.',
+            'request_id' => $deleteRequest->id,
+            'expires_at' => $deleteRequest->expires_at,
+        ]);
+    }
+
+    /**
+     * GET /api/admin/locations/archived
+     * Returns soft-deleted locations.
+     */
+    public function archived(Request $request): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $archived = Location::onlyTrashed()
+            ->with('deletedByUser')
+            ->orderByDesc('deleted_at')
+            ->get()
+            ->map(fn (Location $loc) => [
+                'id'            => $loc->id,
+                'name'          => $loc->name,
+                'code'          => $loc->code,
+                'status'        => $loc->status,
+                'deleted_at'    => $loc->deleted_at,
+                'deleted_by'    => $loc->deletedByUser?->name,
+                'delete_reason' => $loc->delete_reason,
+                'impact'        => $this->buildBlockingUsageCounts($loc->id),
+            ]);
+
+        return response()->json(['data' => $archived]);
+    }
+
+    /**
+     * POST /api/admin/locations/{id}/restore
+     * Restores an archived location.
+     */
+    public function restore(Request $request, int $id): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $harbor = Location::onlyTrashed()->findOrFail($id);
+        $harbor->restore();
+        $harbor->update(['deleted_by' => null, 'delete_reason' => null]);
+
+        $this->syncLocationKnowledgeSafely($harbor->fresh());
+
+        AuditLog::create([
+            'action'      => 'location.restored',
+            'risk_level'  => 'medium',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'location',
+            'entity_id'   => $harbor->id,
+            'meta'        => ['location_name' => $harbor->name],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Locatie {$harbor->name} hersteld.",
+        ]);
+    }
+
+    /**
+     * DELETE /api/admin/locations/{id}/permanent
+     * Permanently deletes an archived location — only if no linked records remain.
+     */
+    public function permanentDelete(Request $request, int $id): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $harbor = Location::onlyTrashed()->findOrFail($id);
+        $impact = $this->buildBlockingUsageCounts($harbor->id);
+        $total  = array_sum($impact);
+
+        if ($total > 0 && ! $request->boolean('force')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kan niet permanent verwijderen: locatie heeft nog gekoppelde records.',
+                'impact'  => $impact,
+            ], 422);
+        }
+
+        $name = $harbor->name;
+        $this->removeLocationKnowledgeSafely($harbor);
+        $harbor->forceDelete();
+
+        AuditLog::create([
+            'action'      => 'location.permanently_deleted',
+            'risk_level'  => 'critical',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'location',
+            'entity_id'   => $id,
+            'meta'        => ['location_name' => $name, 'impact' => $impact],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Locatie {$name} permanent verwijderd.",
         ]);
     }
 
