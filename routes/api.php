@@ -454,6 +454,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('yachts/{yachtId}/signhost/status', [SignhostController::class, 'yachtStatus']);
     Route::get('yachts/{yachtId}/signhost/documents', [SignhostController::class, 'yachtDocuments']);
     Route::get('yachts/{yachtId}/signhost/url', [SignhostController::class, 'yachtSignUrl']);
+    Route::post('yachts/{yachtId}/signhost/refresh-status', [SignhostController::class, 'refreshYachtSignhostStatus']);
 
     // Tasks
     Route::get('public/users/employees', [TaskUserController::class, 'employees']);

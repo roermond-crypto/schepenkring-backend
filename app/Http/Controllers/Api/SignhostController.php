@@ -324,6 +324,83 @@ class SignhostController extends Controller
         ]);
     }
 
+    public function refreshYachtSignhostStatus(int $yachtId, Request $request, GetSignhostStatusAction $action, SignhostService $signhost): \Illuminate\Http\JsonResponse
+    {
+        $payload = [
+            'entity_type' => 'Yacht',
+            'entity_id' => $yachtId,
+        ];
+
+        try {
+            $signRequest = $action->execute($request->user(), $payload);
+        } catch (\Throwable) {
+            return response()->json([
+                'sign_request' => null,
+                'signhost_status' => null,
+            ]);
+        }
+
+        if (! $signRequest->signhost_transaction_id) {
+            return response()->json([
+                'sign_request' => new SignRequestResource($signRequest),
+                'signhost_status' => null,
+            ]);
+        }
+
+        try {
+            $transaction = $signhost->getTransaction($signRequest->signhost_transaction_id);
+        } catch (\Throwable $e) {
+            Log::warning('SignhostController: refreshYachtSignhostStatus failed', ['error' => $e->getMessage()]);
+            return response()->json(['error' => 'Signhost API error: ' . $e->getMessage()], 502);
+        }
+
+        $rawStatus = $transaction['Status'] ?? $transaction['status'] ?? null;
+        $expiresOn = $transaction['ExpiresOn'] ?? $transaction['expiresOn'] ?? null;
+        $signers   = $transaction['Signers'] ?? $transaction['signers'] ?? [];
+
+        $buyerUrl  = $signers[0]['SignUrl'] ?? $signers[0]['signUrl'] ?? null;
+        $sellerUrl = isset($signers[1]) ? ($signers[1]['SignUrl'] ?? $signers[1]['signUrl'] ?? null) : null;
+
+        $signUrls = [];
+        if ($buyerUrl)  { $signUrls[] = ['role' => 'buyer',  'url' => $buyerUrl]; }
+        if ($sellerUrl) { $signUrls[] = ['role' => 'seller', 'url' => $sellerUrl]; }
+
+        $internalStatus = match (strtoupper((string) $rawStatus)) {
+            'WAITING_FOR_ALL', 'SIGNING', 'SENT', 'VIEWED' => 'SENT',
+            'SIGNED' => 'SIGNED',
+            'EXPIRED' => 'EXPIRED',
+            'CANCELLED', 'REJECTED', 'DECLINED', 'FAILED' => 'FAILED',
+            default => $signRequest->status,
+        };
+
+        $now = now()->toIso8601String();
+
+        $metadata = array_merge($signRequest->metadata ?? [], [
+            'signhost_raw_status'      => $rawStatus,
+            'signhost_expires_at'      => $expiresOn,
+            'signhost_last_checked_at' => $now,
+            'signhost_buyer_link'      => $buyerUrl,
+            'signhost_seller_link'     => $sellerUrl,
+            'signhost_raw_response'    => $transaction,
+            'sign_urls'                => $signUrls ?: ($signRequest->metadata['sign_urls'] ?? []),
+        ]);
+
+        $signRequest->update([
+            'status'   => $internalStatus,
+            'metadata' => $metadata,
+        ]);
+
+        $signRequest = $signRequest->fresh()->load('documents');
+
+        return response()->json([
+            'sign_request'             => new SignRequestResource($signRequest),
+            'signhost_status'          => $rawStatus,
+            'signhost_expires_at'      => $expiresOn,
+            'signhost_last_checked_at' => $now,
+            'transaction'              => $this->legacyTransaction($signRequest),
+        ]);
+    }
+
     private function legacyTransaction(SignRequest $signRequest): array
     {
         $metadata = $signRequest->metadata ?? [];
