@@ -87,6 +87,7 @@ use App\Http\Controllers\Api\OwnerBidController;
 use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
+use App\Http\Controllers\Api\WidgetLeadController;
 
 // ──────────────────────────────────────────────────────────
 // Public routes (no auth needed for dev/testing)
@@ -102,6 +103,16 @@ Route::prefix('auth')->group(function () {
 // ──────────────────────────────────────────────────────────
 // PUBLIC routes (no auth needed for dev/testing)
 // ──────────────────────────────────────────────────────────
+
+// ── Schepenkring Lead Widget (public, no auth) ──────────────
+Route::prefix('widget')->group(function () {
+    Route::get('context', [WidgetLeadController::class, 'context'])->middleware('throttle:120,1');
+    Route::post('plan-viewing', [WidgetLeadController::class, 'planViewing'])->middleware('throttle:10,1');
+    Route::post('offer', [WidgetLeadController::class, 'offer'])->middleware('throttle:10,1');
+    Route::post('brochure', [WidgetLeadController::class, 'brochure'])->middleware('throttle:10,1');
+    Route::post('callback', [WidgetLeadController::class, 'callback'])->middleware('throttle:10,1');
+    Route::post('question', [WidgetLeadController::class, 'question'])->middleware('throttle:10,1');
+});
 
 // ── CRM Public Chat Widget ──────────
 Route::post('public/leads', [PublicLeadController::class, 'store']);
@@ -549,6 +560,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('insights/latest', [AdminInsightController::class, 'latest']);
     Route::get('insights/{insight}', [AdminInsightController::class, 'show']);
     Route::post('insights/generate', [AdminInsightController::class, 'generate']);
+
+    // Widget performance (admin)
+    Route::get('widget/performance', [WidgetLeadController::class, 'performance']);
 
     // Bookings
     Route::get('bookings', [AdminBookingController::class, 'index']);
