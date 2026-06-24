@@ -337,6 +337,9 @@ class BoatFieldController extends Controller
             'storage_column' => 'required|string|max:120',
             'ai_relevance' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
+            'can_import' => 'nullable|boolean',
+            'can_export' => 'nullable|boolean',
+            'never_export' => 'nullable|boolean',
             'priorities' => 'sometimes|array',
             'priorities.*.boat_type_key' => 'required|string|max:80',
             'priorities.*.priority' => ['required', Rule::in(BoatFieldPriority::PRIORITIES)],
@@ -404,6 +407,9 @@ class BoatFieldController extends Controller
                 'storage_column' => trim($validated['storage_column']),
                 'ai_relevance' => $validated['ai_relevance'] ?? true,
                 'is_active' => $validated['is_active'] ?? true,
+                'can_import' => $validated['can_import'] ?? true,
+                'can_export' => $validated['can_export'] ?? true,
+                'never_export' => $validated['never_export'] ?? false,
             ]);
             $boatField->save();
 

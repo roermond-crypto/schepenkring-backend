@@ -136,6 +136,14 @@ return [
         )),
     ],
 
+    'yachtshift' => [
+        'api_url' => env('YACHTSHIFT_API_URL', 'https://api.yachtshift.com/v1'),
+        'api_key' => env('YACHTSHIFT_API_KEY', ''),
+        'feed_url_1' => env('YACHTSHIFT_FEED_URL_1'),
+        'guard_empty_imports' => env('YACHTSHIFT_GUARD_EMPTY_IMPORTS', true),
+        'export_limit' => env('YACHTSHIFT_EXPORT_LIMIT', 50),
+    ],
+
     'yext' => [
         'api_key' => env('YEXT_API_KEY'),
         'account_id' => env('YEXT_ACCOUNT_ID'),

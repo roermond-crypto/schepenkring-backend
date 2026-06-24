@@ -105,6 +105,8 @@ class Yacht extends Model
     protected $fillable = [
         // Core identity
         'user_id', 'location_id', 'booking_duration_minutes', 'vessel_id', 'boat_name', 'price', 'status',
+        'yachtshift_id', 'yachtshift_synced_at', 'yachtshift_publish_status', 'yachtshift_last_imported_at',
+        'yachtshift_last_exported_at', 'yachtshift_last_export_error', 'yachtshift_sync_summary',
         'allow_bidding', 'auction_enabled', 'auction_mode', 'auction_start', 'auction_end',
         'auction_duration_minutes', 'auction_extension_seconds', 'main_image', 'year', 'min_bid_amount',
         'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
@@ -151,6 +153,9 @@ class Yacht extends Model
         'auction_enabled' => 'boolean',
         'auction_start' => 'datetime',
         'auction_end' => 'datetime',
+        'yachtshift_synced_at' => 'datetime',
+        'yachtshift_last_imported_at' => 'datetime',
+        'yachtshift_last_exported_at' => 'datetime',
         'auction_duration_minutes' => 'integer',
         'auction_extension_seconds' => 'integer',
     ];
