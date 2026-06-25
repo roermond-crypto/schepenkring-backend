@@ -129,6 +129,17 @@ class ChatConversationController extends Controller
             'utm_campaign' => 'nullable|string|max:100',
             'ref_code' => 'nullable|string|max:100',
             'reuse' => 'nullable|boolean',
+            // Chat Hub: new fields
+            'chat_type' => 'nullable|string|in:general,offer,viewing,callback,question,brochure,seller,buyer',
+            'send_channel' => 'nullable|string|in:chat,email,whatsapp',
+            'offer_id' => 'nullable|integer',
+            'booking_id' => 'nullable|integer',
+            'brochure_id' => 'nullable|integer',
+            'question_id' => 'nullable|integer',
+            'callback_id' => 'nullable|integer',
+            'buyer_id' => 'nullable|integer',
+            'seller_id' => 'nullable|integer',
+            'initial_message' => 'nullable|string|max:4000',
         ]);
 
         if (! empty($payload['location_id']) && empty($payload['harbor_id'])) {
@@ -159,7 +170,39 @@ class ChatConversationController extends Controller
 
         $conversation = $service->createConversation($payload, $request, $request->user());
 
-        return response()->json($conversation, 201);
+        // Apply Chat Hub extra fields not handled by ChatConversationService
+        $hubFields = array_filter([
+            'chat_type' => $payload['chat_type'] ?? null,
+            'send_channel' => $payload['send_channel'] ?? null,
+            'offer_id' => $payload['offer_id'] ?? null,
+            'booking_id' => $payload['booking_id'] ?? null,
+            'brochure_id' => $payload['brochure_id'] ?? null,
+            'question_id' => $payload['question_id'] ?? null,
+            'callback_id' => $payload['callback_id'] ?? null,
+            'buyer_id' => $payload['buyer_id'] ?? null,
+            'seller_id' => $payload['seller_id'] ?? null,
+        ], fn ($v) => $v !== null);
+
+        if (!empty($hubFields)) {
+            $conversation->fill($hubFields)->save();
+        }
+
+        // Send initial message if provided
+        if (!empty($payload['initial_message'])) {
+            $clientMessageId = 'init-' . uniqid();
+            $conversation->messages()->create([
+                'sender_type' => 'employee',
+                'body' => $payload['initial_message'],
+                'text' => $payload['initial_message'],
+                'channel' => $payload['send_channel'] ?? 'chat',
+                'message_type' => 'text',
+                'client_message_id' => $clientMessageId,
+                'employee_id' => $request->user()?->id,
+            ]);
+            $conversation->update(['last_message_at' => now(), 'last_staff_message_at' => now()]);
+        }
+
+        return response()->json($conversation->fresh()->load(['contact', 'lead', 'location:id,name', 'assignedEmployee:id,name,email']), 201);
     }
 
     public function update(Request $request, string $id, ChatAccessService $access)
@@ -175,12 +218,14 @@ class ChatConversationController extends Controller
         }
 
         $payload = $request->validate([
-            'status' => 'nullable|string|in:open,pending,solved',
+            'status' => 'nullable|string|in:open,pending,solved,archived',
             'priority' => 'nullable|string|in:low,normal,high',
             'ai_mode' => 'nullable|string|in:auto,assist,off',
             'location_id' => 'nullable|integer|exists:locations,id',
             'harbor_id' => 'nullable|integer',
             'assign_to' => 'nullable|integer',
+            'chat_type' => 'nullable|string|in:general,offer,viewing,callback,question,brochure,seller,buyer',
+            'send_channel' => 'nullable|string|in:chat,email,whatsapp',
         ]);
 
         if (! empty($payload['location_id']) && empty($payload['harbor_id'])) {
@@ -211,6 +256,12 @@ class ChatConversationController extends Controller
         if (isset($payload['assign_to'])) {
             $conversation->assigned_to = (int) $payload['assign_to'];
             $conversation->assigned_employee_id = $conversation->assigned_employee_id ?? (int) $payload['assign_to'];
+        }
+        if (isset($payload['chat_type'])) {
+            $conversation->chat_type = $payload['chat_type'];
+        }
+        if (isset($payload['send_channel'])) {
+            $conversation->send_channel = $payload['send_channel'];
         }
 
         $conversation->save();

@@ -22,6 +22,8 @@ class Conversation extends Model
         'contact_id',
         'visitor_id',
         'channel',
+        'chat_type',
+        'send_channel',
         'status',
         'priority',
         'channel_origin',
@@ -40,9 +42,17 @@ class Conversation extends Model
         'last_staff_message_at',
         'last_call_at',
         'first_response_due_at',
+        'waiting_since',
         'assigned_to',
         'assigned_employee_id',
         'lead_id',
+        'offer_id',
+        'booking_id',
+        'brochure_id',
+        'question_id',
+        'callback_id',
+        'buyer_id',
+        'seller_id',
     ];
 
     protected $casts = [
@@ -53,6 +63,7 @@ class Conversation extends Model
         'last_staff_message_at' => 'datetime',
         'last_call_at' => 'datetime',
         'first_response_due_at' => 'datetime',
+        'waiting_since' => 'datetime',
     ];
 
     public function location(): BelongsTo

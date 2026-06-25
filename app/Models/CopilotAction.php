@@ -15,6 +15,7 @@ class CopilotAction extends Model
         'title',
         'short_description',
         'module',
+        'target_type',
         'description',
         'route_template',
         'query_template',

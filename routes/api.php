@@ -700,6 +700,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('impersonate/stop', [AdminImpersonationController::class, 'destroy']);
 
     // Audit
+    Route::get('audit/summary', [AdminAuditLogController::class, 'summary']);
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
     Route::get('boat-audit', [\App\Http\Controllers\Api\Admin\BoatAuditController::class, 'index']);

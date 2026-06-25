@@ -36,18 +36,25 @@ class CopilotResolverService
         $clarifying = null;
         $needsConfirmation = false;
         $confidence = 0.0;
+        $matchType = 'no_match';
 
         if ($input === '') {
-            return compact('actions', 'results', 'answers', 'clarifying', 'needsConfirmation', 'confidence');
+            return compact('actions', 'results', 'answers', 'clarifying', 'needsConfirmation', 'confidence')
+                + ['match_type' => $matchType, 'suggestions' => []];
         }
 
         $deterministic = $this->resolveDeterministic($input, $user);
         if ($deterministic) {
             $actions = [$deterministic['action']];
             $confidence = 1.0;
+            $matchType = 'deterministic';
             $needsConfirmation = $deterministic['action']['confirmation_required'] ?? false;
         } else {
             $actionCandidates = $this->resolveByPhrases($input, $user, $language, $context);
+
+            if (!empty($actionCandidates)) {
+                $matchType = 'phrase_match';
+            }
 
             if ($this->shouldCallAi($input, $actionCandidates)) {
                 $aiResult = $this->aiRouter->route($input, $actionCandidates, $context);
@@ -56,6 +63,7 @@ class CopilotResolverService
                     if ($validated) {
                         $actions = [$validated];
                         $confidence = (float) ($aiResult['confidence'] ?? 0.6);
+                        $matchType = 'ai_match';
                         $needsConfirmation = $validated['confirmation_required'] ?? false;
                         $clarifying = $aiResult['clarifying_question'] ?? null;
                     }
@@ -77,8 +85,11 @@ class CopilotResolverService
         $answers = $knowledge['answers'];
         $confidence = max($confidence, (float) ($knowledge['confidence'] ?? 0.0));
 
+        $suggestions = [];
         if (empty($actions) && empty($results) && empty($answers)) {
+            $matchType = 'no_match';
             $clarifying = $clarifying ?: $this->copilotLanguage()->translate('clarify_open_or_search', (string) $language);
+            $suggestions = $this->buildSuggestions($user, $language);
         }
 
         $needsConfirmation = $needsConfirmation || $this->anyNeedsConfirmation($actions);
@@ -90,6 +101,8 @@ class CopilotResolverService
             'clarifying_question' => $clarifying,
             'needs_confirmation' => $needsConfirmation,
             'confidence' => round($confidence, 3),
+            'match_type' => $matchType,
+            'suggestions' => $suggestions,
             'source' => $source,
             'answer_strategy' => $knowledge['strategy'] ?? null,
             'knowledge_trace' => $knowledge['trace'] ?? null,
@@ -635,6 +648,27 @@ class CopilotResolverService
     private function isHistoricalQuery(string $input): bool
     {
         return preg_match('/\b(price|sold|market|archive|historical|valuation|worth)\b/i', $input) === 1;
+    }
+
+    private function buildSuggestions(User $user, ?string $language): array
+    {
+        $query = \App\Models\CopilotActionPhrase::query()
+            ->where('enabled', true)
+            ->with('action')
+            ->when($language, fn ($q) => $q->where(function ($q) use ($language) {
+                $q->whereNull('language')->orWhere('language', $language);
+            }))
+            ->orderByDesc('priority')
+            ->limit(6);
+
+        return $query->get()
+            ->filter(fn ($p) => $p->action && $p->action->enabled
+                && $this->permissionService->canUseAction($user, $p->action->permission_key, $p->action->required_role))
+            ->map(fn ($p) => $p->phrase)
+            ->unique()
+            ->values()
+            ->take(5)
+            ->toArray();
     }
 
     private function anyNeedsConfirmation(array $actions): bool
