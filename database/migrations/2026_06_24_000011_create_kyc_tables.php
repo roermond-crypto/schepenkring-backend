@@ -14,14 +14,10 @@ return new class extends Migration
             $table->string('case_number', 30)->unique(); // KYC-2026-118
 
             // Linked entities (all nullable — case can be created before deal exists)
-            $table->unsignedBigInteger('deal_id')->nullable();
-            $table->foreign('deal_id')->references('id')->on('deals')->nullOnDelete();
-
-            $table->unsignedBigInteger('offer_id')->nullable();
-            $table->foreign('offer_id')->references('id')->on('offers')->nullOnDelete();
-
-            $table->unsignedBigInteger('contract_id')->nullable();
-            $table->foreign('contract_id')->references('id')->on('contracts')->nullOnDelete();
+            // FK omitted for deal/offer/contract/yacht — those tables may not exist yet
+            $table->unsignedBigInteger('deal_id')->nullable()->index();
+            $table->unsignedBigInteger('offer_id')->nullable()->index();
+            $table->unsignedBigInteger('contract_id')->nullable()->index();
 
             $table->unsignedBigInteger('buyer_id')->nullable();
             $table->foreign('buyer_id')->references('id')->on('users')->nullOnDelete();
@@ -29,8 +25,7 @@ return new class extends Migration
             $table->unsignedBigInteger('seller_id')->nullable();
             $table->foreign('seller_id')->references('id')->on('users')->nullOnDelete();
 
-            $table->unsignedBigInteger('yacht_id')->nullable();
-            $table->foreign('yacht_id')->references('id')->on('yachts')->nullOnDelete();
+            $table->unsignedBigInteger('yacht_id')->nullable()->index();
 
             $table->unsignedBigInteger('location_id')->nullable();
             $table->foreign('location_id')->references('id')->on('locations')->nullOnDelete();
