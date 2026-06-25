@@ -10,9 +10,10 @@ return new class extends Migration
         $now = now();
 
         foreach ($this->actions() as $action) {
+            $row = array_diff_key($action, ['_phrases' => true]);
             DB::table('copilot_actions')->updateOrInsert(
                 ['action_id' => $action['action_id']],
-                array_merge($action, ['updated_at' => $now, 'created_at' => $now])
+                array_merge($row, ['updated_at' => $now, 'created_at' => $now])
             );
 
             $actionDbId = DB::table('copilot_actions')
