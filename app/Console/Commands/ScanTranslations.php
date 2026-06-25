@@ -16,6 +16,7 @@ class ScanTranslations extends Command
 {
     protected $signature = 'translations:scan
                             {locale? : Specific locale to scan (nl, en, de, fr, …)}
+                            {--path= : Absolute path to the locales directory (overrides LOCALES_DIR env)}
                             {--fix : Auto-fix Windows-1252 double-encoded mojibake in place}
                             {--json : Output results as JSON}';
 
@@ -31,10 +32,15 @@ class ScanTranslations extends Command
 
     public function handle(): int
     {
-        $localesDir = base_path('../schepenkring-frontend/src/locales');
+        $localesDir = $this->option('path')
+            ?? env('LOCALES_DIR')
+            ?? base_path('../schepenkring-frontend/src/locales');
+
+        $localesDir = rtrim($localesDir, '/');
 
         if (! is_dir($localesDir)) {
             $this->error("Locales directory not found: {$localesDir}");
+            $this->line('  Set LOCALES_DIR in .env or pass --path=/absolute/path/to/locales');
             return self::FAILURE;
         }
 
