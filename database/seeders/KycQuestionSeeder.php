@@ -4,13 +4,16 @@ namespace Database\Seeders;
 
 use App\Models\KycQuestionTemplate;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class KycQuestionSeeder extends Seeder
 {
     public function run(): void
     {
         // Clear existing questions before re-seeding
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
         KycQuestionTemplate::truncate();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         $sort = 0;
 
