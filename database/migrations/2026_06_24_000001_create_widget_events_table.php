@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::createIfNotExists('widget_events', function (Blueprint $table) {
+        if (!Schema::hasTable('widget_events')) Schema::create('widget_events', function (Blueprint $table) {
             $table->id();
             $table->string('event_name', 100);        // widget_opened, widget_plan_viewing_submitted, etc.
             $table->string('flow_type', 50)->nullable(); // plan_viewing, offer, brochure, callback, question
