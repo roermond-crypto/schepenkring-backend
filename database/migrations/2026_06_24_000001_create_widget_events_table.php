@@ -28,26 +28,26 @@ return new class extends Migration
         // Add widget-specific columns to bookings
         Schema::table('bookings', function (Blueprint $table) {
             if (!Schema::hasColumn('bookings', 'chat_id')) {
-                $table->string('chat_id')->nullable()->after('conversation_id');
+                $table->string('chat_id')->nullable();
             }
             if (!Schema::hasColumn('bookings', 'lead_id')) {
-                $table->unsignedBigInteger('lead_id')->nullable()->after('chat_id');
+                $table->unsignedBigInteger('lead_id')->nullable();
             }
             if (!Schema::hasColumn('bookings', 'phone')) {
-                $table->string('phone')->nullable()->after('email');
+                $table->string('phone')->nullable();
             }
             if (!Schema::hasColumn('bookings', 'preferred_time')) {
-                $table->string('preferred_time', 10)->nullable()->after('time');
+                $table->string('preferred_time', 10)->nullable();
             }
         });
 
         // Add offer_amount to conversations for offer flow
         Schema::table('conversations', function (Blueprint $table) {
             if (!Schema::hasColumn('conversations', 'widget_flow_type')) {
-                $table->string('widget_flow_type', 50)->nullable()->after('channel_origin');
+                $table->string('widget_flow_type', 50)->nullable();
             }
             if (!Schema::hasColumn('conversations', 'widget_offer_amount')) {
-                $table->decimal('widget_offer_amount', 12, 2)->nullable()->after('widget_flow_type');
+                $table->decimal('widget_offer_amount', 12, 2)->nullable();
             }
         });
     }
