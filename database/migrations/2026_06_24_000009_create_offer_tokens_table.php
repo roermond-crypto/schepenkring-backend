@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('offer_tokens', function (Blueprint $table) {
+        if (!Schema::hasTable('offer_tokens')) Schema::create('offer_tokens', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('offer_id');
             $table->foreign('offer_id')->references('id')->on('offers')->cascadeOnDelete();

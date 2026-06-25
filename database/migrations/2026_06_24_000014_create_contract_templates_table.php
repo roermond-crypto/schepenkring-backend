@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('contract_templates', function (Blueprint $table) {
+        if (!Schema::hasTable('contract_templates')) Schema::create('contract_templates', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->string('type');  // purchase_contract, seller_assignment, viewing_agreement, offer_agreement, delivery_document, brokerage_agreement

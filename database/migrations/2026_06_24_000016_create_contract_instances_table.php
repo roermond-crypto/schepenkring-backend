@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('contract_instances', function (Blueprint $table) {
+        if (!Schema::hasTable('contract_instances')) Schema::create('contract_instances', function (Blueprint $table) {
             $table->id();
             $table->foreignId('sign_request_id')->nullable()->constrained('sign_requests')->nullOnDelete();
             $table->foreignId('contract_template_id')->nullable()->constrained('contract_templates')->nullOnDelete();

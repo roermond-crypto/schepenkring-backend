@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         // ── KYC cases ────────────────────────────────────────────
-        Schema::create('kyc_cases', function (Blueprint $table) {
+        if (!Schema::hasTable('kyc_cases')) Schema::create('kyc_cases', function (Blueprint $table) {
             $table->id();
             $table->string('case_number', 30)->unique(); // KYC-2026-118
 
@@ -80,7 +80,7 @@ return new class extends Migration
         });
 
         // ── KYC question templates ────────────────────────────────
-        Schema::create('kyc_question_templates', function (Blueprint $table) {
+        if (!Schema::hasTable('kyc_question_templates')) Schema::create('kyc_question_templates', function (Blueprint $table) {
             $table->id();
             $table->string('section', 100);
             $table->text('question');
@@ -105,7 +105,7 @@ return new class extends Migration
         });
 
         // ── KYC answers ──────────────────────────────────────────
-        Schema::create('kyc_answers', function (Blueprint $table) {
+        if (!Schema::hasTable('kyc_answers')) Schema::create('kyc_answers', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('kyc_case_id');
             $table->foreign('kyc_case_id')->references('id')->on('kyc_cases')->cascadeOnDelete();
@@ -123,7 +123,7 @@ return new class extends Migration
         });
 
         // ── KYC documents ────────────────────────────────────────
-        Schema::create('kyc_documents', function (Blueprint $table) {
+        if (!Schema::hasTable('kyc_documents')) Schema::create('kyc_documents', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('kyc_case_id');
             $table->foreign('kyc_case_id')->references('id')->on('kyc_cases')->cascadeOnDelete();
@@ -147,7 +147,7 @@ return new class extends Migration
         });
 
         // ── KYC timeline ─────────────────────────────────────────
-        Schema::create('kyc_timeline', function (Blueprint $table) {
+        if (!Schema::hasTable('kyc_timeline')) Schema::create('kyc_timeline', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('kyc_case_id');
             $table->foreign('kyc_case_id')->references('id')->on('kyc_cases')->cascadeOnDelete();

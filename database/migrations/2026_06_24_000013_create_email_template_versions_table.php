@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('email_template_versions', function (Blueprint $table) {
+        if (!Schema::hasTable('email_template_versions')) Schema::create('email_template_versions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('email_template_id')->constrained('email_templates')->cascadeOnDelete();
             $table->unsignedBigInteger('version');

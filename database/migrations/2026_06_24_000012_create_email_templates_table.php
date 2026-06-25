@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('email_templates', function (Blueprint $table) {
+        if (!Schema::hasTable('email_templates')) Schema::create('email_templates', function (Blueprint $table) {
             $table->id();
             $table->string('type');            // offer_received_buyer, offer_received_seller, etc.
             $table->string('name');

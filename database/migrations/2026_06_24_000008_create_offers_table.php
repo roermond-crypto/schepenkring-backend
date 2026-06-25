@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('offers', function (Blueprint $table) {
+        if (!Schema::hasTable('offers')) Schema::create('offers', function (Blueprint $table) {
             $table->id();
 
             // Core relationships

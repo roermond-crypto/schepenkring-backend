@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('boat_intakes', function (Blueprint $table) {
+        if (!Schema::hasTable('boat_intakes')) Schema::create('boat_intakes', function (Blueprint $table) {
             $table->id();
 
             // Seller contact (can be anonymous, linked to user after creation)
@@ -87,7 +87,7 @@ return new class extends Migration
         });
 
         // Documents uploaded during intake
-        Schema::create('boat_intake_files', function (Blueprint $table) {
+        if (!Schema::hasTable('boat_intake_files')) Schema::create('boat_intake_files', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('boat_intake_id');
             $table->foreign('boat_intake_id')->references('id')->on('boat_intakes')->cascadeOnDelete();

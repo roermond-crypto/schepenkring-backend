@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('location_delete_requests', function (Blueprint $table) {
+        if (!Schema::hasTable('location_delete_requests')) Schema::create('location_delete_requests', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('location_id');
             $table->unsignedBigInteger('requested_by');
