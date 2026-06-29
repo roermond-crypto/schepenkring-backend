@@ -62,6 +62,16 @@ class UserController extends Controller
     public function destroy(int $id, DisableUserAction $action, UserRepository $users)
     {
         $target = $users->findOrFail($id);
+
+        // Buyers and sellers are public self-registered accounts — hard-delete so
+        // their email address is immediately freed for re-registration.
+        if (in_array($target->type?->value ?? $target->type, ['BUYER', 'SELLER'], true)) {
+            $users->revokeTokens($target);
+            $target->delete();
+            return response()->json(['data' => ['deleted' => true]]);
+        }
+
+        // Internal staff / partners — disable only (preserves audit trail).
         $user = $action->execute(
             $target,
             request()->user(),

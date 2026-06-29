@@ -10,7 +10,10 @@ class RegisterRequest extends ApiRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255',
+                Rule::unique('users', 'email')
+                    ->where(fn ($q) => $q->whereNotIn('status', ['DISABLED', 'EMAIL_PENDING']))
+            ],
             'locale' => ['sometimes', 'nullable', 'string', 'max:5'],
             'phone' => ['nullable', 'string', 'max:25'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],

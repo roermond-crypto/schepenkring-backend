@@ -27,21 +27,48 @@ class RegisterClientAction
             default => UserType::CLIENT,
         };
 
-        $user = $this->users->create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'phone' => $data['phone'] ?? null,
-            'password' => $data['password'],
-            'type' => $type,
-            'status' => UserStatus::EMAIL_PENDING,
-            'client_location_id' => $data['location_id'],
-            'role' => $role,
-            'email_changed_at' => now(),
-            'phone_changed_at' => array_key_exists('phone', $data) ? now() : null,
-            'password_changed_at' => now(),
-        ]);
+        // Reuse a disabled or unverified account with the same email instead of
+        // inserting a duplicate (which would violate the unique index).
+        $existing = User::where('email', $data['email'])
+            ->whereIn('status', [UserStatus::DISABLED->value, UserStatus::EMAIL_PENDING->value])
+            ->first();
 
-        // Create Profiles and Onboarding records based on role
+        if ($existing) {
+            $existing->fill([
+                'name'                => $data['name'],
+                'phone'               => $data['phone'] ?? null,
+                'password'            => $data['password'],
+                'type'                => $type,
+                'status'              => UserStatus::EMAIL_PENDING,
+                'client_location_id'  => $data['location_id'],
+                'role'                => $role,
+                'email_changed_at'    => now(),
+                'phone_changed_at'    => array_key_exists('phone', $data) ? now() : null,
+                'password_changed_at' => now(),
+            ]);
+            $existing->save();
+            $user = $existing;
+        } else {
+            $user = $this->users->create([
+                'name'                => $data['name'],
+                'email'               => $data['email'],
+                'phone'               => $data['phone'] ?? null,
+                'password'            => $data['password'],
+                'type'                => $type,
+                'status'              => UserStatus::EMAIL_PENDING,
+                'client_location_id'  => $data['location_id'],
+                'role'                => $role,
+                'email_changed_at'    => now(),
+                'phone_changed_at'    => array_key_exists('phone', $data) ? now() : null,
+                'password_changed_at' => now(),
+            ]);
+        }
+
+        // Create Profiles and Onboarding records only for brand-new accounts
+        if ($existing) {
+            return $this->logAndReturn($user, $role);
+        }
+
         if ($role === 'seller') {
             \App\Models\SellerProfile::create([
                 'user_id' => $user->id,
@@ -68,6 +95,11 @@ class RegisterClientAction
             ]);
         }
 
+        return $this->logAndReturn($user, $role);
+    }
+
+    private function logAndReturn(User $user, string $role): User
+    {
         $this->security->log('auth.register', RiskLevel::LOW, $user, $user, [
             'source' => 'self_signup',
             'role' => $role,
