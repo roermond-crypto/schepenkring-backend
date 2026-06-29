@@ -979,4 +979,36 @@ class HarborController extends Controller
             'call_sessions' => DB::table('call_sessions')->where('harbor_id', $harborId)->count(),
         ];
     }
+
+    // ── GET /api/admin/locations/{harbor}/booking-settings ───────────────────
+    // Also served at /api/locations/{id}/booking-settings (public route alias)
+
+    public function bookingSettings(Request $request, Location $harbor): JsonResponse
+    {
+        $hours = $harbor->opening_hours ?? [];
+
+        // opening_hours can be an array-of-days or a flat object with start/end
+        $start = null;
+        $end   = null;
+
+        if (isset($hours['opening_hours_start'])) {
+            $start = $hours['opening_hours_start'];
+            $end   = $hours['opening_hours_end'] ?? null;
+        } elseif (is_array($hours)) {
+            // Try to derive a global default from the first populated weekday
+            foreach (['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] as $day) {
+                if (!empty($hours[$day]['start'])) {
+                    $start = $hours[$day]['start'];
+                    $end   = $hours[$day]['end'] ?? null;
+                    break;
+                }
+            }
+        }
+
+        return response()->json([
+            'opening_hours_start' => $start ?? '09:00',
+            'opening_hours_end'   => $end   ?? '17:00',
+            'opening_hours'       => $hours,
+        ]);
+    }
 }

@@ -116,6 +116,9 @@ Route::prefix('locations/delete')->group(function () {
         ->middleware('throttle:5,1');
 });
 
+// ── Location booking-settings (public alias, no auth required) ──────────────
+Route::get('locations/{id}/booking-settings', [\App\Http\Controllers\Api\Admin\HarborController::class, 'bookingSettings']);
+
 // ── Schepenkring Lead Widget (public, no auth) ──────────────
 Route::prefix('widget')->group(function () {
     Route::get('context', [WidgetLeadController::class, 'context'])->middleware('throttle:120,1');
@@ -204,6 +207,7 @@ Route::prefix('public')->group(function () {
     Route::get('boats/{yachtId}/bids', [BidWidgetController::class, 'bids']);
     Route::post('boats/{yachtId}/bid', [BidWidgetController::class, 'place'])->middleware('bid.session');
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
+    Route::get('locations/{id}/booking-settings', [\App\Http\Controllers\Api\Admin\HarborController::class, 'bookingSettings']);
 });
 
 // Chat widget (public)
@@ -657,6 +661,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('locations/{harbor}/impact', [AdminHarborController::class, 'impact']);
     Route::get('locations/{harbor}/stats', [AdminHarborController::class, 'stats']);
     Route::get('locations/{harbor}/timeline', [AdminHarborController::class, 'timeline']);
+    Route::get('locations/{harbor}/booking-settings', [AdminHarborController::class, 'bookingSettings']);
     Route::get('locations/{harbor}/users', [AdminHarborController::class, 'locationUsers']);
     Route::post('locations/{harbor}/users', [AdminHarborController::class, 'addLocationUser']);
     Route::delete('locations/{harbor}/users/{userId}', [AdminHarborController::class, 'removeLocationUser']);
