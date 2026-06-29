@@ -146,6 +146,7 @@ class KycCaseController extends Controller
             'notes'          => 'nullable|string|max:5000',
             'buyer_id'       => 'nullable|integer|exists:users,id',
             'seller_id'      => 'nullable|integer|exists:users,id',
+            'yacht_id'       => 'nullable|integer|exists:yachts,id',
             'location_id'    => 'nullable|integer|exists:locations,id',
             'broker_id'      => 'nullable|integer|exists:users,id',
         ]);

@@ -614,6 +614,15 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
         Route::get('{kycCase}/pdf', [\App\Http\Controllers\Api\Admin\KycPdfController::class, 'show']);
     });
 
+    // KYC question templates (admin)
+    Route::prefix('kyc-questions')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\Admin\KycQuestionTemplateController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\Admin\KycQuestionTemplateController::class, 'store']);
+        Route::post('reorder', [\App\Http\Controllers\Api\Admin\KycQuestionTemplateController::class, 'reorder']);
+        Route::patch('{question}', [\App\Http\Controllers\Api\Admin\KycQuestionTemplateController::class, 'update']);
+        Route::delete('{question}', [\App\Http\Controllers\Api\Admin\KycQuestionTemplateController::class, 'destroy']);
+    });
+
     // Boat intakes (admin)
     Route::get('boat-intakes', [\App\Http\Controllers\Api\BoatIntakeController::class, 'adminIndex']);
     Route::get('boat-intakes/{boatIntake}', [\App\Http\Controllers\Api\BoatIntakeController::class, 'adminShow']);
