@@ -761,6 +761,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // Email templates
     Route::get('email-templates/types', [EmailTemplateController::class, 'types']);
     Route::get('email-templates/tags', [EmailTemplateController::class, 'tags']);
+    Route::post('email-templates/upload-media', [EmailTemplateController::class, 'uploadMedia']);
     Route::get('email-templates', [EmailTemplateController::class, 'index']);
     Route::post('email-templates', [EmailTemplateController::class, 'store']);
     Route::get('email-templates/{template}', [EmailTemplateController::class, 'show']);

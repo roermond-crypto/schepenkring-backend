@@ -470,12 +470,12 @@ class EmailTemplateController extends Controller
         $types = [];
         foreach (EmailTemplateAutoCreateService::TEMPLATE_TYPES as $type) {
             $types[] = [
-                'type' => $type,
-                'name' => EmailTemplateAutoCreateService::READABLE_NAMES[$type] ?? $type,
+                'value' => $type,
+                'label' => EmailTemplateAutoCreateService::READABLE_NAMES[$type] ?? $type,
             ];
         }
 
-        return response()->json(['types' => $types]);
+        return response()->json($types);
     }
 
     // ── GET /api/admin/email-templates/tags ──────────────────────────────────
@@ -484,13 +484,39 @@ class EmailTemplateController extends Controller
     {
         $tags = [];
         foreach (EmailTemplateRendererService::TAGS as $tag) {
+            $category = 'general';
+            if (str_starts_with($tag, 'buyer_') || str_starts_with($tag, 'seller_')) {
+                $category = 'user';
+            } elseif (str_starts_with($tag, 'boat_') || str_starts_with($tag, 'yacht_')) {
+                $category = 'boat';
+            } elseif (str_starts_with($tag, 'location_')) {
+                $category = 'location';
+            } elseif (str_starts_with($tag, 'offer_') || str_starts_with($tag, 'bid_')) {
+                $category = 'offer';
+            } elseif (str_starts_with($tag, 'contract_')) {
+                $category = 'contract';
+            }
             $tags[] = [
-                'tag'         => $tag,
-                'placeholder' => '{{' . $tag . '}}',
+                'key'         => $tag,
                 'description' => EmailTemplateRendererService::TAG_DESCRIPTIONS[$tag] ?? $tag,
+                'category'    => $category,
             ];
         }
 
-        return response()->json(['tags' => $tags]);
+        return response()->json($tags);
+    }
+
+    // ── POST /api/admin/email-templates/upload-media ─────────────────────────
+
+    public function uploadMedia(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|image|max:4096',
+        ]);
+
+        $path = $request->file('file')->store('email-template-media', 'public');
+        $url  = asset('storage/' . $path);
+
+        return response()->json(['url' => $url]);
     }
 }
