@@ -644,6 +644,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'index']);
     Route::post('offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'store']);
     Route::get('offers/{offer}', [\App\Http\Controllers\Api\Admin\OfferController::class, 'show']);
+    Route::patch('offers/{offer}', [\App\Http\Controllers\Api\Admin\OfferController::class, 'update']);
     Route::patch('offers/{offer}/status', [\App\Http\Controllers\Api\Admin\OfferController::class, 'updateStatus']);
     Route::post('offers/{offer}/notify-seller', [\App\Http\Controllers\Api\Admin\OfferController::class, 'notifySeller']);
     Route::delete('offers/{offer}', [\App\Http\Controllers\Api\Admin\OfferController::class, 'destroy']);

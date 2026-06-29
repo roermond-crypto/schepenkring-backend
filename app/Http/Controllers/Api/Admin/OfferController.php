@@ -116,6 +116,34 @@ class OfferController extends Controller
         });
     }
 
+    // ── PATCH /api/admin/offers/{offer} ─────────────────────
+
+    public function update(Request $request, Offer $offer): JsonResponse
+    {
+        $data = $request->validate([
+            'buyer_name'  => 'sometimes|required|string|max:255',
+            'buyer_email' => 'sometimes|nullable|email|max:255',
+            'buyer_phone' => 'sometimes|nullable|string|max:50',
+            'amount'      => 'sometimes|required|numeric|min:1',
+            'message'     => 'sometimes|nullable|string|max:2000',
+            'status'      => 'sometimes|string|in:new,sent_to_seller,seller_accepted,seller_rejected,seller_countered,withdrawn,completed',
+        ]);
+
+        $offer->update($data);
+
+        if (isset($data['status']) && in_array($data['status'], ['seller_accepted', 'seller_rejected', 'seller_countered']) && !$offer->seller_responded_at) {
+            $offer->update(['seller_responded_at' => now()]);
+        }
+
+        if (isset($data['amount'])) {
+            $offer->update(['below_minimum' => $offer->minimum_amount && $data['amount'] < $offer->minimum_amount]);
+        }
+
+        $this->audit('offer_updated_admin', $offer, $request);
+
+        return response()->json(['offer' => $this->serializeOffer($offer->fresh())]);
+    }
+
     // ── PATCH /api/admin/offers/{offer}/status ───────────────
 
     public function updateStatus(Request $request, Offer $offer): JsonResponse
