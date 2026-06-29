@@ -174,6 +174,7 @@ class Yacht extends Model
         'seller_invite_enabled' => 'boolean',
         'seller_email_notifications' => 'boolean',
         'seller_counter_offer_enabled' => 'boolean',
+        'completeness_breakdown' => 'array',
     ];
 
     // Eager-load all sub-tables by default
