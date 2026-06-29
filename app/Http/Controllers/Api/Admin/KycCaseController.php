@@ -481,9 +481,9 @@ class KycCaseController extends Controller
                 'required'                   => $q->required,
                 'conditional_on_question_id' => $q->conditional_on_question_id,
                 'conditional_show_when'      => $q->conditional_show_when,
-                'current_answer'             => $answers[$q->id]?->answer,
-                'current_note'               => $answers[$q->id]?->note,
-                'risk_points_awarded'        => $answers[$q->id]?->risk_points_awarded ?? 0,
+                'current_answer'             => $answers->get($q->id)?->answer,
+                'current_note'               => $answers->get($q->id)?->note,
+                'risk_points_awarded'        => $answers->get($q->id)?->risk_points_awarded ?? 0,
             ])->values();
         }
 
