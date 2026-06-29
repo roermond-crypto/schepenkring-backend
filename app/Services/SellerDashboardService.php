@@ -95,15 +95,19 @@ class SellerDashboardService
             return ['total_eur' => 0, 'this_month_eur' => 0];
         }
 
-        $total = \App\Models\YachtFinancialLog::whereIn('yacht_id', $yachtIds)
-            ->where('type', 'sale')
-            ->sum('amount_eur');
+        try {
+            $total = \App\Models\YachtFinancialLog::whereIn('yacht_id', $yachtIds)
+                ->where('type', 'sale')
+                ->sum('amount_eur');
 
-        $thisMonth = \App\Models\YachtFinancialLog::whereIn('yacht_id', $yachtIds)
-            ->where('type', 'sale')
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('amount_eur');
+            $thisMonth = \App\Models\YachtFinancialLog::whereIn('yacht_id', $yachtIds)
+                ->where('type', 'sale')
+                ->whereMonth('created_at', now()->month)
+                ->whereYear('created_at', now()->year)
+                ->sum('amount_eur');
+        } catch (\Throwable) {
+            return ['total_eur' => 0, 'this_month_eur' => 0];
+        }
 
         return [
             'total_eur' => (int) $total,

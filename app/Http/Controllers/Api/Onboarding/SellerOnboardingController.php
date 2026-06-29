@@ -232,7 +232,7 @@ class SellerOnboardingController extends Controller
                 }
 
                 $expected = strtolower(trim((string) ($conditions['value'] ?? '')));
-                $actual = strtolower(trim((string) ($answers[$dependencyKey]?->normalized_value ?? '')));
+                $actual = strtolower(trim((string) ($answers->get($dependencyKey)?->normalized_value ?? '')));
 
                 return $expected === '' || $actual === $expected;
             })
@@ -246,7 +246,7 @@ class SellerOnboardingController extends Controller
                     'required' => $question->required,
                     'seller_type_scope' => $question->seller_type_scope,
                     'conditions' => $question->conditions_json,
-                    'answer' => $answers[$question->key]?->normalized_value,
+                    'answer' => $answers->get($question->key)?->normalized_value,
                     'options' => $question->options->map(fn ($option) => [
                         'id' => $option->id,
                         'value' => $option->value,
