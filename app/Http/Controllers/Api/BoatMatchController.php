@@ -55,7 +55,7 @@ class BoatMatchController extends Controller
         // Apply year filter for the "best match" candidate
         $bestQuery = clone $query;
         if ($year) {
-            $bestQuery->where('year_built', $year);
+            $bestQuery->where('year', $year);
         }
 
         $best = $bestQuery->latest()->first() ?? $query->latest()->first();
@@ -72,7 +72,7 @@ class BoatMatchController extends Controller
         }
 
         $matchType = 'partial';
-        if ($brand && $model && $year && $best->year_built == $year) {
+        if ($brand && $model && $year && $best->year == $year) {
             $matchType = 'exact';
         } elseif ($brand && $model) {
             $matchType = 'fuzzy';
@@ -81,7 +81,7 @@ class BoatMatchController extends Controller
         // Derive year range from similar boats
         $yearRange = Yacht::query()
             ->whereRaw('LOWER(manufacturer) LIKE ?', ['%' . strtolower($brand ?: 'x') . '%'])
-            ->selectRaw('MIN(year_built) as min_year, MAX(year_built) as max_year')
+            ->selectRaw('MIN(year) as min_year, MAX(year) as max_year')
             ->first();
 
         return response()->json([
@@ -92,7 +92,7 @@ class BoatMatchController extends Controller
                 'id'                 => $best->id,
                 'brand'              => $best->manufacturer,
                 'model'              => $best->model,
-                'year'               => $best->year_built,
+                'year'               => $best->year,
                 'boat_name'          => $best->boat_name,
                 'boat_type'          => $best->boat_type,
                 'boat_category'      => $best->boat_category,
