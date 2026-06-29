@@ -51,11 +51,15 @@ class AuditLogRepository
         }
 
         if (! empty($filters['entity_type'])) {
-            $types = AuditResourceType::resolveMany($filters['entity_type']);
-            if (count($types) > 0) {
-                $query->where(function (Builder $builder) use ($types) {
-                    $builder->whereIn('entity_type', $types)
-                        ->orWhereIn('target_type', $types);
+            $rawTypes = $this->normalizeList($filters['entity_type']);
+            $resolvedTypes = AuditResourceType::resolveMany($filters['entity_type']);
+            // Include both raw values (as stored in DB) and resolved class names
+            // so filters work regardless of which format was used when logging.
+            $allTypes = array_values(array_unique(array_merge($rawTypes, $resolvedTypes)));
+            if (count($allTypes) > 0) {
+                $query->where(function (Builder $builder) use ($allTypes) {
+                    $builder->whereIn('entity_type', $allTypes)
+                        ->orWhereIn('target_type', $allTypes);
                 });
             }
         }
