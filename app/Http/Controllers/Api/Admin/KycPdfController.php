@@ -10,7 +10,7 @@ class KycPdfController extends Controller
 {
     public function show(KycCase $kycCase): Response
     {
-        $kycCase->load(['answers.questionTemplate', 'documents', 'timeline', 'buyer', 'seller', 'yacht', 'location', 'broker', 'approvedBy']);
+        $kycCase->load(['answers.question', 'documents', 'timeline', 'buyer', 'seller', 'yacht', 'location', 'broker', 'approvedBy']);
 
         $html = view('kyc.pdf', compact('kycCase'))->render();
 
