@@ -161,6 +161,39 @@ class BoatIntakeController extends Controller
         ]);
     }
 
+    // ── DELETE /api/boat-intake/{token}/photos/{photoId} ─────
+    // Remove a single uploaded photo; token-gated
+
+    public function deletePhoto(string $token, int $photoId): JsonResponse
+    {
+        $intake = $this->resolveToken($token);
+
+        $photo = BoatIntakeFile::where('id', $photoId)
+            ->where('boat_intake_id', $intake->id)
+            ->where('type', 'photo')
+            ->firstOrFail();
+
+        Storage::disk($photo->disk ?? 'public')->delete($photo->path);
+        $photo->delete();
+
+        $newCount = $intake->photos()->count();
+        $intake->update(['photo_count' => $newCount]);
+
+        $score = $this->scorer->calculate($intake->fresh());
+        $intake->fresh()->update([
+            'intake_score'    => $score['total'],
+            'score_breakdown' => $score['breakdown'],
+            'missing_items'   => $score['missing'],
+            'status'          => $this->scorer->deriveStatus($intake->fresh(), $score),
+        ]);
+
+        return response()->json([
+            'deleted' => true,
+            'photo_count' => $newCount,
+            'score' => $score,
+        ]);
+    }
+
     // ── POST /api/boat-intake/{token}/documents ───────────────
     // Upload documents; token-gated
 

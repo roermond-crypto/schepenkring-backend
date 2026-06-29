@@ -142,6 +142,8 @@ Route::prefix('boat-intake')->group(function () {
         ->middleware('throttle:30,1');
     Route::post('{token}/photos', [\App\Http\Controllers\Api\BoatIntakeController::class, 'uploadPhotos'])
         ->middleware('throttle:20,1');
+    Route::delete('{token}/photos/{photoId}', [\App\Http\Controllers\Api\BoatIntakeController::class, 'deletePhoto'])
+        ->middleware('throttle:30,1');
     Route::post('{token}/documents', [\App\Http\Controllers\Api\BoatIntakeController::class, 'uploadDocuments'])
         ->middleware('throttle:20,1');
 });
