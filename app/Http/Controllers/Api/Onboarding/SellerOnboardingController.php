@@ -123,7 +123,7 @@ class SellerOnboardingController extends Controller
         }
 
         return response()->json([
-            'payment' => $payment->fresh(),
+            'payment' => $payment?->fresh(),
             'data' => $this->formatStatus($onboarding->fresh(['profile', 'flags', 'latestContract', 'latestSignhostPhase'])),
         ]);
     }
