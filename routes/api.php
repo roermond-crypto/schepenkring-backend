@@ -606,7 +606,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
         Route::post('{kycCase}/answers', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'saveAnswer']);
         Route::post('{kycCase}/documents', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'uploadDocument']);
         Route::post('{kycCase}/verify-document', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'verifyDocument']);
+        Route::patch('{kycCase}', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'update']);
         Route::patch('{kycCase}/status', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'updateStatus']);
+        Route::delete('{kycCase}', [\App\Http\Controllers\Api\Admin\KycCaseController::class, 'destroy']);
         Route::get('{kycCase}/pdf', [\App\Http\Controllers\Api\Admin\KycPdfController::class, 'show']);
     });
 

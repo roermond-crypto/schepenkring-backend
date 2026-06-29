@@ -112,7 +112,7 @@ class CreateKycCaseAction
 
     public function manual(array $overrides = []): KycCase
     {
-        return $this->create($overrides);
+        return $this->create(array_merge($overrides, ['auto_created' => false]));
     }
 
     private function create(array $data): KycCase

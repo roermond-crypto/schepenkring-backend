@@ -121,6 +121,70 @@ class KycCaseController extends Controller
         return response()->json(['kyc_case' => $this->serialize($kycCase)], 201);
     }
 
+    // ── PATCH /admin/kyc-cases/{kycCase} ─────────────────────
+
+    public function update(Request $request, KycCase $kycCase): JsonResponse
+    {
+        $data = $request->validate([
+            'buyer_name'     => 'nullable|string|max:200',
+            'buyer_email'    => 'nullable|email|max:200',
+            'buyer_phone'    => 'nullable|string|max:50',
+            'buyer_address'  => 'nullable|string|max:300',
+            'buyer_city'     => 'nullable|string|max:100',
+            'buyer_country'  => 'nullable|string|max:5',
+            'buyer_iban'     => 'nullable|string|max:50',
+            'buyer_dob'      => 'nullable|string|max:20',
+            'seller_name'    => 'nullable|string|max:200',
+            'seller_email'   => 'nullable|email|max:200',
+            'seller_phone'   => 'nullable|string|max:50',
+            'seller_address' => 'nullable|string|max:300',
+            'boat_name'      => 'nullable|string|max:200',
+            'boat_type'      => 'nullable|string|max:100',
+            'boat_value'     => 'nullable|numeric|min:0',
+            'deal_value'     => 'nullable|numeric|min:0',
+            'payment_method' => 'nullable|string|max:50',
+            'notes'          => 'nullable|string|max:5000',
+            'buyer_id'       => 'nullable|integer|exists:users,id',
+            'seller_id'      => 'nullable|integer|exists:users,id',
+            'location_id'    => 'nullable|integer|exists:locations,id',
+            'broker_id'      => 'nullable|integer|exists:users,id',
+        ]);
+
+        $kycCase->update($data);
+
+        $kycCase->addTimeline(
+            'case_updated',
+            'Dossiergegevens bijgewerkt',
+            $request->user(),
+            null,
+            $request->ip(),
+            $request->userAgent()
+        );
+
+        $this->audit('kyc_updated', $kycCase, $request);
+
+        $kycCase->load([
+            'buyer:id,name,email,phone', 'seller:id,name,email,phone',
+            'yacht:id,boat_name,price,boat_type', 'location:id,name,email,phone',
+            'broker:id,name', 'approvedBy:id,name',
+            'answers.answeredBy:id,name',
+            'documents.uploadedBy:id,name', 'documents.verifiedBy:id,name',
+            'timeline.actor:id,name',
+        ]);
+
+        return response()->json(['kyc_case' => $this->serializeFull($kycCase)]);
+    }
+
+    // ── DELETE /admin/kyc-cases/{kycCase} ─────────────────────
+
+    public function destroy(Request $request, KycCase $kycCase): JsonResponse
+    {
+        $this->audit('kyc_deleted', $kycCase, $request);
+        $kycCase->delete();
+
+        return response()->json(['message' => 'Dossier verwijderd.']);
+    }
+
     // ── POST /admin/kyc-cases/{kycCase}/answers ───────────────
 
     public function saveAnswer(Request $request, KycCase $kycCase): JsonResponse
