@@ -349,10 +349,6 @@ class SellerOnboardingOrchestrator
     {
         $onboarding->loadMissing(['profile', 'kycAnswers.option', 'flags', 'latestContract']);
 
-        if ($onboarding->payment_status !== 'paid') {
-            throw new \RuntimeException('Payment must be completed before seller approval can be evaluated.');
-        }
-
         if (!$onboarding->latestContract) {
             $this->generateContract($onboarding);
             $onboarding->refresh();
