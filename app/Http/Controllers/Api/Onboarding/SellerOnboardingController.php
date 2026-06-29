@@ -386,6 +386,12 @@ class SellerOnboardingController extends Controller
             return 'kyc';
         }
 
+        // KYC complete but not yet evaluated — send back to KYC step so the
+        // user can re-trigger submit (e.g. after a previous submit failure).
+        if ($onboarding->status === SellerOnboardingStatus::PROFILE_COMPLETED) {
+            return 'kyc';
+        }
+
         return null;
     }
 }
