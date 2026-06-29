@@ -284,6 +284,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [BoatDocumentController::class, 'destroy']);
     });
 
+    // Channel listings (Marktplaats, etc.)
+    Route::get('yachts/{id}/channel-listings', [\App\Http\Controllers\Api\YachtChannelListingController::class, 'index']);
+    Route::put('yachts/{id}/channel-listings/marktplaats', [\App\Http\Controllers\Api\YachtChannelListingController::class, 'upsertMarktplaats']);
+    Route::post('yachts/{id}/channel-listings/marktplaats/{action}', [\App\Http\Controllers\Api\YachtChannelListingController::class, 'actionMarktplaats']);
+
+    // Boat matching (AI assistant)
+    Route::post('boats/match', [\App\Http\Controllers\Api\BoatMatchController::class, 'match']);
+
     // Uploaded yacht videos
     Route::get('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'index']);
     Route::post('yachts/{yachtId}/boat-videos', [BoatVideoController::class, 'store']);
