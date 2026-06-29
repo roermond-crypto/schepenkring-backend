@@ -26,6 +26,15 @@ class UserResource extends JsonResource
             })->values();
         });
 
+        $yachts = $this->whenLoaded('yachts', function () {
+            return $this->yachts->map(fn ($y) => [
+                'id'           => $y->id,
+                'boat_name'    => $y->boat_name,
+                'manufacturer' => $y->manufacturer,
+                'model'        => $y->model,
+            ])->values();
+        });
+
         $clientLocation = $this->whenLoaded('clientLocation', function () {
             return $this->clientLocation ? [
                 'id' => $this->clientLocation->id,
@@ -92,6 +101,7 @@ class UserResource extends JsonResource
             'email_notifications_enabled' => $this->email_notifications_enabled,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
+            'yachts' => $yachts,
         ];
     }
 }
