@@ -44,7 +44,10 @@ class WidgetLeadController extends Controller
         $locationId = $request->integer('location_id') ?: null;
 
         if ($boatId = $request->integer('boat_id')) {
-            $boat = Yacht::with('location')->find($boatId);
+            $boat = Yacht::with('location')
+                ->where('id', $boatId)
+                ->orWhere('yachtshift_id', $boatId)
+                ->first();
             if ($boat && $boat->location_id) {
                 $locationId = $boat->location_id;
             }
