@@ -663,6 +663,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('harbors/{harbor}', [AdminHarborController::class, 'show']);
     Route::get('locations', [AdminHarborController::class, 'index']);
     Route::post('locations', [AdminHarborController::class, 'store']);
+    Route::get('locations/performance', [AdminHarborController::class, 'performance']);
     Route::get('locations/archived', [AdminHarborController::class, 'archived']);
     Route::patch('locations/{harbor}', [AdminHarborController::class, 'update']);
     Route::get('locations/{harbor}', [AdminHarborController::class, 'show']);
