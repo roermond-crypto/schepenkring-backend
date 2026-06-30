@@ -38,12 +38,13 @@ class SellerOnboardingReviewController extends Controller
 
     public function approve(Request $request, SellerOnboarding $sellerOnboarding): JsonResponse
     {
-        $sellerOnboarding->status         = SellerOnboardingStatus::APPROVED;
-        $sellerOnboarding->decision       = 'approved';
-        $sellerOnboarding->approved_at    = now();
-        $sellerOnboarding->verified_at    = now();
+        $sellerOnboarding->status           = SellerOnboardingStatus::APPROVED;
+        $sellerOnboarding->decision         = 'approved';
+        $sellerOnboarding->approved_at      = now();
+        $sellerOnboarding->verified_at      = now();
+        $sellerOnboarding->expires_at       = now()->addYears(2);
         $sellerOnboarding->can_publish_boat = true;
-        $sellerOnboarding->decision_reason = $request->input('reason');
+        $sellerOnboarding->decision_reason  = $request->input('reason');
         $sellerOnboarding->save();
 
         return response()->json(['data' => $this->serialize($sellerOnboarding->fresh(['user', 'profile']))]);
