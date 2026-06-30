@@ -11,18 +11,30 @@ class KycQuestionTemplate extends Model
     protected $table = 'kyc_question_templates';
 
     protected $fillable = [
-        'section', 'question', 'action', 'field_type',
+        'section', 'question', 'action', 'translations', 'field_type',
         'options', 'risk_points', 'risk_flag', 'required',
         'conditional_on_question_id', 'conditional_show_when',
         'sort_order', 'active',
     ];
 
     protected $casts = [
-        'options'   => 'array',
-        'required'  => 'boolean',
-        'active'    => 'boolean',
-        'risk_points' => 'integer',
+        'options'       => 'array',
+        'translations'  => 'array',
+        'required'      => 'boolean',
+        'active'        => 'boolean',
+        'risk_points'   => 'integer',
     ];
+
+    public function translate(string $locale, string $field): string
+    {
+        if ($locale !== 'nl') {
+            $value = $this->translations[$locale][$field] ?? null;
+            if ($value !== null && $value !== '') {
+                return $value;
+            }
+        }
+        return (string) ($this->{$field} ?? '');
+    }
 
     public function parent(): BelongsTo
     {

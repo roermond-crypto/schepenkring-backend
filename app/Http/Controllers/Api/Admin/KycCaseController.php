@@ -69,8 +69,10 @@ class KycCaseController extends Controller
 
     // ── GET /admin/kyc-cases/{kycCase} ───────────────────────
 
-    public function show(KycCase $kycCase): JsonResponse
+    public function show(Request $request, KycCase $kycCase): JsonResponse
     {
+        $locale = $request->input('locale', 'nl');
+
         $kycCase->load([
             'buyer:id,name,email,phone',
             'seller:id,name,email,phone',
@@ -88,11 +90,11 @@ class KycCaseController extends Controller
         $sections  = KycQuestionTemplate::where('active', true)
             ->orderBy('sort_order')
             ->get()
-            ->groupBy('section');
+            ->groupBy(fn ($q) => $q->translate($locale, 'section'));
 
         return response()->json([
             'kyc_case'  => $this->serializeFull($kycCase),
-            'sections'  => $this->serializeSections($sections, $kycCase),
+            'sections'  => $this->serializeSections($sections, $kycCase, $locale),
             'progress'  => $kycCase->sectionProgress(),
             'missing_documents' => $kycCase->missingDocumentTypes(),
         ]);
@@ -465,7 +467,7 @@ class KycCaseController extends Controller
         ]);
     }
 
-    private function serializeSections($sections, KycCase $kycCase): array
+    private function serializeSections(\Illuminate\Support\Collection $sections, KycCase $kycCase, string $locale = 'nl'): array
     {
         $answers = $kycCase->answers->keyBy('question_template_id');
         $result  = [];
@@ -473,8 +475,8 @@ class KycCaseController extends Controller
         foreach ($sections as $sectionName => $questions) {
             $result[$sectionName] = $questions->map(fn ($q) => [
                 'id'                         => $q->id,
-                'question'                   => $q->question,
-                'action'                     => $q->action,
+                'question'                   => $q->translate($locale, 'question'),
+                'action'                     => $q->translate($locale, 'action') ?: null,
                 'field_type'                 => $q->field_type,
                 'options'                    => $q->options,
                 'risk_points'                => $q->risk_points,
