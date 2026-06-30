@@ -26,6 +26,15 @@ class UserResource extends JsonResource
             })->values();
         });
 
+        $sellerOnboarding = $this->whenLoaded('sellerOnboarding', function () {
+            return $this->sellerOnboarding ? [
+                'id'              => $this->sellerOnboarding->id,
+                'status'          => $this->sellerOnboarding->status,
+                'can_publish_boat' => (bool) $this->sellerOnboarding->can_publish_boat,
+                'submitted_at'    => $this->sellerOnboarding->submitted_at?->toIso8601String(),
+            ] : null;
+        });
+
         $yachts = $this->whenLoaded('yachts', function () {
             return $this->yachts->map(fn ($y) => [
                 'id'           => $y->id,
@@ -102,6 +111,7 @@ class UserResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'yachts' => $yachts,
+            'seller_onboarding' => $sellerOnboarding,
         ];
     }
 }

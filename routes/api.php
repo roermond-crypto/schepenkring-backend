@@ -399,6 +399,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('audit', [AdminAuditLogController::class, 'index']);
         Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
+
+        Route::get('seller-onboarding-reviews', [\App\Http\Controllers\Api\Admin\SellerOnboardingReviewController::class, 'index']);
+        Route::get('seller-onboarding-reviews/{sellerOnboarding}', [\App\Http\Controllers\Api\Admin\SellerOnboardingReviewController::class, 'show']);
+        Route::post('seller-onboarding-reviews/{sellerOnboarding}/approve', [\App\Http\Controllers\Api\Admin\SellerOnboardingReviewController::class, 'approve']);
+        Route::post('seller-onboarding-reviews/{sellerOnboarding}/reject', [\App\Http\Controllers\Api\Admin\SellerOnboardingReviewController::class, 'reject']);
     });
 
     // Leads & conversations

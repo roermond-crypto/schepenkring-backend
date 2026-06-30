@@ -16,7 +16,12 @@ class UserRepository
 
     public function query(): Builder
     {
-        return User::query()->with(['locations', 'clientLocation', 'yachts' => fn ($q) => $q->select('id', 'user_id', 'boat_name', 'manufacturer', 'model')->limit(5)]);
+        return User::query()->with([
+            'locations',
+            'clientLocation',
+            'yachts' => fn ($q) => $q->select('id', 'user_id', 'boat_name', 'manufacturer', 'model')->limit(5),
+            'sellerOnboarding' => fn ($q) => $q->select('id', 'user_id', 'status', 'can_publish_boat', 'submitted_at'),
+        ]);
     }
 
     public function findOrFail(int $id): User
