@@ -21,6 +21,20 @@ class ContractTemplateController extends Controller
 
     public function types(): JsonResponse
     {
+        // Use the DB-driven ContractType model when available and populated
+        if (class_exists(\App\Models\ContractType::class)) {
+            $dbTypes = \App\Models\ContractType::where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get(['slug as value', 'name as label'])
+                ->toArray();
+
+            if (! empty($dbTypes)) {
+                return response()->json(['types' => $dbTypes]);
+            }
+        }
+
+        // Fallback to hardcoded constant (used before migration runs)
         $types = [];
         foreach (ContractTemplateRendererService::TEMPLATE_TYPES as $value => $label) {
             $types[] = ['value' => $value, 'label' => $label];
@@ -458,6 +472,67 @@ class ContractTemplateController extends Controller
             'missing_tags'  => $missingTags,
             'resolved_tags' => $resolvedTags,
         ]);
+    }
+
+    // ── GET /api/admin/contract-templates/{template}/pdf ─────────────────────
+
+    public function pdf(Request $request, ContractTemplate $template): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate([
+            'use_sample_tags' => 'nullable|boolean',
+            'yacht_id'        => 'nullable|integer',
+        ]);
+
+        $useSample = filter_var($data['use_sample_tags'] ?? true, FILTER_VALIDATE_BOOLEAN);
+        $resolvedTags = $useSample ? $this->renderer->getSampleTags() : [];
+
+        if (! empty($data['yacht_id'])) {
+            $resolvedTags = array_merge($resolvedTags, $this->renderer->resolveTagsForYacht((int) $data['yacht_id']));
+        }
+
+        $html = $this->renderer->replaceTags($template->content_html, $resolvedTags);
+
+        // Wrap in a print-ready HTML document
+        $fullHtml = $this->buildPrintHtml($html, $template->name);
+
+        if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml);
+            $pdf->setPaper('A4', 'portrait');
+            $filename = \Illuminate\Support\Str::slug($template->name) . '.pdf';
+            return $pdf->download($filename);
+        }
+
+        // Dompdf not installed — return rendered HTML for browser printing
+        return response($fullHtml, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+    }
+
+    private function buildPrintHtml(string $body, string $title): string
+    {
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>{$title}</title>
+<style>
+  @page { margin: 25mm 20mm; size: A4; }
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.7; }
+  h1 { font-size: 16pt; font-weight: bold; margin-bottom: 8pt; }
+  h2 { font-size: 13pt; font-weight: bold; margin-top: 16pt; margin-bottom: 6pt; }
+  h3 { font-size: 11pt; font-weight: bold; margin-top: 12pt; margin-bottom: 4pt; }
+  p  { margin: 6pt 0; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 16pt 0; page-break-after: auto; }
+  strong { font-weight: bold; }
+  em { font-style: italic; }
+  u  { text-decoration: underline; }
+  ul, ol { padding-left: 18pt; margin: 6pt 0; }
+  li { margin: 3pt 0; }
+  .missing-tag { background: #fde8e8; color: #c81020; padding: 0 2px; border-radius: 2px; }
+</style>
+</head>
+<body>{$body}</body>
+</html>
+HTML;
     }
 
     // ── GET /api/admin/contract-templates/default-for-location ───────────────

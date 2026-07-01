@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
 use App\Http\Controllers\Api\Admin\EmailTemplateController;
 use App\Http\Controllers\Api\Admin\ContractTemplateController;
+use App\Http\Controllers\Api\Admin\ContractTypeController;
 use App\Http\Controllers\Api\Admin\ContractInstanceController;
 use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
 use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
@@ -796,6 +797,12 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('email-templates/{template}/preview', [EmailTemplateController::class, 'preview']);
     Route::post('email-templates/{template}/test-send', [EmailTemplateController::class, 'testSend']);
 
+    // Contract types (CRUD)
+    Route::get('contract-types', [ContractTypeController::class, 'index']);
+    Route::post('contract-types', [ContractTypeController::class, 'store']);
+    Route::patch('contract-types/{contractType}', [ContractTypeController::class, 'update']);
+    Route::delete('contract-types/{contractType}', [ContractTypeController::class, 'destroy']);
+
     // Contract templates
     Route::get('contract-templates/types', [ContractTemplateController::class, 'types']);
     Route::get('contract-templates/tags', [ContractTemplateController::class, 'tags']);
@@ -811,6 +818,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('contract-templates/{template}/versions', [ContractTemplateController::class, 'versions']);
     Route::post('contract-templates/{template}/restore-version', [ContractTemplateController::class, 'restoreVersion']);
     Route::post('contract-templates/{template}/preview', [ContractTemplateController::class, 'preview']);
+    Route::get('contract-templates/{template}/pdf', [ContractTemplateController::class, 'pdf']);
 
     // Contract instances (per sign request)
     Route::get('contract-instances/{signRequestId}', [ContractInstanceController::class, 'show']);

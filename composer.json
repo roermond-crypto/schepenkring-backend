@@ -19,6 +19,7 @@
         "pusher/pusher-php-server": "^7.2",
         "symfony/css-selector": "^7.2",
         "symfony/dom-crawler": "^7.2",
+        "barryvdh/laravel-dompdf": "^3.0",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {
