@@ -56,7 +56,7 @@ class BoatIntakeController extends Controller
             'source_url'         => 'nullable|string|max:500',
         ]);
 
-        return DB::transaction(function () use ($data, $request) {
+        [$intake, $score, $resumeToken] = DB::transaction(function () use ($data, $request) {
             $descLen = strlen($data['short_description'] ?? '');
             $resumeToken = Str::random(64);
 
@@ -87,17 +87,17 @@ class BoatIntakeController extends Controller
             // Audit
             $this->audit('boat_intake_submitted', $intake, $request);
 
-            // Send confirmation email to seller
-            $this->sendSellerConfirmation($intake, $score, $resumeToken);
-
-            // Notify location staff
-            $this->notifyLocation($intake);
-
-            return response()->json([
-                'intake'       => $this->serialize($intake, $score),
-                'resume_token' => $resumeToken,
-            ], 201);
+            return [$intake, $score, $resumeToken];
         });
+
+        // Send emails after the transaction commits so SMTP errors never roll back the record
+        $this->sendSellerConfirmation($intake, $score, $resumeToken);
+        $this->notifyLocation($intake);
+
+        return response()->json([
+            'intake'       => $this->serialize($intake, $score),
+            'resume_token' => $resumeToken,
+        ], 201);
     }
 
     // ── GET /api/boat-intake/{token} ──────────────────────────
