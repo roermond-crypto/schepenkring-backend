@@ -347,7 +347,14 @@ class BoatIntakeController extends Controller
                 'confirmation_sent_at' => now(),
             ]);
         } catch (\Throwable $e) {
-            Log::warning('[BoatIntake] Seller confirmation failed: ' . $e->getMessage());
+            Log::error('[BoatIntake] Seller confirmation FAILED', [
+                'intake_id'    => $intake->id,
+                'seller_email' => $intake->seller_email,
+                'error'        => $e->getMessage(),
+                'class'        => get_class($e),
+                'file'         => $e->getFile() . ':' . $e->getLine(),
+                'trace'        => $e->getTraceAsString(),
+            ]);
         }
     }
 

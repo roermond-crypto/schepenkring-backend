@@ -105,17 +105,13 @@
                             </p>
                             @endif
 
-                            <!-- Next steps -->
+                            <!-- Next steps (data passed from BoatIntakeConfirmationMail::$nextSteps) -->
                             <div style="margin-bottom:24px;border-radius:16px;background-color:#f0f4f8;border:1px solid #d1dde8;padding:20px 24px;">
                                 <p style="margin:0 0 14px 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#003566;">
                                     Volgende stappen
                                 </p>
                                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                                    @foreach([
-                                        ['num' => '1', 'title' => 'Controleer uw e-mail', 'body' => 'Gebruik de link in dit bericht om extra foto\'s of documenten toe te voegen.'],
-                                        ['num' => '2', 'title' => 'Maak een account aan', 'body' => 'Uw profiel wordt automatisch ingevuld met de gegevens die u heeft ingevoerd.'],
-                                        ['num' => '3', 'title' => 'Onze makelaar neemt contact op', 'body' => 'Wij beoordelen uw aanmelding en nemen binnen één werkdag contact op.'],
-                                    ] as $step)
+                                    @foreach($nextSteps as $step)
                                     <tr>
                                         <td style="padding:8px 0;vertical-align:top;width:36px;">
                                             <div style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background-color:#003566;color:#ffffff;font-size:12px;font-weight:700;text-align:center;line-height:26px;">

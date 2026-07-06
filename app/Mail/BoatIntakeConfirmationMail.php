@@ -25,6 +25,7 @@ class BoatIntakeConfirmationMail extends Mailable
     public int $descriptionLength;
     public int $descriptionTarget;
     public bool $hasMissingItems;
+    public array $nextSteps;
 
     public function __construct(
         public BoatIntake $intake,
@@ -42,6 +43,23 @@ class BoatIntakeConfirmationMail extends Mailable
         $this->descriptionLength = $score['description_length'];
         $this->descriptionTarget = $score['description_target'];
         $this->hasMissingItems   = ! empty($this->missingItems);
+        $this->nextSteps         = [
+            [
+                'num'   => '1',
+                'title' => 'Controleer uw e-mail',
+                'body'  => 'Gebruik de link in dit bericht om extra fotos of documenten toe te voegen.',
+            ],
+            [
+                'num'   => '2',
+                'title' => 'Maak een account aan',
+                'body'  => 'Uw profiel wordt automatisch ingevuld met de gegevens die u heeft ingevoerd.',
+            ],
+            [
+                'num'   => '3',
+                'title' => 'Onze makelaar neemt contact op',
+                'body'  => 'Wij beoordelen uw aanmelding en nemen binnen een werkdag contact op.',
+            ],
+        ];
     }
 
     public function envelope(): Envelope
@@ -53,7 +71,6 @@ class BoatIntakeConfirmationMail extends Mailable
             from:    new Address($fromAddress, $fromName),
             replyTo: [new Address($fromAddress, $fromName)],
             subject: "Boot aanmelding ontvangen: {$this->boatName}",
-            tags:    ['boat-intake'],
         );
     }
 
