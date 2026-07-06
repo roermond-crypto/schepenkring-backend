@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\User\UpdateUserAction;
 use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\AdminUserUpdateRequest;
 use App\Http\Resources\UserResource;
 use App\Repositories\UserRepository;
 use Illuminate\Http\Request;
@@ -33,6 +35,23 @@ class EmployeeUserController extends Controller
     {
         $actor = $this->requireEmployee($request);
         $user = $users->findClientForActorOrFail($actor, $id);
+
+        return response()->json([
+            'data' => new UserResource($user->load(['locations', 'clientLocation'])),
+        ]);
+    }
+
+    public function update(AdminUserUpdateRequest $request, int $id, UpdateUserAction $action, UserRepository $users)
+    {
+        $actor = $this->requireEmployee($request);
+        $target = $users->findClientForActorOrFail($actor, $id);
+
+        $user = $action->execute(
+            $target,
+            $request->validated(),
+            $actor,
+            $request->header('Idempotency-Key'),
+        );
 
         return response()->json([
             'data' => new UserResource($user->load(['locations', 'clientLocation'])),

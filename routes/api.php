@@ -605,8 +605,10 @@ Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
 Route::prefix('employee')->middleware(['auth:sanctum', 'role:employee'])->group(function () {
     Route::get('users', [EmployeeUserController::class, 'index']);
     Route::get('users/{id}', [EmployeeUserController::class, 'show']);
+    Route::patch('users/{id}', [EmployeeUserController::class, 'update']);
     Route::get('clients', [EmployeeUserController::class, 'index']);
     Route::get('clients/{id}', [EmployeeUserController::class, 'show']);
+    Route::patch('clients/{id}', [EmployeeUserController::class, 'update']);
 });
 
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {

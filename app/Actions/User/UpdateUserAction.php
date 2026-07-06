@@ -23,7 +23,13 @@ class UpdateUserAction
 
     public function execute(User $target, array $data, User $actor, ?string $idempotencyKey): User
     {
-        $allowed = Arr::only($data, ['name', 'email', 'phone', 'status']);
+        $allowed = Arr::only($data, [
+            'name', 'first_name', 'last_name', 'date_of_birth',
+            'email', 'phone', 'status',
+            'street', 'house_number', 'address_line1', 'address_line2',
+            'city', 'state', 'postal_code', 'country',
+            'two_factor_enabled',
+        ]);
 
         $target->loadMissing(['locations', 'clientLocation']);
         $before = $target->toArray();
@@ -46,14 +52,28 @@ class UpdateUserAction
             $allowed['status'] = UserStatus::from($allowed['status']);
         }
 
-        $sensitiveChange = $emailChanged || $phoneChanged || $statusChanged || $locationChanged;
+        // Keep address_line1/2 in sync with street/house_number
+        if (array_key_exists('street', $allowed)) {
+            $allowed['address_line1'] = $allowed['street'];
+        }
+        if (array_key_exists('house_number', $allowed)) {
+            $allowed['address_line2'] = $allowed['house_number'];
+        }
+
+        // Handle password change
+        $passwordPayload = [];
+        if (! empty($data['password'])) {
+            $passwordPayload['password'] = $data['password'];
+        }
+
+        $sensitiveChange = $emailChanged || $phoneChanged || $statusChanged || $locationChanged || ! empty($passwordPayload);
 
         if ($sensitiveChange) {
             $this->security->requireIdempotency($idempotencyKey, 'admin.user.update', $actor);
         }
 
-        $user = DB::transaction(function () use ($target, $allowed, $data) {
-            $user = $this->users->update($target, $allowed);
+        $user = DB::transaction(function () use ($target, $allowed, $passwordPayload, $data) {
+            $user = $this->users->update($target, array_merge($allowed, $passwordPayload));
             $this->syncLocationAssignment($user, $data);
 
             return $user->refresh()->load(['locations', 'clientLocation']);

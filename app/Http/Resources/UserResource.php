@@ -94,6 +94,8 @@ class UserResource extends JsonResource
                 )),
             'timezone' => $this->timezone,
             'locale' => $this->locale,
+            'street' => $this->street ?? $this->address_line1,
+            'house_number' => $this->house_number ?? $this->address_line2,
             'address_line1' => $this->address_line1,
             'address_line2' => $this->address_line2,
             'city' => $this->city,
