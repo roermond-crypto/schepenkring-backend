@@ -56,12 +56,17 @@ class BoatPlatformPublicationController extends Controller
      */
     public function update(Request $request, Yacht $yacht): JsonResponse
     {
-        $items = $request->validate([
+        // Frontend sends { publications: [...] }; also accept a flat array for flexibility
+        $raw = $request->input('publications') ?? $request->all();
+
+        $validated = validator($raw, [
             '*'                          => 'array',
             '*.platform_id'              => 'required|integer|exists:platforms,id',
             '*.enabled'                  => 'required|boolean',
             '*.external_platform_id'     => 'nullable|string|max:255',
-        ]);
+        ])->validate();
+
+        $items = $validated;
 
         $updated = [];
 

@@ -301,7 +301,10 @@ class BoatIntakeController extends Controller
         $boatIntake->update(['status' => 'accepted']);
         $this->audit('boat_intake_promoted', $boatIntake, $request);
 
-        return response()->json(['message' => 'Intake gepromoveerd naar actief aanbod.']);
+        return response()->json([
+            'message'  => 'Intake gepromoveerd naar actief aanbod.',
+            'yacht_id' => $boatIntake->yacht_id,
+        ]);
     }
 
     // ── Helpers ──────────────────────────────────────────────
