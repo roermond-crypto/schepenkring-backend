@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Mail\PasswordResetLinkMail;
+use App\Mail\TemplatedMail;
 use App\Models\User;
+use App\Services\EmailTemplateResolver;
 use App\Support\AuthEmailSupport;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -48,7 +50,24 @@ class PasswordResetController extends Controller
             $locale
         );
 
-        Mail::to($email)->send(new PasswordResetLinkMail($user, $link, $locale));
+        $tags = [
+            'user_name'          => $user->name ?? ($user->first_name ?? ''),
+            'user_email'         => $email,
+            'password_reset_link'=> $link,
+        ];
+
+        $rendered = app(EmailTemplateResolver::class)->resolveAndRender(
+            'password_reset',
+            null,
+            $locale,
+            $tags,
+        );
+
+        if ($rendered !== null) {
+            Mail::to($email)->send(TemplatedMail::fromResolved($rendered));
+        } else {
+            Mail::to($email)->send(new PasswordResetLinkMail($user, $link, $locale));
+        }
 
         Log::info("Password reset requested for {$email}");
 

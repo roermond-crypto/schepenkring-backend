@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Mail\TemplatedMail;
 use App\Mail\UserVerificationCodeMail;
 use App\Models\User;
+use App\Services\EmailTemplateResolver;
 use App\Support\AuthEmailSupport;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -26,9 +28,26 @@ class EmailVerificationCodeService
         ], now()->addMinutes(self::TTL_MINUTES));
 
         try {
-            Mail::to($user->email)->send(
-                new UserVerificationCodeMail($user, $code, self::TTL_MINUTES, $locale)
+            $tags = [
+                'user_name'         => $user->name ?? ($user->first_name ?? ''),
+                'user_email'        => $user->email,
+                'verification_code' => $code,
+            ];
+
+            $rendered = app(EmailTemplateResolver::class)->resolveAndRender(
+                'email_verification',
+                null,
+                $locale,
+                $tags,
             );
+
+            if ($rendered !== null) {
+                Mail::to($user->email)->send(TemplatedMail::fromResolved($rendered));
+            } else {
+                Mail::to($user->email)->send(
+                    new UserVerificationCodeMail($user, $code, self::TTL_MINUTES, $locale)
+                );
+            }
         } catch (\Throwable $exception) {
             Log::error('User verification code email failed', [
                 'user_id' => $user->id,

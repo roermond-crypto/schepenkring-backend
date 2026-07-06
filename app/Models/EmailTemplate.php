@@ -17,6 +17,7 @@ class EmailTemplate extends Model
         'parent_template_id',
         'language_default',
         'subject',
+        'preheader',
         'blocks',
         'sender_name_override',
         'sender_email_override',

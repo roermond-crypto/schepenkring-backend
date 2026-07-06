@@ -787,9 +787,10 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::apiResource('integrations', IntegrationController::class);
     Route::post('integrations/{id}/send-access-details', [IntegrationController::class, 'sendAccessDetails']);
 
-    // Email templates
+    // Email templates — static routes MUST be declared before {template} wildcard
     Route::get('email-templates/types', [EmailTemplateController::class, 'types']);
     Route::get('email-templates/tags', [EmailTemplateController::class, 'tags']);
+    Route::get('email-templates/sample-data/{type}', [EmailTemplateController::class, 'sampleDataByType']);
     Route::post('email-templates/upload-media', [EmailTemplateController::class, 'uploadMedia']);
     Route::get('email-templates', [EmailTemplateController::class, 'index']);
     Route::post('email-templates', [EmailTemplateController::class, 'store']);
@@ -802,6 +803,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('email-templates/{template}/restore-version', [EmailTemplateController::class, 'restoreVersion']);
     Route::post('email-templates/{template}/preview', [EmailTemplateController::class, 'preview']);
     Route::post('email-templates/{template}/test-send', [EmailTemplateController::class, 'testSend']);
+    Route::get('email-templates/{template}/sample-data', [EmailTemplateController::class, 'sampleData']);
 
     // Contract types (CRUD)
     Route::get('contract-types', [ContractTypeController::class, 'index']);

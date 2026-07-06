@@ -4,77 +4,131 @@ namespace App\Services;
 
 class EmailTemplateRendererService
 {
+    /** All available tags (35 total) */
     public const TAGS = [
-        'location_name', 'location_phone', 'location_email', 'location_address',
-        'location_logo', 'location_url',
-        'boat_name', 'boat_brand', 'boat_model', 'boat_price', 'boat_url', 'boat_image',
+        // User
+        'user_name', 'user_email',
+        // Buyer
         'buyer_name', 'buyer_email', 'buyer_phone',
+        // Seller
         'seller_name', 'seller_email',
-        'offer_amount', 'counter_offer_amount',
-        'booking_date', 'booking_time',
-        'chat_link', 'offer_link', 'contract_link', 'brochure_link',
-        'password_reset_link', 'verification_link',
+        // Boat
+        'boat_name', 'boat_brand', 'boat_model', 'boat_price', 'boat_year', 'boat_url', 'boat_image',
+        // Location
+        'location_name', 'location_phone', 'location_email', 'location_address', 'location_logo', 'location_url',
+        // Deal
+        'offer_amount', 'counter_offer_amount', 'booking_date', 'booking_time',
+        'offer_link', 'chat_link', 'brochure_link', 'contract_link',
+        // Contract
+        'contract_number', 'signhost_url',
+        // Invoice
+        'invoice_number', 'invoice_amount', 'invoice_date', 'invoice_link',
+        // Payment
+        'payment_amount', 'payment_date',
+        // Company
+        'company_name', 'company_kvk', 'company_btw',
+        // System / Auth
+        'verification_link', 'password_reset_link', 'verification_code',
     ];
 
+    /** Tag descriptions for the editor's tag panel */
     public const TAG_DESCRIPTIONS = [
+        'user_name'            => 'Naam van de gebruiker',
+        'user_email'           => 'E-mailadres van de gebruiker',
+        'buyer_name'           => 'Naam van de koper',
+        'buyer_email'          => 'E-mailadres van de koper',
+        'buyer_phone'          => 'Telefoonnummer van de koper',
+        'seller_name'          => 'Naam van de verkoper',
+        'seller_email'         => 'E-mailadres van de verkoper',
+        'boat_name'            => 'Naam van het schip',
+        'boat_brand'           => 'Merk van het schip',
+        'boat_model'           => 'Model van het schip',
+        'boat_price'           => 'Vraagprijs van het schip',
+        'boat_year'            => 'Bouwjaar van het schip',
+        'boat_url'             => 'URL naar de boot advertentie',
+        'boat_image'           => 'Afbeelding URL van het schip',
         'location_name'        => 'Naam van de vestiging',
         'location_phone'       => 'Telefoonnummer van de vestiging',
         'location_email'       => 'E-mailadres van de vestiging',
         'location_address'     => 'Adres van de vestiging',
         'location_logo'        => 'Logo URL van de vestiging',
         'location_url'         => 'Website URL van de vestiging',
-        'boat_name'            => 'Naam van het schip',
-        'boat_brand'           => 'Merk van het schip',
-        'boat_model'           => 'Model van het schip',
-        'boat_price'           => 'Vraagprijs van het schip',
-        'boat_url'             => 'URL naar de boot advertentie',
-        'boat_image'           => 'Afbeelding URL van het schip',
-        'buyer_name'           => 'Naam van de koper',
-        'buyer_email'          => 'E-mailadres van de koper',
-        'buyer_phone'          => 'Telefoonnummer van de koper',
-        'seller_name'          => 'Naam van de verkoper',
-        'seller_email'         => 'E-mailadres van de verkoper',
         'offer_amount'         => 'Bedrag van het bod',
         'counter_offer_amount' => 'Bedrag van het tegenbod',
         'booking_date'         => 'Datum van de bezichtiging/boeking',
         'booking_time'         => 'Tijdstip van de bezichtiging/boeking',
-        'chat_link'            => 'Link naar het chatgesprek',
         'offer_link'           => 'Link naar het bod',
-        'contract_link'        => 'Link naar het contract',
+        'chat_link'            => 'Link naar het chatgesprek',
         'brochure_link'        => 'Link naar de brochure',
+        'contract_link'        => 'Link naar het contract',
+        'contract_number'      => 'Contractnummer',
+        'signhost_url'         => 'Signhost ondertekeningslink',
+        'invoice_number'       => 'Factuurnummer',
+        'invoice_amount'       => 'Factuurbedrag',
+        'invoice_date'         => 'Factuurdatum',
+        'invoice_link'         => 'Link naar de factuur',
+        'payment_amount'       => 'Betaald bedrag',
+        'payment_date'         => 'Datum van betaling',
+        'company_name'         => 'Bedrijfsnaam',
+        'company_kvk'          => 'KvK-nummer',
+        'company_btw'          => 'BTW-nummer',
+        'verification_link'    => 'Link voor account-/e-mailverificatie',
         'password_reset_link'  => 'Link voor wachtwoord reset',
-        'verification_link'    => 'Link voor e-mailverificatie',
+        'verification_code'    => 'Eenmalige verificatiecode',
     ];
 
     /**
-     * Required tags per template type
+     * Tags grouped by category for the editor tag-insert panel.
+     * Matches EmailTemplateAutoCreateService::TAG_CATEGORIES.
      */
-    public const REQUIRED_TAGS_PER_TYPE = [
-        'offer_received_buyer'        => ['buyer_name', 'boat_name', 'offer_amount', 'location_name'],
-        'offer_received_seller'       => ['seller_name', 'boat_name', 'offer_amount', 'location_name', 'offer_link'],
-        'seller_counter_offer'        => ['buyer_name', 'boat_name', 'counter_offer_amount', 'offer_link'],
-        'seller_accept_offer'         => ['buyer_name', 'boat_name', 'offer_amount', 'location_name', 'contract_link'],
-        'seller_reject_offer'         => ['buyer_name', 'boat_name', 'location_name'],
-        'viewing_request_buyer'       => ['buyer_name', 'boat_name', 'booking_date', 'booking_time', 'location_name'],
-        'viewing_request_location'    => ['buyer_name', 'buyer_email', 'boat_name', 'booking_date', 'booking_time'],
-        'callback_request'            => ['buyer_name', 'buyer_phone', 'location_name'],
-        'brochure_request'            => ['buyer_name', 'boat_name', 'brochure_link'],
-        'question_received'           => ['buyer_name', 'boat_name', 'location_name'],
-        'chat_message_email'          => ['buyer_name', 'chat_link', 'location_name'],
-        'seller_invite'               => ['seller_name', 'location_name', 'verification_link'],
-        'contract_signing'            => ['buyer_name', 'boat_name', 'contract_link'],
-        'booking_confirmation'        => ['buyer_name', 'boat_name', 'booking_date', 'booking_time'],
-        'password_invite'             => ['buyer_name', 'password_reset_link'],
+    public const TAG_CATEGORIES = [
+        'User'     => ['user_name', 'user_email'],
+        'Buyer'    => ['buyer_name', 'buyer_email', 'buyer_phone'],
+        'Seller'   => ['seller_name', 'seller_email'],
+        'Boat'     => ['boat_name', 'boat_brand', 'boat_model', 'boat_price', 'boat_year', 'boat_url', 'boat_image'],
+        'Location' => ['location_name', 'location_phone', 'location_email', 'location_address', 'location_logo', 'location_url'],
+        'Deal'     => ['offer_amount', 'counter_offer_amount', 'booking_date', 'booking_time', 'offer_link', 'chat_link', 'brochure_link', 'contract_link'],
+        'Contract' => ['contract_number', 'signhost_url'],
+        'Invoice'  => ['invoice_number', 'invoice_amount', 'invoice_date', 'invoice_link'],
+        'Payment'  => ['payment_amount', 'payment_date'],
+        'Company'  => ['company_name', 'company_kvk', 'company_btw'],
+        'System'   => ['verification_link', 'password_reset_link', 'verification_code'],
     ];
+
+    /** Required tags per event type */
+    public const REQUIRED_TAGS_PER_TYPE = [
+        'user_registration'        => ['user_name', 'location_name', 'verification_link'],
+        'email_verification'       => ['user_name', 'verification_code'],
+        'welcome_email'            => ['user_name', 'location_name'],
+        'password_reset'           => ['user_name', 'password_reset_link'],
+        'password_invite'          => ['user_name', 'password_reset_link'],
+        'offer_received_buyer'     => ['buyer_name', 'boat_name', 'offer_amount', 'location_name'],
+        'offer_received_seller'    => ['seller_name', 'boat_name', 'offer_amount', 'offer_link'],
+        'seller_counter_offer'     => ['buyer_name', 'boat_name', 'counter_offer_amount', 'offer_link'],
+        'seller_accept_offer'      => ['buyer_name', 'boat_name', 'location_name', 'contract_link'],
+        'seller_reject_offer'      => ['buyer_name', 'boat_name', 'location_name'],
+        'viewing_request_buyer'    => ['buyer_name', 'boat_name', 'booking_date', 'booking_time', 'location_name'],
+        'viewing_request_location' => ['buyer_name', 'buyer_email', 'boat_name', 'booking_date', 'booking_time'],
+        'booking_confirmation'     => ['buyer_name', 'boat_name', 'booking_date', 'booking_time'],
+        'boat_submitted'           => ['seller_name', 'boat_name', 'location_name'],
+        'boat_approved'            => ['seller_name', 'boat_name', 'boat_url'],
+        'boat_rejected'            => ['seller_name', 'boat_name', 'location_email'],
+        'chat_message_email'       => ['user_name', 'boat_name', 'chat_link'],
+        'callback_request'         => ['buyer_name', 'buyer_phone', 'buyer_email'],
+        'brochure_request'         => ['buyer_name', 'boat_name', 'brochure_link'],
+        'question_received'        => ['seller_name', 'buyer_name', 'buyer_email', 'boat_name'],
+        'seller_invite'            => ['seller_name', 'location_name', 'verification_link'],
+        'contract_signing'         => ['buyer_name', 'boat_name', 'contract_link'],
+        'signhost_request'         => ['user_name', 'signhost_url'],
+        'contract_signed'          => ['buyer_name', 'boat_name', 'contract_link'],
+        'invoice_created'          => ['user_name', 'invoice_number', 'invoice_amount', 'invoice_date', 'invoice_link'],
+        'payment_received'         => ['user_name', 'payment_amount', 'payment_date'],
+    ];
+
+    // ─── Public API ───────────────────────────────────────────────────────────
 
     /**
      * Render blocks array into a full HTML email string.
-     *
-     * @param  array       $blocks          Array of block objects
-     * @param  string      $lang            Language code: nl|en|de|fr
-     * @param  array       $tags            Tag replacements ['location_name' => 'Schepenkring', ...]
-     * @param  array|null  $locationBranding  ['primary_color' => '#C8102E', ...]
-     * @return string
      */
     public function render(array $blocks, string $lang, array $tags = [], ?array $locationBranding = null): string
     {
@@ -86,7 +140,7 @@ class EmailTemplateRendererService
             $blocksHtml .= $this->renderBlock($block, $lang, $tags, $primaryColor);
         }
 
-        $html = <<<HTML
+        return <<<HTML
 <!DOCTYPE html>
 <html lang="{$lang}">
 <head>
@@ -121,8 +175,6 @@ class EmailTemplateRendererService
 </body>
 </html>
 HTML;
-
-        return $html;
     }
 
     /**
@@ -159,8 +211,70 @@ HTML;
      */
     public function missingRequiredTags(string $type, array $providedTagKeys): array
     {
-        $required = $this->requiredTagsForType($type);
-        return array_values(array_diff($required, $providedTagKeys));
+        return array_values(array_diff($this->requiredTagsForType($type), $providedTagKeys));
+    }
+
+    /**
+     * Return realistic sample data for a given template type so the preview
+     * renders with real-looking values instead of raw {{tags}}.
+     */
+    public function sampleData(string $type): array
+    {
+        $base = [
+            'user_name'            => 'Jan de Vries',
+            'user_email'           => 'jan.devries@voorbeeld.nl',
+            'buyer_name'           => 'Jan de Vries',
+            'buyer_email'          => 'jan.devries@voorbeeld.nl',
+            'buyer_phone'          => '+31 6 12 34 56 78',
+            'seller_name'          => 'Pieter Bakker',
+            'seller_email'         => 'pieter.bakker@voorbeeld.nl',
+            'boat_name'            => 'Leeuw van de Zee',
+            'boat_brand'           => 'Beneteau',
+            'boat_model'           => 'Oceanis 40.1',
+            'boat_price'           => '€ 125.000',
+            'boat_year'            => '2019',
+            'boat_url'             => 'https://voorbeeld.nl/boten/leeuw-van-de-zee',
+            'boat_image'           => 'https://via.placeholder.com/600x300?text=Boot+foto',
+            'location_name'        => 'Schepenkring Amsterdam',
+            'location_phone'       => '+31 20 123 45 67',
+            'location_email'       => 'info@schepenkring-amsterdam.nl',
+            'location_address'     => 'Havenstraat 12, 1234 AB Amsterdam',
+            'location_logo'        => 'https://via.placeholder.com/200x50?text=Logo',
+            'location_url'         => 'https://voorbeeld.nl',
+            'offer_amount'         => '€ 110.000',
+            'counter_offer_amount' => '€ 118.000',
+            'booking_date'         => '15 juli 2026',
+            'booking_time'         => '10:00',
+            'offer_link'           => 'https://voorbeeld.nl/biedingen/123',
+            'chat_link'            => 'https://voorbeeld.nl/chat/456',
+            'brochure_link'        => 'https://voorbeeld.nl/brochures/leeuw-van-de-zee.pdf',
+            'contract_link'        => 'https://voorbeeld.nl/contracten/789',
+            'contract_number'      => 'CON-2026-0042',
+            'signhost_url'         => 'https://sign.signhost.com/t/abc123xyz',
+            'invoice_number'       => 'INV-2026-0117',
+            'invoice_amount'       => '€ 2.500,00',
+            'invoice_date'         => '6 juli 2026',
+            'invoice_link'         => 'https://voorbeeld.nl/facturen/0117',
+            'payment_amount'       => '€ 2.500,00',
+            'payment_date'         => '7 juli 2026',
+            'company_name'         => 'Schepenkring B.V.',
+            'company_kvk'          => '12345678',
+            'company_btw'          => 'NL123456789B01',
+            'verification_link'    => 'https://voorbeeld.nl/verificeer?token=abc123',
+            'password_reset_link'  => 'https://voorbeeld.nl/wachtwoord-reset?token=xyz789',
+            'verification_code'    => '847261',
+        ];
+
+        // Override buyer/seller name aliases for specific types
+        return match ($type) {
+            'email_verification', 'welcome_email', 'password_reset', 'password_invite',
+            'user_registration'                   => array_merge($base, ['user_name' => 'Jan de Vries']),
+            'offer_received_seller', 'boat_submitted', 'boat_approved', 'boat_rejected',
+            'question_received', 'seller_invite'  => array_merge($base, ['seller_name' => 'Pieter Bakker']),
+            'signhost_request', 'contract_signed',
+            'invoice_created', 'payment_received' => array_merge($base, ['user_name' => 'Jan de Vries']),
+            default => $base,
+        };
     }
 
     // ─── Private block renderers ──────────────────────────────────────────────
@@ -170,14 +284,14 @@ HTML;
         $type     = $block['type'] ?? '';
         $settings = $block['settings'] ?? [];
 
-        $html = match ($type) {
+        return match ($type) {
             'logo'          => $this->renderLogo($settings, $lang, $tags, $primaryColor),
             'header'        => $this->renderHeader($settings, $lang, $tags, $primaryColor),
             'text'          => $this->renderText($settings, $lang, $tags),
             'rich_text'     => $this->renderRichText($settings, $lang, $tags),
             'button'        => $this->renderButton($settings, $lang, $tags, $primaryColor),
             'image'         => $this->renderImage($settings, $lang, $tags),
-            'divider'       => $this->renderDivider(),
+            'divider'       => $this->renderDivider($settings),
             'spacer'        => $this->renderSpacer($settings),
             'footer'        => $this->renderFooter($settings, $lang, $tags),
             'signature'     => $this->renderSignature($settings, $lang, $tags),
@@ -190,8 +304,6 @@ HTML;
             'contract_card' => $this->renderContractCard($settings, $lang, $tags, $primaryColor),
             default         => '',
         };
-
-        return $html;
     }
 
     private function langVal(array $settings, string $key, string $lang, string $fallback = ''): string
@@ -205,12 +317,13 @@ HTML;
 
     private function renderLogo(array $s, string $lang, array $tags, string $primaryColor): string
     {
-        $src = $this->replaceTags($s['src'] ?? '{{location_logo}}', $tags);
-        $alt = $this->replaceTags($s['alt'] ?? '{{location_name}}', $tags);
+        $src    = $this->replaceTags($s['src'] ?? $s['custom_url'] ?? '{{location_logo}}', $tags);
+        $alt    = $this->replaceTags($s['alt'] ?? '{{location_name}}', $tags);
         $height = (int) ($s['height'] ?? 50);
+        $align  = $s['align'] ?? 'center';
 
         return <<<HTML
-<div style="text-align:center;margin-bottom:20px;">
+<div style="text-align:{$align};margin-bottom:20px;">
   <img src="{$src}" alt="{$alt}" style="height:{$height}px;width:auto;max-width:200px;" />
 </div>
 HTML;
@@ -219,7 +332,7 @@ HTML;
     private function renderHeader(array $s, string $lang, array $tags, string $primaryColor): string
     {
         $content = $this->langVal($s, 'content', $lang);
-        $content = $this->replaceTags($content, $tags);
+        $content = $this->replaceTags(htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), $tags);
         $align   = $s['align'] ?? 'left';
 
         return <<<HTML
@@ -251,7 +364,7 @@ HTML;
     private function renderButton(array $s, string $lang, array $tags, string $primaryColor): string
     {
         $label = $this->langVal($s, 'label', $lang, 'Klik hier');
-        $label = $this->replaceTags($label, $tags);
+        $label = $this->replaceTags(htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), $tags);
         $url   = $this->replaceTags($s['url'] ?? '#', $tags);
         $color = $s['color'] ?? $primaryColor;
         $align = $s['align'] ?? 'center';
@@ -292,9 +405,12 @@ HTML;
 HTML;
     }
 
-    private function renderDivider(): string
+    private function renderDivider(array $s = []): string
     {
-        return '<hr style="border:none;border-top:1px solid #eeeeee;margin:20px 0;" />';
+        $color     = $s['color'] ?? '#eeeeee';
+        $thickness = (int) ($s['thickness'] ?? 1);
+
+        return "<hr style=\"border:none;border-top:{$thickness}px solid {$color};margin:20px 0;\" />";
     }
 
     private function renderSpacer(array $s): string
@@ -316,16 +432,15 @@ HTML;
 
     private function renderSignature(array $s, string $lang, array $tags): string
     {
-        $name  = $this->replaceTags($s['name'] ?? '', $tags);
-        $title = $this->replaceTags($s['title'] ?? '', $tags);
-        $phone = $this->replaceTags($s['phone'] ?? '', $tags);
-        $email = $this->replaceTags($s['email'] ?? '', $tags);
+        $name   = $this->replaceTags($s['name'] ?? '', $tags);
+        $title  = $this->replaceTags($s['title'] ?? '', $tags);
+        $phone  = $this->replaceTags($s['phone'] ?? '', $tags);
+        $email  = $this->replaceTags($s['email'] ?? '', $tags);
         $avatar = $this->replaceTags($s['avatar'] ?? '', $tags);
 
         $avatarHtml = $avatar
             ? "<img src=\"{$avatar}\" alt=\"\" style=\"width:48px;height:48px;border-radius:50%;margin-right:12px;vertical-align:middle;\" />"
             : '';
-
         $phoneHtml = $phone ? "<span style=\"color:#666;font-size:13px;\">&#128222; {$phone}</span><br>" : '';
         $emailHtml = $email ? "<a href=\"mailto:{$email}\" style=\"color:#666;font-size:13px;text-decoration:none;\">{$email}</a><br>" : '';
 
@@ -345,15 +460,14 @@ HTML;
     private function renderSocialLinks(array $s, string $lang, array $tags): string
     {
         $links = $s['links'] ?? [];
-
         if (empty($links)) {
             return '';
         }
 
         $linksHtml = '';
         foreach ($links as $link) {
-            $platform = htmlspecialchars($link['platform'] ?? '', ENT_QUOTES);
-            $url      = $this->replaceTags($link['url'] ?? '#', $tags);
+            $platform  = htmlspecialchars($link['platform'] ?? '', ENT_QUOTES);
+            $url       = $this->replaceTags($link['url'] ?? '#', $tags);
             $linksHtml .= "<a href=\"{$url}\" target=\"_blank\" style=\"color:#555555;text-decoration:none;margin:0 8px;font-size:13px;\">{$platform}</a>";
         }
 
@@ -426,7 +540,9 @@ HTML;
         $email = $this->replaceTags($s['seller_email'] ?? '{{seller_email}}', $tags);
         $phone = $this->replaceTags($s['seller_phone'] ?? '', $tags);
 
-        $phoneHtml = $phone ? "<tr><td style=\"padding:4px 0;font-size:13px;color:#888;\">Telefoon</td><td style=\"padding:4px 0;font-size:14px;color:#1a1a1a;\">{$phone}</td></tr>" : '';
+        $phoneRow = $phone
+            ? "<tr><td style=\"padding:4px 0;font-size:13px;color:#888;\">Telefoon</td><td style=\"padding:4px 0;font-size:14px;color:#1a1a1a;\">{$phone}</td></tr>"
+            : '';
 
         return <<<HTML
 <div style="border:1px solid #eeeeee;border-radius:8px;padding:16px;margin:16px 0;background-color:#fafafa;">
@@ -440,7 +556,7 @@ HTML;
       <td style="padding:4px 0;font-size:13px;color:#888;">E-mail</td>
       <td style="padding:4px 0;font-size:14px;color:#1a1a1a;">{$email}</td>
     </tr>
-    {$phoneHtml}
+    {$phoneRow}
   </table>
 </div>
 HTML;

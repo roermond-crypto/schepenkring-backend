@@ -51,7 +51,7 @@ class EmailTemplateController extends Controller
         // Return without blocks for listing performance
         $query->select([
             'id', 'type', 'name', 'description', 'is_global', 'location_id',
-            'parent_template_id', 'language_default', 'subject',
+            'parent_template_id', 'language_default', 'subject', 'preheader',
             'sender_name_override', 'sender_email_override', 'reply_to_override',
             'primary_color_override', 'is_active', 'is_archived',
             'created_by_id', 'current_version', 'created_at', 'updated_at',
@@ -101,6 +101,7 @@ class EmailTemplateController extends Controller
             'subject.en'            => 'nullable|string|max:500',
             'subject.de'            => 'nullable|string|max:500',
             'subject.fr'            => 'nullable|string|max:500',
+            'preheader'             => 'nullable|string|max:500',
             'blocks'                => 'required|array',
             'description'           => 'nullable|string|max:500',
             'location_id'           => 'nullable|integer|exists:locations,id',
@@ -121,6 +122,7 @@ class EmailTemplateController extends Controller
             'location_id'           => $data['location_id'] ?? null,
             'language_default'      => $data['language_default'] ?? 'nl',
             'subject'               => $data['subject'],
+            'preheader'             => $data['preheader'] ?? null,
             'blocks'                => $data['blocks'],
             'sender_name_override'  => $data['sender_name_override'] ?? null,
             'sender_email_override' => $data['sender_email_override'] ?? null,
@@ -162,6 +164,7 @@ class EmailTemplateController extends Controller
             'subject.en'            => 'nullable|string|max:500',
             'subject.de'            => 'nullable|string|max:500',
             'subject.fr'            => 'nullable|string|max:500',
+            'preheader'             => 'nullable|string|max:500',
             'blocks'                => 'nullable|array',
             'language_default'      => 'nullable|string|in:nl,en,de,fr',
             'sender_name_override'  => 'nullable|string|max:255',
@@ -172,14 +175,15 @@ class EmailTemplateController extends Controller
             'change_note'           => 'nullable|string|max:500',
         ]);
 
-        $blocksChanged   = isset($data['blocks'])  && json_encode($data['blocks'])  !== json_encode($template->blocks);
-        $subjectChanged  = isset($data['subject']) && json_encode($data['subject']) !== json_encode($template->subject);
-        $shouldVersion   = $blocksChanged || $subjectChanged;
+        $blocksChanged  = isset($data['blocks'])  && json_encode($data['blocks'])  !== json_encode($template->blocks);
+        $subjectChanged = isset($data['subject']) && json_encode($data['subject']) !== json_encode($template->subject);
+        $shouldVersion  = $blocksChanged || $subjectChanged;
 
         $fillable = array_filter([
             'name'                  => $data['name']                   ?? null,
             'description'           => $data['description']            ?? null,
             'subject'               => $data['subject']                ?? null,
+            'preheader'             => $data['preheader']              ?? null,
             'blocks'                => $data['blocks']                 ?? null,
             'language_default'      => $data['language_default']       ?? null,
             'sender_name_override'  => $data['sender_name_override']   ?? null,
@@ -246,6 +250,7 @@ class EmailTemplateController extends Controller
             'parent_template_id'    => $template->id,
             'language_default'      => $template->language_default,
             'subject'               => $template->subject,
+            'preheader'             => $template->preheader,
             'blocks'                => $template->blocks,
             'sender_name_override'  => $template->sender_name_override,
             'sender_email_override' => $template->sender_email_override,
@@ -306,6 +311,7 @@ class EmailTemplateController extends Controller
             'parent_template_id'    => $template->id,
             'language_default'      => $template->language_default,
             'subject'               => $template->subject,
+            'preheader'             => $template->preheader,
             'blocks'                => $template->blocks,
             'sender_name_override'  => $template->sender_name_override,
             'sender_email_override' => $template->sender_email_override,
@@ -387,12 +393,15 @@ class EmailTemplateController extends Controller
     }
 
     // ── POST /api/admin/email-templates/{template}/preview ────────────────────
+    // Uses blocks from the request body so unsaved changes are reflected live.
 
     public function preview(Request $request, EmailTemplate $template): JsonResponse
     {
         $data = $request->validate([
-            'lang' => 'nullable|string|in:nl,en,de,fr',
-            'tags' => 'nullable|array',
+            'lang'    => 'nullable|string|in:nl,en,de,fr',
+            'tags'    => 'nullable|array',
+            'blocks'  => 'nullable|array',
+            'subject' => 'nullable|array',
         ]);
 
         $lang     = $data['lang'] ?? $template->language_default ?? 'nl';
@@ -401,12 +410,20 @@ class EmailTemplateController extends Controller
             ? ['primary_color' => $template->primary_color_override]
             : null;
 
-        $html    = $this->renderer->render($template->blocks, $lang, $tags, $branding);
-        $subject = $this->renderer->replaceTags($template->subject[$lang] ?? $template->subject['nl'] ?? '', $tags);
+        // Prefer live blocks from the request (unsaved editor state); fall back to saved
+        $blocks  = $data['blocks']  ?? $template->blocks;
+        $subject = $data['subject'] ?? $template->subject;
+
+        if (empty($tags)) {
+            $tags = $this->renderer->sampleData($template->type);
+        }
+
+        $html           = $this->renderer->render($blocks, $lang, $tags, $branding);
+        $subjectRendered = $this->renderer->replaceTags($subject[$lang] ?? $subject['nl'] ?? '', $tags);
 
         return response()->json([
             'html'    => $html,
-            'subject' => $subject,
+            'subject' => $subjectRendered,
         ]);
     }
 
@@ -415,24 +432,29 @@ class EmailTemplateController extends Controller
     public function testSend(Request $request, EmailTemplate $template): JsonResponse
     {
         $data = $request->validate([
-            'email' => 'required|email|max:255',
-            'lang'  => 'nullable|string|in:nl,en,de,fr',
-            'tags'  => 'nullable|array',
+            'email'   => 'required|email|max:255',
+            'lang'    => 'nullable|string|in:nl,en,de,fr',
+            'tags'    => 'nullable|array',
+            'blocks'  => 'nullable|array',
+            'subject' => 'nullable|array',
         ]);
 
         $lang     = $data['lang'] ?? $template->language_default ?? 'nl';
-        $tags     = $data['tags'] ?? [];
         $branding = $template->primary_color_override
             ? ['primary_color' => $template->primary_color_override]
             : null;
 
-        $html    = $this->renderer->render($template->blocks, $lang, $tags, $branding);
-        $subject = $this->renderer->replaceTags($template->subject[$lang] ?? $template->subject['nl'] ?? '', $tags);
+        $blocks  = $data['blocks']  ?? $template->blocks;
+        $subject = $data['subject'] ?? $template->subject;
+        $tags    = !empty($data['tags']) ? $data['tags'] : $this->renderer->sampleData($template->type);
+
+        $html             = $this->renderer->render($blocks, $lang, $tags, $branding);
+        $subjectRendered  = $this->renderer->replaceTags($subject[$lang] ?? $subject['nl'] ?? '', $tags);
 
         try {
-            Mail::html($html, function ($message) use ($data, $subject, $template) {
+            Mail::html($html, function ($message) use ($data, $subjectRendered, $template) {
                 $message->to($data['email'])
-                        ->subject('[TEST] ' . $subject);
+                        ->subject('[TEST] ' . $subjectRendered);
 
                 if ($template->sender_name_override || $template->sender_email_override) {
                     $message->from(
@@ -479,31 +501,51 @@ class EmailTemplateController extends Controller
     }
 
     // ── GET /api/admin/email-templates/tags ──────────────────────────────────
+    // Returns tags grouped by category for the editor tag-insert panel.
 
     public function tags(): JsonResponse
     {
-        $tags = [];
-        foreach (EmailTemplateRendererService::TAGS as $tag) {
-            $category = 'general';
-            if (str_starts_with($tag, 'buyer_') || str_starts_with($tag, 'seller_')) {
-                $category = 'user';
-            } elseif (str_starts_with($tag, 'boat_') || str_starts_with($tag, 'yacht_')) {
-                $category = 'boat';
-            } elseif (str_starts_with($tag, 'location_')) {
-                $category = 'location';
-            } elseif (str_starts_with($tag, 'offer_') || str_starts_with($tag, 'bid_')) {
-                $category = 'offer';
-            } elseif (str_starts_with($tag, 'contract_')) {
-                $category = 'contract';
+        // Build reverse lookup: tag → category
+        $tagToCategory = [];
+        foreach (EmailTemplateRendererService::TAG_CATEGORIES as $category => $categoryTags) {
+            foreach ($categoryTags as $tag) {
+                $tagToCategory[$tag] = $category;
             }
-            $tags[] = [
+        }
+
+        $flat = [];
+        foreach (EmailTemplateRendererService::TAGS as $tag) {
+            $flat[] = [
                 'key'         => $tag,
                 'description' => EmailTemplateRendererService::TAG_DESCRIPTIONS[$tag] ?? $tag,
-                'category'    => $category,
+                'category'    => $tagToCategory[$tag] ?? 'Other',
             ];
         }
 
-        return response()->json($tags);
+        return response()->json([
+            'tags'       => $flat,
+            'categories' => array_keys(EmailTemplateRendererService::TAG_CATEGORIES),
+        ]);
+    }
+
+    // ── GET /api/admin/email-templates/{template}/sample-data ─────────────────
+
+    public function sampleData(EmailTemplate $template): JsonResponse
+    {
+        return response()->json([
+            'type' => $template->type,
+            'data' => $this->renderer->sampleData($template->type),
+        ]);
+    }
+
+    // ── GET /api/admin/email-templates/sample-data/{type} ────────────────────
+
+    public function sampleDataByType(string $type): JsonResponse
+    {
+        return response()->json([
+            'type' => $type,
+            'data' => $this->renderer->sampleData($type),
+        ]);
     }
 
     // ── POST /api/admin/email-templates/upload-media ─────────────────────────
