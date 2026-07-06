@@ -487,12 +487,14 @@ class ContractTemplateController extends Controller
 
     public function pdf(Request $request, ContractTemplate $template): \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
     {
-        $data = $request->validate([
-            'use_sample_tags' => 'nullable|boolean',
-            'yacht_id'        => 'nullable|integer',
+        $request->validate([
+            // GET query strings send "true"/"false" as strings — skip boolean rule,
+            // use filter_var below instead
+            'yacht_id' => 'nullable|integer',
         ]);
 
-        $useSample = filter_var($data['use_sample_tags'] ?? true, FILTER_VALIDATE_BOOLEAN);
+        // filter_var handles "true", "1", true, 1, "false", "0", false, 0
+        $useSample = filter_var($request->input('use_sample_tags', 'true'), FILTER_VALIDATE_BOOLEAN);
         $resolvedTags = $useSample ? $this->renderer->getSampleTags() : [];
 
         if (! empty($data['yacht_id'])) {
