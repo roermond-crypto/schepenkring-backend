@@ -217,10 +217,8 @@ class GenerateContractAction
 
         if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
             try {
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml)
-                    ->setOption('isHtml5ParserEnabled', true)
-                    ->setOption('defaultFont', 'DejaVu Sans')
-                    ->setOption('isRemoteEnabled', false);
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml, 'UTF-8')
+                    ->setOption('defaultFont', 'dejavu sans');
                 $pdf->setPaper('A4', 'portrait');
                 return $pdf->output();
             } catch (\Throwable $e) {
@@ -237,28 +235,26 @@ class GenerateContractAction
 
     private function buildPrintHtml(string $body, string $title): string
     {
-        $safeTitle = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
-
         return <<<HTML
 <!DOCTYPE html>
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>{$safeTitle}</title>
+<title>{$title}</title>
 <style>
-  @page { margin: 25mm 20mm; size: A4; }
-  body { font-family: DejaVu Sans, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.7; }
-  h1 { font-family: DejaVu Sans, sans-serif; font-size: 16pt; font-weight: bold; color: #1a1a1a; margin-bottom: 8pt; }
-  h2 { font-family: DejaVu Sans, sans-serif; font-size: 13pt; font-weight: bold; color: #1a1a1a; margin-top: 16pt; margin-bottom: 6pt; }
-  h3 { font-family: DejaVu Sans, sans-serif; font-size: 11pt; font-weight: bold; color: #1a1a1a; margin-top: 12pt; margin-bottom: 4pt; }
-  p  { font-family: DejaVu Sans, sans-serif; color: #1a1a1a; margin: 6pt 0; }
-  hr { border: none; border-top: 1px solid #ccc; margin: 16pt 0; }
-  strong { font-weight: bold; }
-  em { font-style: italic; }
-  u  { text-decoration: underline; }
-  ul, ol { padding-left: 18pt; margin: 6pt 0; }
-  li { font-family: DejaVu Sans, sans-serif; color: #1a1a1a; margin: 3pt 0; }
-  span { color: #1a1a1a; }
+  * { font-family: "DejaVu Sans", sans-serif; color: #000000; }
+  body { font-size: 11pt; line-height: 1.65; margin: 0; padding: 20pt 25pt; }
+  h1 { font-size: 16pt; font-weight: bold; margin: 0 0 8pt 0; }
+  h2 { font-size: 13pt; font-weight: bold; margin: 14pt 0 5pt 0; }
+  h3 { font-size: 11pt; font-weight: bold; margin: 10pt 0 4pt 0; }
+  p  { font-size: 11pt; margin: 5pt 0; }
+  hr { border: none; border-top: 1px solid #999; margin: 12pt 0; }
+  strong, b { font-weight: bold; }
+  em, i { font-style: italic; }
+  u { text-decoration: underline; }
+  ul, ol { padding-left: 18pt; margin: 5pt 0; }
+  li { font-size: 11pt; margin: 2pt 0; }
+  .missing-tag { color: #cc0000; }
 </style>
 </head>
 <body>{$body}</body>

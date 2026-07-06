@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "barryvdh/laravel-dompdf": "^3.0",
         "cloudinary/cloudinary_php": "^3.1",
         "inertiajs/inertia-laravel": "^2.0",
         "intervention/image-laravel": "^1.5",
@@ -19,7 +20,6 @@
         "pusher/pusher-php-server": "^7.2",
         "symfony/css-selector": "^7.2",
         "symfony/dom-crawler": "^7.2",
-        "barryvdh/laravel-dompdf": "^3.0",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {
