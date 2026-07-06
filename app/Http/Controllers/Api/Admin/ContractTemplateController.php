@@ -502,13 +502,25 @@ class ContractTemplateController extends Controller
             $resolvedTags = array_merge($resolvedTags, $this->renderer->resolveTagsForYacht($yachtId));
         }
 
-        $html = $this->renderer->replaceTags($template->content_html, $resolvedTags);
+        $contentHtml = $template->content_html ?? '';
+
+        // Guard: empty template body would produce a blank PDF
+        if (trim(strip_tags($contentHtml)) === '') {
+            return response()->json(['message' => 'This template has no content. Add text in the editor first.'], 422);
+        }
+
+        $html = $this->renderer->replaceTags($contentHtml, $resolvedTags);
 
         // Wrap in a print-ready HTML document
         $fullHtml = $this->buildPrintHtml($html, $template->name);
 
         if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml);
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml)
+                // HTML5 parser handles TipTap output better than the legacy parser
+                ->setOption('isHtml5ParserEnabled', true)
+                // DejaVu Sans is bundled with dompdf — Arial is not available on most VPS servers
+                ->setOption('defaultFont', 'DejaVu Sans')
+                ->setOption('isRemoteEnabled', false);
             $pdf->setPaper('A4', 'portrait');
             $filename = \Illuminate\Support\Str::slug($template->name) . '.pdf';
             return $pdf->download($filename);
@@ -520,26 +532,30 @@ class ContractTemplateController extends Controller
 
     private function buildPrintHtml(string $body, string $title): string
     {
+        // Use ASCII-safe title for PDF metadata (avoids DomPDF mojibake in PDF title field)
+        $safeTitle = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
+
         return <<<HTML
 <!DOCTYPE html>
-<html lang="nl">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>{$title}</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>{$safeTitle}</title>
 <style>
   @page { margin: 25mm 20mm; size: A4; }
-  body { font-family: Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.7; }
-  h1 { font-size: 16pt; font-weight: bold; margin-bottom: 8pt; }
-  h2 { font-size: 13pt; font-weight: bold; margin-top: 16pt; margin-bottom: 6pt; }
-  h3 { font-size: 11pt; font-weight: bold; margin-top: 12pt; margin-bottom: 4pt; }
-  p  { margin: 6pt 0; }
+  body { font-family: DejaVu Sans, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.7; }
+  h1 { font-family: DejaVu Sans, sans-serif; font-size: 16pt; font-weight: bold; color: #1a1a1a; margin-bottom: 8pt; }
+  h2 { font-family: DejaVu Sans, sans-serif; font-size: 13pt; font-weight: bold; color: #1a1a1a; margin-top: 16pt; margin-bottom: 6pt; }
+  h3 { font-family: DejaVu Sans, sans-serif; font-size: 11pt; font-weight: bold; color: #1a1a1a; margin-top: 12pt; margin-bottom: 4pt; }
+  p  { font-family: DejaVu Sans, sans-serif; color: #1a1a1a; margin: 6pt 0; }
   hr { border: none; border-top: 1px solid #ccc; margin: 16pt 0; page-break-after: auto; }
   strong { font-weight: bold; }
   em { font-style: italic; }
   u  { text-decoration: underline; }
   ul, ol { padding-left: 18pt; margin: 6pt 0; }
-  li { margin: 3pt 0; }
-  .missing-tag { background: #fde8e8; color: #c81020; padding: 0 2px; border-radius: 2px; }
+  li { font-family: DejaVu Sans, sans-serif; color: #1a1a1a; margin: 3pt 0; }
+  .missing-tag { background: #fde8e8; color: #c81020; padding: 0 2px; }
+  span { color: #1a1a1a; }
 </style>
 </head>
 <body>{$body}</body>

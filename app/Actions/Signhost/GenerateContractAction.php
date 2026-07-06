@@ -217,7 +217,10 @@ class GenerateContractAction
 
         if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
             try {
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml);
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML($fullHtml)
+                    ->setOption('isHtml5ParserEnabled', true)
+                    ->setOption('defaultFont', 'DejaVu Sans')
+                    ->setOption('isRemoteEnabled', false);
                 $pdf->setPaper('A4', 'portrait');
                 return $pdf->output();
             } catch (\Throwable $e) {
@@ -234,25 +237,28 @@ class GenerateContractAction
 
     private function buildPrintHtml(string $body, string $title): string
     {
+        $safeTitle = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
+
         return <<<HTML
 <!DOCTYPE html>
-<html lang="nl">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>{$title}</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>{$safeTitle}</title>
 <style>
   @page { margin: 25mm 20mm; size: A4; }
-  body { font-family: Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.7; }
-  h1 { font-size: 16pt; font-weight: bold; margin-bottom: 8pt; }
-  h2 { font-size: 13pt; font-weight: bold; margin-top: 16pt; margin-bottom: 6pt; }
-  h3 { font-size: 11pt; font-weight: bold; margin-top: 12pt; margin-bottom: 4pt; }
-  p  { margin: 6pt 0; }
+  body { font-family: DejaVu Sans, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.7; }
+  h1 { font-family: DejaVu Sans, sans-serif; font-size: 16pt; font-weight: bold; color: #1a1a1a; margin-bottom: 8pt; }
+  h2 { font-family: DejaVu Sans, sans-serif; font-size: 13pt; font-weight: bold; color: #1a1a1a; margin-top: 16pt; margin-bottom: 6pt; }
+  h3 { font-family: DejaVu Sans, sans-serif; font-size: 11pt; font-weight: bold; color: #1a1a1a; margin-top: 12pt; margin-bottom: 4pt; }
+  p  { font-family: DejaVu Sans, sans-serif; color: #1a1a1a; margin: 6pt 0; }
   hr { border: none; border-top: 1px solid #ccc; margin: 16pt 0; }
   strong { font-weight: bold; }
   em { font-style: italic; }
   u  { text-decoration: underline; }
   ul, ol { padding-left: 18pt; margin: 6pt 0; }
-  li { margin: 3pt 0; }
+  li { font-family: DejaVu Sans, sans-serif; color: #1a1a1a; margin: 3pt 0; }
+  span { color: #1a1a1a; }
 </style>
 </head>
 <body>{$body}</body>
