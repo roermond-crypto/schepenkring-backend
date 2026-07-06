@@ -57,10 +57,14 @@ class YachtController extends Controller
         ]);
 
         if (! $hasPaginationRequest) {
+            // Omit the heavy `images` relation here — the list view only needs
+            // the main_image field (a scalar on the yacht row itself). Loading
+            // all gallery images for every yacht in one shot exhausts memory.
             return response()->json(
-                $this->visibleYachtsQuery($request->user())
+                $this->visibleYachtsQuery($request->user(), withImages: false)
                     ->orderBy('boat_name', 'asc')
-                    ->get()
+                    ->paginate(100)
+                    ->items()
             );
         }
 
@@ -124,10 +128,11 @@ class YachtController extends Controller
         $user = Auth::user();
 
         return response()->json(
-            $this->visibleYachtsQuery($user)
+            $this->visibleYachtsQuery($user, withImages: false)
                 ->where('user_id', $user->id)
                 ->orderBy('boat_name', 'asc')
-                ->get()
+                ->paginate(100)
+                ->items()
         );
     }
 
@@ -771,14 +776,19 @@ class YachtController extends Controller
         abort(403, 'Forbidden');
     }
 
-    private function visibleYachtsQuery(?User $user): Builder
+    private function visibleYachtsQuery(?User $user, bool $withImages = true): Builder
     {
-        $query = Yacht::query()->with([
-            'images',
+        $relations = [
             'availabilityRules',
             'latestSignRequest',
             'owner:id,name,first_name,last_name,email,phone,address_line1,address_line2,postal_code,city,country,client_location_id',
-        ]);
+        ];
+
+        if ($withImages) {
+            $relations[] = 'images';
+        }
+
+        $query = Yacht::query()->with($relations);
 
         if (! $user) {
             return $query->whereRaw('1 = 0');
