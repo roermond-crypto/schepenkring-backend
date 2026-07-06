@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Models\BoatIntake;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -45,8 +46,14 @@ class BoatIntakeConfirmationMail extends Mailable
 
     public function envelope(): Envelope
     {
+        $fromAddress = config('mail.from.address', 'support@schepen-kring.nl');
+        $fromName    = 'Schepenkring Makelaars';
+
         return new Envelope(
-            subject: "Uw boot aanmelding ontvangen — {$this->boatName}",
+            from:    new Address($fromAddress, $fromName),
+            replyTo: [new Address($fromAddress, $fromName)],
+            subject: "Boot aanmelding ontvangen: {$this->boatName}",
+            tags:    ['boat-intake'],
         );
     }
 
