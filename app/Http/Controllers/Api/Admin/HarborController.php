@@ -910,7 +910,7 @@ class HarborController extends Controller
         $totalChats         = Conversation::where('location_id', $id)->count();
         $staffCount         = DB::table('location_user')->where('location_id', $id)->count();
         $clientCount        = User::where('client_location_id', $id)->count();
-        $openTasks          = Task::where('location_id', $id)->whereNull('completed_at')->count();
+        $openTasks          = Task::where('location_id', $id)->whereRaw("lower(status) not in ('done', 'completed', 'closed')")->count();
 
         $harbor->load(['defaultSeller', 'employees' => fn ($q) => $q->select('users.id', 'users.name', 'users.email', 'users.type')->orderBy('users.name')]);
 
