@@ -497,8 +497,9 @@ class ContractTemplateController extends Controller
         $useSample = filter_var($request->input('use_sample_tags', 'true'), FILTER_VALIDATE_BOOLEAN);
         $resolvedTags = $useSample ? $this->renderer->getSampleTags() : [];
 
-        if (! empty($data['yacht_id'])) {
-            $resolvedTags = array_merge($resolvedTags, $this->renderer->resolveTagsForYacht((int) $data['yacht_id']));
+        $yachtId = $request->integer('yacht_id');
+        if ($yachtId > 0) {
+            $resolvedTags = array_merge($resolvedTags, $this->renderer->resolveTagsForYacht($yachtId));
         }
 
         $html = $this->renderer->replaceTags($template->content_html, $resolvedTags);
