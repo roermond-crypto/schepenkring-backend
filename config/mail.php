@@ -39,13 +39,18 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            // MAIL_SCHEME (new) takes priority; fall back to MAIL_ENCRYPTION (old key) for VPS backwards-compat.
+            // ssl → smtps (port 465), tls → smtp+starttls (port 587), anything else → null (plain)
+            'scheme' => env('MAIL_SCHEME') ?: (
+                env('MAIL_ENCRYPTION') === 'ssl'  ? 'smtps' : (
+                env('MAIL_ENCRYPTION') === 'tls'  ? 'smtp+starttls' : null)
+            ),
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'timeout' => 30,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 

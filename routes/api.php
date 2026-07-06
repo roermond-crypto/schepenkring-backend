@@ -150,6 +150,8 @@ Route::prefix('boat-intake')->group(function () {
         ->middleware('throttle:30,1');
     Route::post('{token}/documents', [\App\Http\Controllers\Api\BoatIntakeController::class, 'uploadDocuments'])
         ->middleware('throttle:20,1');
+    Route::post('{token}/resend-confirmation', [\App\Http\Controllers\Api\BoatIntakeController::class, 'resendConfirmation'])
+        ->middleware('throttle:3,10'); // max 3 resends per 10 minutes
 });
 
 // ── CRM Public Chat Widget ──────────

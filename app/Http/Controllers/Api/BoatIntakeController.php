@@ -93,6 +93,7 @@ class BoatIntakeController extends Controller
         // Send emails after the transaction commits so SMTP errors never roll back the record
         $this->sendSellerConfirmation($intake, $score, $resumeToken);
         $this->notifyLocation($intake);
+        $intake->refresh(); // pick up confirmation_sent flag set by sendSellerConfirmation
 
         return response()->json([
             'intake'       => $this->serialize($intake, $score),
@@ -382,22 +383,39 @@ class BoatIntakeController extends Controller
         }
     }
 
+    // ── POST /api/boat-intake/{token}/resend-confirmation ────
+    // Resend the seller confirmation email (for when SMTP fails on first attempt)
+
+    public function resendConfirmation(Request $request, string $token): JsonResponse
+    {
+        $intake = $this->resolveToken($token);
+        $score  = $this->scorer->calculate($intake);
+
+        $this->sendSellerConfirmation($intake, $score, $token);
+        $intake->refresh();
+
+        return response()->json([
+            'confirmation_sent' => (bool) $intake->confirmation_sent,
+        ]);
+    }
+
     private function serialize(BoatIntake $intake, array $score): array
     {
         return [
-            'id'            => $intake->id,
-            'status'        => $intake->status,
-            'intake_score'  => $score['total'],
-            'score'         => $score,
-            'location'      => $intake->location ? ['id' => $intake->location->id, 'name' => $intake->location->name] : null,
-            'boat_brand'    => $intake->boat_brand,
-            'boat_model'    => $intake->boat_model,
-            'asking_price'  => $intake->asking_price,
-            'photo_count'   => $intake->photo_count,
-            'document_count' => $intake->document_count,
+            'id'                 => $intake->id,
+            'status'             => $intake->status,
+            'intake_score'       => $score['total'],
+            'score'              => $score,
+            'location'           => $intake->location ? ['id' => $intake->location->id, 'name' => $intake->location->name] : null,
+            'boat_brand'         => $intake->boat_brand,
+            'boat_model'         => $intake->boat_model,
+            'asking_price'       => $intake->asking_price,
+            'photo_count'        => $intake->photo_count,
+            'document_count'     => $intake->document_count,
             'description_length' => $intake->description_length,
-            'missing_items' => $score['missing'],
-            'created_at'    => $intake->created_at?->toIso8601String(),
+            'missing_items'      => $score['missing'],
+            'confirmation_sent'  => (bool) $intake->confirmation_sent,
+            'created_at'         => $intake->created_at?->toIso8601String(),
         ];
     }
 
