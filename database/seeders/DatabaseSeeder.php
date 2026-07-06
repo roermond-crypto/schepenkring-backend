@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
         $this->call(KycQuestionSeeder::class);
         $this->call(SellerOnboardingKycSeeder::class);
         $this->call(EmailTemplateSeeder::class);
+        $this->call(DefaultPlatformsSeeder::class);
 
         $location = Location::firstOrCreate([
             'code' => 'HQ',

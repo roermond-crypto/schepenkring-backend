@@ -276,6 +276,11 @@ class Yacht extends Model
         return $this->hasMany(Offer::class);
     }
 
+    public function platformPublications(): HasMany
+    {
+        return $this->hasMany(BoatPlatformPublication::class);
+    }
+
     public function signRequests(): HasMany
     {
         return $this->hasMany(SignRequest::class, 'entity_id')

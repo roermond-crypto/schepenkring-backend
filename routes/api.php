@@ -651,6 +651,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('boat-intakes', [\App\Http\Controllers\Api\BoatIntakeController::class, 'adminIndex']);
     Route::get('boat-intakes/{boatIntake}', [\App\Http\Controllers\Api\BoatIntakeController::class, 'adminShow']);
     Route::post('boat-intakes/{boatIntake}/promote', [\App\Http\Controllers\Api\BoatIntakeController::class, 'promote']);
+    // Alias so the frontend can call /convert (promotes intake → unified yacht record)
+    Route::post('boat-intakes/{boatIntake}/convert', [\App\Http\Controllers\Api\BoatIntakeController::class, 'promote']);
 
     // Offers (admin)
     Route::get('offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'index']);
@@ -853,6 +855,29 @@ Route::middleware('auth:sanctum')->prefix('helpdesk')->group(function () {
 // QA Health
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/qa')->group(function () {
     Route::get('health', [\App\Http\Controllers\Api\Admin\QaHealthController::class, 'health']);
+});
+
+// Platform Network CRUD
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/platforms')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'index']);
+    Route::post('/', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'store']);
+    Route::get('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'show']);
+    Route::put('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'update']);
+    Route::patch('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'update']);
+    Route::delete('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'destroy']);
+});
+
+// Per-boat platform publications + OpenMarine
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/yachts/{yacht}')->group(function () {
+    Route::get('platform-publications', [\App\Http\Controllers\Api\Admin\BoatPlatformPublicationController::class, 'index']);
+    Route::put('platform-publications', [\App\Http\Controllers\Api\Admin\BoatPlatformPublicationController::class, 'update']);
+    Route::post('platform-publications/{platform}/sync', [\App\Http\Controllers\Api\Admin\BoatPlatformPublicationController::class, 'sync']);
+    Route::post('open-marine/generate', [\App\Http\Controllers\Api\Admin\OpenMarineController::class, 'generate']);
+});
+
+// Publishing health dashboard widget
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/publishing')->group(function () {
+    Route::get('health', [\App\Http\Controllers\Api\Admin\PublishingHealthController::class, 'health']);
 });
 
 // crape 3000+ boats
