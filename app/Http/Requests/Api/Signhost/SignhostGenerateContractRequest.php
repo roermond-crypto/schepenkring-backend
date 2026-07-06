@@ -37,7 +37,8 @@ class SignhostGenerateContractRequest extends ApiRequest
             'reference' => ['nullable', 'string', 'max:255'],
             'password' => ['nullable', 'string'],
             'otp_code' => ['nullable', 'string', 'max:10'],
-            'idempotency_key' => ['nullable', 'string', 'max:255'],
+            'idempotency_key'      => ['nullable', 'string', 'max:255'],
+            'contract_template_id' => ['nullable', 'integer', 'exists:contract_templates,id'],
         ];
     }
 }

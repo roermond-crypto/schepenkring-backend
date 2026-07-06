@@ -21,17 +21,24 @@ class ContractTemplateController extends Controller
 
     public function types(): JsonResponse
     {
-        // Use the DB-driven ContractType model when available and populated
-        if (class_exists(\App\Models\ContractType::class)) {
-            $dbTypes = \App\Models\ContractType::where('is_active', true)
-                ->orderBy('sort_order')
-                ->orderBy('name')
-                ->get(['slug as value', 'name as label'])
-                ->toArray();
+        // Try DB-driven ContractType when available
+        try {
+            if (class_exists(\App\Models\ContractType::class)) {
+                $dbTypes = \App\Models\ContractType::where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->get(['slug as value', 'name as label'])
+                    ->toArray();
 
-            if (! empty($dbTypes)) {
-                return response()->json(['types' => $dbTypes]);
+                if (! empty($dbTypes)) {
+                    return response()->json(['types' => $dbTypes]);
+                }
             }
+        } catch (\Throwable $e) {
+            // Table may not exist yet (migration pending) — fall through to hardcoded
+            Log::warning('[ContractTemplateController] contract_types table unavailable, using hardcoded fallback', [
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Fallback to hardcoded constant (used before migration runs)
@@ -444,6 +451,7 @@ class ContractTemplateController extends Controller
             'use_sample_tags' => 'nullable|boolean',
             'tags'            => 'nullable|array',
             'yacht_id'        => 'nullable|integer',
+            'content_html'    => 'nullable|string',   // allow editor to preview unsaved content
         ]);
 
         $useSample = filter_var($data['use_sample_tags'] ?? true, FILTER_VALIDATE_BOOLEAN);
@@ -462,7 +470,8 @@ class ContractTemplateController extends Controller
         // Manual tags take highest priority
         $resolvedTags = array_merge($resolvedTags, $manualTags);
 
-        $html = $template->content_html;
+        // Use content_html from request (unsaved editor content) if provided, else use saved version
+        $html = $data['content_html'] ?? $template->content_html;
         $missingTags = $this->renderer->getMissingTags($html, array_keys($resolvedTags));
         $html = $this->renderer->replaceTags($html, $resolvedTags);
         $html = $this->renderer->highlightMissingTags($html, $missingTags);
