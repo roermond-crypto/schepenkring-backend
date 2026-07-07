@@ -3955,8 +3955,14 @@ CONTEXT,
      *   4. Build rich GPT-4o prompt with specs + example descriptions
      *   5. Generate NL/EN/DE/FR marketplace-ready texts
      */
-    public function generateDescription(Request $request): JsonResponse
+    public function generateDescription(Request $request, ?int $id = null): JsonResponse
     {
+        // Allow yacht ID from route param (yachts/{id}/generate-description)
+        // or from request body (legacy ai/generate-description route).
+        if ($id !== null) {
+            $request->merge(['yacht_id' => $id]);
+        }
+
         $request->validate([
             'yacht_id' => 'required|integer|exists:yachts,id',
             'tone' => 'nullable|string',

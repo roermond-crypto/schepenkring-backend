@@ -270,6 +270,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);
     Route::post('yachts/{id}/gallery', [YachtController::class, 'uploadGallery']);
+    Route::post('yachts/{id}/generate-description', [AiPipelineController::class, 'generateDescription']);
 
     // Yacht drafts
     Route::post('yacht-drafts', [YachtDraftController::class, 'store']);
