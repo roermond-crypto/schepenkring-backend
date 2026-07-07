@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 use App\Traits\Auditable;
 use App\Support\SignhostRecipientSupport;
 
@@ -14,7 +15,7 @@ class Yacht extends Model
 {
     use Auditable;
 
-    protected $appends = ['latest_signhost'];
+    protected $appends = ['latest_signhost', 'main_image_url'];
 
     protected $hidden = [
         'latest_sign_request',
@@ -292,6 +293,18 @@ class Yacht extends Model
         return $this->hasOne(SignRequest::class, 'entity_id')
             ->where('entity_type', 'Yacht')
             ->latestOfMany();
+    }
+
+    public function getMainImageUrlAttribute(): ?string
+    {
+        $path = $this->main_image;
+        if (!$path) {
+            return null;
+        }
+        if (preg_match('/^https?:\/\//i', $path)) {
+            return $path;
+        }
+        return Storage::disk('public')->url(ltrim($path, '/'));
     }
 
     /**
