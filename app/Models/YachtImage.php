@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class YachtImage extends Model {
     protected $fillable = [
@@ -96,6 +97,8 @@ class YachtImage extends Model {
             return $value;
         }
 
-        return asset('storage/' . ltrim($value, '/'));
+        // Use the public disk URL so STORAGE_URL (or APP_URL) from .env controls
+        // the host — asset() only reads APP_URL and ignores STORAGE_URL.
+        return Storage::disk('public')->url(ltrim($value, '/'));
     }
 }
