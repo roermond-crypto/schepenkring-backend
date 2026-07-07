@@ -136,6 +136,125 @@ class SignhostService
         ];
     }
 
+    /**
+     * Create a transaction with multiple recipients and multiple PDF files.
+     * Called by CreateSignhostRequestAction.
+     *
+     * @param array<int, array{email:string,name:string,role?:string,send?:bool}> $recipients
+     * @param string[] $pdfPaths  absolute local paths
+     */
+    public function createTransaction(array $recipients, array $pdfPaths, string $reference): array
+    {
+        $signerPayload = [];
+        foreach ($recipients as $recipient) {
+            $signerPayload[] = [
+                'Email' => $recipient['email'],
+                'ScribbleName' => $recipient['name'],
+                'SendSignRequest' => $recipient['send'] ?? true,
+                'SignRequestMessage' => $this->defaultSignRequestMessage(),
+            ];
+        }
+
+        $create = $this->request('post', 'transaction', [
+            'Signers' => $signerPayload,
+            'SendEmailNotifications' => true,
+            'SignRequestSubject' => $this->defaultSignRequestSubject(),
+            'SignRequestMessage' => $this->defaultSignRequestMessage(),
+            'Reference' => $reference,
+        ]);
+
+        $transactionId = $create['Id'] ?? $create['id'] ?? null;
+        if (!$transactionId) {
+            throw new \RuntimeException('Signhost transaction id missing from create response');
+        }
+
+        foreach ($pdfPaths as $index => $pdfPath) {
+            $label = count($pdfPaths) === 1 ? 'Contract.pdf' : "Contract_{$index}.pdf";
+            $this->uploadFileByLabel($transactionId, $pdfPath, $label);
+        }
+
+        $this->startTransaction($transactionId);
+
+        $transaction = $this->request('get', "transaction/{$transactionId}");
+
+        return [
+            'transaction_id' => $transactionId,
+            'transaction' => $transaction,
+        ];
+    }
+
+    /**
+     * Delete (cancel) a Signhost transaction.
+     * Called by CancelSignhostRequestAction.
+     */
+    public function cancelTransaction(string $transactionId): void
+    {
+        $response = $this->requestRaw('delete', "transaction/{$transactionId}");
+        if (!in_array($response['status'], [200, 204, 404], true)) {
+            Log::warning('SignhostService: cancelTransaction unexpected status', [
+                'transaction_id' => $transactionId,
+                'status' => $response['status'],
+            ]);
+        }
+    }
+
+    /**
+     * Resend sign request emails for an existing transaction.
+     * Called by ResendSignhostRequestAction.
+     * Signhost does not have a dedicated "resend" endpoint — we retrieve the
+     * transaction to confirm it is still active and then re-send via the
+     * sign request PUT endpoint.
+     */
+    public function resendTransaction(string $transactionId): array
+    {
+        // Retrieve the current transaction to validate it is still sendable.
+        $transaction = $this->request('get', "transaction/{$transactionId}");
+
+        $status = strtolower((string) ($transaction['Status'] ?? $transaction['status'] ?? ''));
+        if (in_array($status, ['signed', 'cancelled', 'failed', 'expired'], true)) {
+            throw new \RuntimeException("Cannot resend a transaction with status: {$status}");
+        }
+
+        // Re-send the sign request (PUT …/start re-triggers emails for unsigned signers).
+        $this->request('put', "transaction/{$transactionId}/start");
+
+        return $transaction;
+    }
+
+    /**
+     * Retrieve a fresh copy of the transaction from Signhost and extract
+     * signing URLs, participant statuses, and expiry date.
+     * Used by refreshYachtSignhostStatus and the resync endpoint.
+     */
+    public function resyncTransaction(string $transactionId): array
+    {
+        $transaction = $this->request('get', "transaction/{$transactionId}");
+
+        $signers = $transaction['Signers'] ?? $transaction['signers'] ?? [];
+        $buyerUrl = null;
+        $sellerUrl = null;
+
+        foreach ($signers as $index => $signer) {
+            $url = $signer['SignUrl'] ?? $signer['signUrl'] ?? null;
+            if ($index === 0) {
+                $buyerUrl = $url;
+            } elseif ($index === 1) {
+                $sellerUrl = $url;
+            }
+        }
+
+        $expiresOn = $transaction['ExpiresOn'] ?? $transaction['expiresOn'] ?? null;
+
+        return [
+            'transaction'   => $transaction,
+            'transaction_id' => $transactionId,
+            'buyer_url'     => $buyerUrl,
+            'seller_url'    => $sellerUrl,
+            'expires_at'    => $expiresOn,
+            'status'        => $transaction['Status'] ?? $transaction['status'] ?? null,
+        ];
+    }
+
     public function getTransaction(string $transactionId): array
     {
         return $this->request('get', "transaction/{$transactionId}");
@@ -176,14 +295,19 @@ class SignhostService
 
     private function uploadFile(string $transactionId, string $pdfPath): void
     {
+        $this->uploadFileByLabel($transactionId, $pdfPath, 'Contract.pdf');
+    }
+
+    private function uploadFileByLabel(string $transactionId, string $pdfPath, string $label): void
+    {
         $contents = file_get_contents($pdfPath);
         if ($contents === false) {
-            throw new \RuntimeException('Failed to read PDF');
+            throw new \RuntimeException('Failed to read PDF: ' . $pdfPath);
         }
 
         $digest = base64_encode(hash('sha256', $contents, true));
 
-        $this->requestRaw('put', "transaction/{$transactionId}/file/Contract.pdf", [
+        $this->requestRaw('put', "transaction/{$transactionId}/file/{$label}", [
             'headers' => [
                 'Content-Type' => 'application/pdf',
                 'Digest' => 'SHA-256=' . $digest,

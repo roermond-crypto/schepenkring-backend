@@ -37,6 +37,18 @@ class CreateSignhostRequestAction
         $signRequest = $this->resolveRequest($actor, $data);
         $before = $signRequest->toArray();
 
+        // Prevent creating a duplicate active Signhost transaction.
+        // If an active (non-expired, non-failed) transaction already exists,
+        // the caller must explicitly pass force_new=true to override.
+        if ($signRequest->signhost_transaction_id && empty($data['force_new'])) {
+            $activeStatuses = ['DRAFT', 'REQUESTED', 'SENT', 'VIEWED'];
+            if (in_array($signRequest->status, $activeStatuses, true)) {
+                throw ValidationException::withMessages([
+                    'signhost_transaction_id' => 'An active Signhost transaction already exists for this contract. Pass force_new=true to create a new one.',
+                ]);
+            }
+        }
+
         $documents = $signRequest->documents()->where('type', 'original')->latest()->get();
         if ($documents->isEmpty()) {
             throw ValidationException::withMessages([
@@ -59,21 +71,31 @@ class CreateSignhostRequestAction
         $transaction = $result['transaction'] ?? [];
         $signUrls = $this->extractSigningUrls($transaction, $recipients);
 
+        $buyerUrl  = $signUrls[0]['url'] ?? null;
+        $sellerUrl = $signUrls[1]['url'] ?? null;
+        $expiresAt = $transaction['ExpiresOn'] ?? $transaction['expiresOn'] ?? null;
+
         $metadata = array_merge($signRequest->metadata ?? [], [
-            'recipients' => $data['recipients'],
-            'sign_urls' => $signUrls,
-            'reference' => $reference,
-            'signhost_transaction' => $transaction,
-            'sent_at' => now()->toDateTimeString(),
+            'recipients'  => $data['recipients'],
+            'sign_urls'   => $signUrls,
+            'reference'   => $reference,
+            'sent_at'     => now()->toDateTimeString(),
         ]);
 
         $signRequest = $this->signRequests->update($signRequest, [
-            'provider' => 'signhost',
-            'status' => 'SENT',
-            'signhost_transaction_id' => $result['transaction_id'],
-            'sign_url' => $signUrls[0]['url'] ?? null,
-            'requested_by_user_id' => $actor->id,
-            'metadata' => $metadata,
+            'provider'                  => 'signhost',
+            'status'                    => 'SENT',
+            'signhost_transaction_id'   => $result['transaction_id'],
+            'sign_url'                  => $buyerUrl,
+            'requested_by_user_id'      => $actor->id,
+            'metadata'                  => $metadata,
+            // Dedicated columns
+            'signhost_buyer_link'       => $buyerUrl,
+            'signhost_seller_link'      => $sellerUrl,
+            'signhost_created_at'       => now(),
+            'signhost_expires_at'       => $expiresAt ? now()->parse($expiresAt) : null,
+            'signhost_last_checked_at'  => now(),
+            'signhost_raw_response'     => $transaction,
         ]);
 
         $this->security->log('signhost.request', RiskLevel::HIGH, $actor, $signRequest, [

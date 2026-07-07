@@ -373,22 +373,33 @@ class SignhostController extends Controller
             default => $signRequest->status,
         };
 
-        $now = now()->toIso8601String();
+        $now = now();
 
         $metadata = array_merge($signRequest->metadata ?? [], [
-            'signhost_raw_status'      => $rawStatus,
-            'signhost_expires_at'      => $expiresOn,
-            'signhost_last_checked_at' => $now,
-            'signhost_buyer_link'      => $buyerUrl,
-            'signhost_seller_link'     => $sellerUrl,
-            'signhost_raw_response'    => $transaction,
-            'sign_urls'                => $signUrls ?: ($signRequest->metadata['sign_urls'] ?? []),
+            'signhost_raw_status' => $rawStatus,
+            'sign_urls'           => $signUrls ?: ($signRequest->metadata['sign_urls'] ?? []),
         ]);
 
         $signRequest->update([
-            'status'   => $internalStatus,
-            'metadata' => $metadata,
+            'status'                   => $internalStatus,
+            'metadata'                 => $metadata,
+            // Dedicated columns
+            'signhost_buyer_link'      => $buyerUrl ?? $signRequest->signhost_buyer_link,
+            'signhost_seller_link'     => $sellerUrl ?? $signRequest->signhost_seller_link,
+            'signhost_expires_at'      => $expiresOn ? $now->parse($expiresOn) : $signRequest->signhost_expires_at,
+            'signhost_last_checked_at' => $now,
+            'signhost_raw_response'    => $transaction,
         ]);
+
+        // Audit log the manual status refresh
+        app(\App\Services\ActionSecurity::class)->log(
+            'signhost.status_checked',
+            \App\Enums\RiskLevel::LOW,
+            $request->user(),
+            $signRequest,
+            ['signhost_status' => $rawStatus],
+            ['location_id' => $signRequest->location_id]
+        );
 
         $signRequest = $signRequest->fresh()->load('documents');
 
@@ -396,28 +407,97 @@ class SignhostController extends Controller
             'sign_request'             => new SignRequestResource($signRequest),
             'signhost_status'          => $rawStatus,
             'signhost_expires_at'      => $expiresOn,
-            'signhost_last_checked_at' => $now,
+            'signhost_last_checked_at' => $now->toIso8601String(),
             'transaction'              => $this->legacyTransaction($signRequest),
+        ]);
+    }
+
+    /**
+     * Resync a Signhost transaction from the API without creating a new one.
+     * Also used to retry failed webhook processing.
+     */
+    public function resyncYachtSignhost(int $yachtId, Request $request, GetSignhostStatusAction $action, SignhostService $signhost): \Illuminate\Http\JsonResponse
+    {
+        try {
+            $signRequest = $action->execute($request->user(), [
+                'entity_type' => 'Yacht',
+                'entity_id'   => $yachtId,
+            ]);
+        } catch (\Throwable) {
+            return response()->json(['error' => 'Sign request not found'], 404);
+        }
+
+        if (! $signRequest->signhost_transaction_id) {
+            return response()->json(['error' => 'No Signhost transaction on this sign request'], 422);
+        }
+
+        try {
+            $result = $signhost->resyncTransaction($signRequest->signhost_transaction_id);
+        } catch (\Throwable $e) {
+            Log::warning('SignhostController: resyncYachtSignhost failed', ['error' => $e->getMessage()]);
+            return response()->json(['error' => 'Signhost API error: ' . $e->getMessage()], 502);
+        }
+
+        $transaction   = $result['transaction'];
+        $rawStatus     = $result['status'];
+        $internalStatus = match (strtoupper((string) $rawStatus)) {
+            'WAITING_FOR_ALL', 'SIGNING', 'SENT', 'VIEWED' => 'SENT',
+            'SIGNED'   => 'SIGNED',
+            'EXPIRED'  => 'EXPIRED',
+            'CANCELLED', 'REJECTED', 'DECLINED', 'FAILED' => 'FAILED',
+            default    => $signRequest->status,
+        };
+
+        $signRequest->update([
+            'status'                   => $internalStatus,
+            'signhost_buyer_link'      => $result['buyer_url'] ?? $signRequest->signhost_buyer_link,
+            'signhost_seller_link'     => $result['seller_url'] ?? $signRequest->signhost_seller_link,
+            'signhost_expires_at'      => $result['expires_at'] ? now()->parse($result['expires_at']) : $signRequest->signhost_expires_at,
+            'signhost_last_checked_at' => now(),
+            'signhost_raw_response'    => $transaction,
+            'webhook_failed'           => false,
+            'webhook_error'            => null,
+        ]);
+
+        app(\App\Services\ActionSecurity::class)->log(
+            'signhost.transaction_resync',
+            \App\Enums\RiskLevel::MEDIUM,
+            $request->user(),
+            $signRequest->fresh(),
+            ['signhost_status' => $rawStatus],
+            ['location_id' => $signRequest->location_id]
+        );
+
+        return response()->json([
+            'sign_request'   => new SignRequestResource($signRequest->fresh()->load('documents')),
+            'signhost_status' => $rawStatus,
+            'transaction'    => $this->legacyTransaction($signRequest->fresh()),
         ]);
     }
 
     private function legacyTransaction(SignRequest $signRequest): array
     {
-        $metadata = $signRequest->metadata ?? [];
-        $buyerUrl = $this->resolveRoleUrl($signRequest, 'buyer');
-        $sellerUrl = $this->resolveRoleUrl($signRequest, 'seller');
+        $buyerUrl  = $signRequest->signhost_buyer_link  ?? $this->resolveRoleUrl($signRequest, 'buyer');
+        $sellerUrl = $signRequest->signhost_seller_link ?? $this->resolveRoleUrl($signRequest, 'seller');
 
         return [
-            'id' => $signRequest->id,
-            'yacht_id' => $signRequest->entity_id,
+            'id'                      => $signRequest->id,
+            'yacht_id'                => $signRequest->entity_id,
             'signhost_transaction_id' => $signRequest->signhost_transaction_id,
-            'status' => $this->mapLegacyStatus($signRequest->status),
-            'signing_url_buyer' => $buyerUrl,
-            'signing_url_seller' => $sellerUrl,
-            'signed_pdf_path' => $metadata['signed_document_path'] ?? null,
-            'webhook_last_payload' => $metadata['webhook_last_payload'] ?? null,
-            'created_at' => $signRequest->created_at,
-            'updated_at' => $signRequest->updated_at,
+            'status'                  => $this->mapLegacyStatus($signRequest->status),
+            'signing_url_buyer'       => $buyerUrl,
+            'signing_url_seller'      => $sellerUrl,
+            'signed_pdf_path'         => $signRequest->signed_pdf_path ?? ($signRequest->metadata['signed_document_path'] ?? null),
+            'signed_pdf_hash'         => $signRequest->signed_pdf_hash,
+            'buyer_signed_at'         => $signRequest->buyer_signed_at?->toIso8601String(),
+            'seller_signed_at'        => $signRequest->seller_signed_at?->toIso8601String(),
+            'completed_at'            => $signRequest->completed_at?->toIso8601String(),
+            'signhost_expires_at'     => $signRequest->signhost_expires_at?->toIso8601String(),
+            'signhost_last_checked_at' => $signRequest->signhost_last_checked_at?->toIso8601String(),
+            'webhook_failed'          => $signRequest->webhook_failed,
+            'webhook_last_payload'    => $signRequest->webhook_last_payload ?? ($signRequest->metadata['webhook_last_payload'] ?? null),
+            'created_at'              => $signRequest->created_at,
+            'updated_at'              => $signRequest->updated_at,
         ];
     }
 

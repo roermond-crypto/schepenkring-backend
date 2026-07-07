@@ -26,3 +26,10 @@ Schedule::command('app:index-sold-boats --rebuild')
     ->dailyAt('02:30')
     ->timezone(config('app.timezone', 'UTC'))
     ->withoutOverlapping();
+
+// Send signing reminders at 09:00 each morning.
+// Checks for contracts unsigned after 2 days, 5 days, and expired transactions.
+Schedule::command('app:signhost-reminders')
+    ->dailyAt('09:00')
+    ->timezone(config('app.timezone', 'Europe/Amsterdam'))
+    ->withoutOverlapping();

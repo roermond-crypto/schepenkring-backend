@@ -492,6 +492,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('yachts/{yachtId}/signhost/documents', [SignhostController::class, 'yachtDocuments']);
     Route::get('yachts/{yachtId}/signhost/url', [SignhostController::class, 'yachtSignUrl']);
     Route::post('yachts/{yachtId}/signhost/refresh-status', [SignhostController::class, 'refreshYachtSignhostStatus']);
+    Route::post('yachts/{yachtId}/signhost/resync', [SignhostController::class, 'resyncYachtSignhost']);
 
     // Tasks
     Route::get('public/users/employees', [TaskUserController::class, 'employees']);
@@ -890,6 +891,12 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/yachts/{yacht}')->gr
 // Publishing health dashboard widget
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/publishing')->group(function () {
     Route::get('health', [\App\Http\Controllers\Api\Admin\PublishingHealthController::class, 'health']);
+});
+
+// Signhost monitoring dashboard
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/signhost')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\Admin\SignhostMonitorController::class, 'index']);
+    Route::post('{signRequest}/resync', [\App\Http\Controllers\Api\Admin\SignhostMonitorController::class, 'resync']);
 });
 
 // crape 3000+ boats

@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Enums\AuditResult;
 use App\Enums\RiskLevel;
+use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\SignDocument;
 use App\Models\SignRequest;
 use App\Models\User;
@@ -54,14 +56,40 @@ class ProcessSignhostWebhookJob implements ShouldQueue
         $mapped = $this->mapSignhostStatus((string) $status);
 
         $metadata = array_merge($signRequest->metadata ?? [], [
-            'webhook_last_payload' => $payload,
-            'webhook_status' => $status,
+            'webhook_status'      => $status,
             'webhook_received_at' => now()->toDateTimeString(),
         ]);
 
-        $signRequest->status = $mapped;
-        $signRequest->metadata = $metadata;
-        $signRequest->save();
+        // Update dedicated columns from webhook payload
+        $updates = [
+            'status'               => $mapped,
+            'metadata'             => $metadata,
+            'webhook_last_payload' => $payload,
+            'webhook_failed'       => false,
+            'webhook_error'        => null,
+            'signhost_last_checked_at' => now(),
+        ];
+
+        // Extract per-participant signing timestamps from the payload
+        $signers = $payload['Signers'] ?? $payload['signers'] ?? [];
+        foreach ($signers as $index => $signer) {
+            $signedAt = $signer['SignedDateTime'] ?? $signer['signedDateTime'] ?? null;
+            if ($signedAt) {
+                if ($index === 0 && !$signRequest->buyer_signed_at) {
+                    $updates['buyer_signed_at'] = $signedAt;
+                } elseif ($index === 1 && !$signRequest->seller_signed_at) {
+                    $updates['seller_signed_at'] = $signedAt;
+                } elseif ($index === 2 && !$signRequest->broker_signed_at) {
+                    $updates['broker_signed_at'] = $signedAt;
+                }
+            }
+        }
+
+        if ($mapped === 'SIGNED' && !$signRequest->completed_at) {
+            $updates['completed_at'] = now();
+        }
+
+        $signRequest->fill($updates)->save();
 
         if ($mapped === 'SIGNED') {
             $this->storeSignedDocuments($signhost, $signRequest);
@@ -77,6 +105,7 @@ class ProcessSignhostWebhookJob implements ShouldQueue
         ]);
 
         $this->notifyStatusChange($notifications, $signRequest, $mapped);
+        $this->postChatSystemMessage($signRequest, $mapped, $payload);
 
         $this->markProcessed($event);
     }
@@ -102,10 +131,10 @@ class ProcessSignhostWebhookJob implements ShouldQueue
         ]);
 
         $metadata = $signRequest->metadata ?? [];
-        $metadata['signed_document_path'] = $path;
-        $metadata['signed_sha256'] = $sha256;
         $metadata['signed_at'] = now()->toDateTimeString();
-        $signRequest->metadata = $metadata;
+        $signRequest->metadata         = $metadata;
+        $signRequest->signed_pdf_path  = $path;
+        $signRequest->signed_pdf_hash  = $sha256;
         $signRequest->save();
     }
 
@@ -172,6 +201,60 @@ class ProcessSignhostWebhookJob implements ShouldQueue
                 );
             }
         }
+    }
+
+    /**
+     * Post a system message to the yacht's chat conversation so the Chat Hub
+     * "signhost" filter tab shows live Signhost events.
+     */
+    private function postChatSystemMessage(SignRequest $signRequest, string $status, array $payload): void
+    {
+        if ($signRequest->entity_type !== 'Yacht') {
+            return;
+        }
+
+        $yachtId = $signRequest->entity_id;
+
+        // Find an existing conversation linked to this yacht
+        $conversation = Conversation::where('boat_id', $yachtId)
+            ->whereIn('channel', ['contract', 'owner_bid', 'sales', 'chat'])
+            ->latest('last_message_at')
+            ->first();
+
+        if (!$conversation) {
+            return;
+        }
+
+        $text = match ($status) {
+            'SENT'     => '📄 Signhost ondertekeningsverzoek verzonden naar koper en verkoper.',
+            'VIEWED'   => '👀 Signhost document bekeken door een ondertekenaar.',
+            'SIGNED'   => '✅ Contract volledig ondertekend via Signhost.',
+            'DECLINED' => '❌ Contract geweigerd door een ondertekenaar.',
+            'EXPIRED'  => '⏰ Signhost transactie verlopen. Maak een nieuwe aan.',
+            'FAILED'   => '⚠️ Signhost transactie mislukt.',
+            default    => "🔔 Signhost status bijgewerkt naar: {$status}",
+        };
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'sender_type'     => 'system',
+            'text'            => $text,
+            'body'            => $text,
+            'channel'         => 'contract',
+            'message_type'    => 'system',
+            'metadata'        => [
+                'event'              => 'signhost_status_updated',
+                'signhost_status'    => $status,
+                'sign_request_id'    => $signRequest->id,
+                'transaction_id'     => $signRequest->signhost_transaction_id,
+                'entity_type'        => $signRequest->entity_type,
+                'entity_id'          => $signRequest->entity_id,
+            ],
+            'delivery_state'  => 'sent',
+            'role_visibility' => ['admin', 'broker', 'seller'],
+        ]);
+
+        $conversation->forceFill(['last_message_at' => now()])->save();
     }
 
     private function mapSignhostStatus(string $status): string
