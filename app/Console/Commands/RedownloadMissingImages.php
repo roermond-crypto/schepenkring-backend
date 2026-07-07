@@ -100,7 +100,7 @@ class RedownloadMissingImages extends Command
             $sourceImages = $this->scrapeImageUrls((string) $yacht->external_url);
 
             if (empty($sourceImages)) {
-                $this->warn("    Could not scrape image URLs from listing page, skipping.");
+                $this->warn("    Source images no longer available on listing page (images may be JS-rendered or page was updated). Skipping.");
                 $failed += count($missingImages);
                 $processed++;
                 continue;
@@ -155,11 +155,39 @@ class RedownloadMissingImages extends Command
             $urls = $crawler->filter('img[src*="/previews/"], img[src*="/uploads/"]')
                 ->each(fn (Crawler $node) => $this->normalizeUrl($node->attr('src'), $pageUrl));
 
-            return collect($urls)->filter()->unique()->values()->all();
+            return collect($urls)
+                ->filter()
+                ->unique()
+                ->reject(fn (string $url) => $this->isTemplateImage($url))
+                ->values()
+                ->all();
         } catch (\Throwable $e) {
             Log::warning("[RedownloadMissingImages] Failed scraping {$pageUrl}: {$e->getMessage()}");
             return [];
         }
+    }
+
+    /**
+     * Returns true for WordPress site-asset images that are never actual boat photos.
+     * These appear on every page regardless of content (logos, icons, footer images).
+     */
+    private function isTemplateImage(string $url): bool
+    {
+        // Reject dated WordPress media uploads (e.g. /wp-content/uploads/2024/05/).
+        // Real boat images don't use this path — they come from plugin or preview directories.
+        if (preg_match('#/wp-content/uploads/\d{4}/\d{2}/#', $url)) {
+            return true;
+        }
+
+        // Reject by filename keywords that indicate site branding / UI assets.
+        $basename = strtolower(basename(parse_url($url, PHP_URL_PATH) ?? ''));
+        foreach (['logo', 'icon', 'footer', 'hiswa', 'nbms', 'gdpr', 'banner', 'badge'] as $keyword) {
+            if (str_contains($basename, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ── Download from $sourceUrl and store at the exact $targetPath ──────────
