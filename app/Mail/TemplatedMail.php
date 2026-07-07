@@ -21,9 +21,9 @@ class TemplatedMail extends Mailable
         private readonly string $htmlContent,
         private readonly string $emailSubject,
         private readonly string $preheader = '',
-        private readonly ?string $fromName  = null,
-        private readonly ?string $fromEmail = null,
-        private readonly ?string $replyTo   = null,
+        private readonly ?string $fromName     = null,
+        private readonly ?string $fromEmail    = null,
+        private readonly ?string $replyToEmail = null,
     ) {}
 
     public function envelope(): Envelope
@@ -40,9 +40,8 @@ class TemplatedMail extends Mailable
             );
         }
 
-        if ($this->replyTo) {
-            // replyTo is set after construction; no fluent API in Laravel 10+
-            $this->replyTo([$this->replyTo]);
+        if ($this->replyToEmail) {
+            $this->replyTo([$this->replyToEmail]);
         }
 
         return $envelope;
@@ -66,7 +65,7 @@ class TemplatedMail extends Mailable
             preheader:   $rendered['preheader'] ?? '',
             fromName:    $rendered['from_name']  ?? null,
             fromEmail:   $rendered['from_email'] ?? null,
-            replyTo:     $rendered['reply_to']   ?? null,
+            replyToEmail: $rendered['reply_to']   ?? null,
         );
     }
 }
