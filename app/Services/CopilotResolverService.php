@@ -187,7 +187,7 @@ class CopilotResolverService
 
     private function createBoatAction(User $user): ?array
     {
-        $action = $this->actionFromCatalog('create.boat', [], $user);
+        $action = $this->actionFromCatalog('boat.create', [], $user);
 
         if ($action) {
             $action['reason'] = 'Matched create boat intent';
@@ -200,9 +200,9 @@ class CopilotResolverService
         }
 
         return [
-            'action_id' => 'create.boat',
-            'title' => 'Create boat',
-            'deeplink' => '/admin/yachts/new',
+            'action_id' => 'boat.create',
+            'title' => 'Boot aanmaken',
+            'deeplink' => '/admin/yachts/new?fresh=true',
             'risk_level' => 'low',
             'confirmation_required' => false,
             'params' => [],
