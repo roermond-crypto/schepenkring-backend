@@ -876,7 +876,7 @@ class ScrapeSoldBoats extends Command
             $description = implode("\n\n", $parts);
         }
 
-        $images = $crawler->filter('img[src*="/previews/"], img[src*="/uploads/"]')->each(function (Crawler $node) use ($baseUrl) {
+        $images = $crawler->filter('img[src*="/vibp/assets/verkochte_boten/"], img[src*="/previews/"], img[src*="/uploads/"]')->each(function (Crawler $node) use ($baseUrl) {
             return $this->normalizeExternalUrl($node->attr('src'), $baseUrl);
         });
         $images = collect($images)

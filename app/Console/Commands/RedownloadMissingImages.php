@@ -88,33 +88,15 @@ class RedownloadMissingImages extends Command
             }
 
             $yacht = $missingImages[0]->yacht;
-            $this->line("  Yacht #{$yachtId} — {$yacht?->external_url}");
+            $this->line("  Yacht #{$yachtId} — {$yacht?->source_identifier} ({$yacht?->source})");
 
-            if (!$yacht?->external_url) {
-                $this->warn("    No external_url, skipping.");
-                $failed += count($missingImages);
-                $processed++;
-                continue;
-            }
-
-            $sourceImages = $this->scrapeImageUrls((string) $yacht->external_url);
-
-            if (empty($sourceImages)) {
-                $this->warn("    Source images no longer available on listing page (images may be JS-rendered or page was updated). Skipping.");
-                $failed += count($missingImages);
-                $processed++;
-                continue;
-            }
-
-            // Match missing DB images (by sort_order) to scraped URLs in order.
-            // Sort missing images by sort_order so index aligns with scraped list.
             usort($missingImages, fn ($a, $b) => $a->sort_order <=> $b->sort_order);
 
             foreach ($missingImages as $image) {
-                $sourceUrl = $sourceImages[$image->sort_order] ?? null;
+                $sourceUrl = $this->resolveSourceUrl($image, $yacht);
 
                 if (!$sourceUrl) {
-                    $this->warn("    Image #{$image->id} sort_order={$image->sort_order}: no matching source URL.");
+                    $this->warn("    Image #{$image->id} sort_order={$image->sort_order}: could not construct source URL.");
                     $failed++;
                     continue;
                 }
@@ -125,7 +107,7 @@ class RedownloadMissingImages extends Command
                     $this->line("    ✓ Image #{$image->id} restored from {$sourceUrl}");
                     $downloadedOk++;
                 } else {
-                    $this->warn("    ✗ Image #{$image->id} failed to download from {$sourceUrl}");
+                    $this->warn("    ✗ Image #{$image->id} failed ({$sourceUrl})");
                     $failed++;
                 }
             }
@@ -137,7 +119,39 @@ class RedownloadMissingImages extends Command
         return self::SUCCESS;
     }
 
-    // ── Scrape image URLs from a schepenkring.nl or similar listing page ──────
+    /**
+     * Resolve the original source URL for a missing image.
+     *
+     * For schepenkring sold archive, images are served directly from a predictable
+     * vibp plugin path: /wp-content/plugins/vibp/assets/verkochte_boten/images/{id}_{index}.jpg
+     * No page scraping needed — source_identifier + sort_order are sufficient.
+     *
+     * Falls back to scraping the listing page for other sources.
+     */
+    private function resolveSourceUrl(YachtImage $image, ?object $yacht): ?string
+    {
+        $sourceId = $yacht?->source_identifier;
+        $source   = $yacht?->source;
+
+        // Direct URL construction for Schepenkring sold archive (vibp plugin CDN)
+        if ($sourceId && $source === 'schepenkring_sold_archive') {
+            return sprintf(
+                'https://www.schepenkring.nl/wp-content/plugins/vibp/assets/verkochte_boten/images/%s_%d.jpg',
+                $sourceId,
+                $image->sort_order
+            );
+        }
+
+        // Fallback: scrape the listing page for other sources
+        if (!$yacht?->external_url) {
+            return null;
+        }
+
+        $pageImages = $this->scrapeImageUrls((string) $yacht->external_url);
+        return $pageImages[$image->sort_order] ?? null;
+    }
+
+    // ── Scrape image URLs from a listing page (fallback for non-vibp sources) ──
 
     private function scrapeImageUrls(string $pageUrl): array
     {
@@ -152,8 +166,9 @@ class RedownloadMissingImages extends Command
 
             $crawler = new Crawler($response->body(), $pageUrl);
 
-            $urls = $crawler->filter('img[src*="/previews/"], img[src*="/uploads/"]')
-                ->each(fn (Crawler $node) => $this->normalizeUrl($node->attr('src'), $pageUrl));
+            $urls = $crawler->filter(
+                'img[src*="/vibp/assets/verkochte_boten/"], img[src*="/previews/"], img[src*="/uploads/"]'
+            )->each(fn (Crawler $node) => $this->normalizeUrl($node->attr('src'), $pageUrl));
 
             return collect($urls)
                 ->filter()
