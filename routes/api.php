@@ -93,6 +93,7 @@ use App\Http\Controllers\Api\SellerDashboardController;
 use App\Http\Controllers\Api\YachtController;
 use App\Http\Controllers\Api\YachtDraftController;
 use App\Http\Controllers\Api\WidgetLeadController;
+use App\Http\Controllers\Api\PublicBoatController;
 
 // ──────────────────────────────────────────────────────────
 // Public routes (no auth needed for dev/testing)
@@ -211,6 +212,14 @@ Route::prefix('public')->group(function () {
     Route::post('boats/{yachtId}/bid', [BidWidgetController::class, 'place'])->middleware('bid.session');
     Route::get('locations/{id}/widget-settings', [\App\Http\Controllers\Api\Admin\LocationWidgetSettingsController::class, 'show']);
     Route::get('locations/{id}/booking-settings', [\App\Http\Controllers\Api\Admin\HarborController::class, 'bookingSettings']);
+
+    // Public boat detail — used by the public boat detail pages and widget context resolution.
+    // Accepts both internal DB id and external yachtshift_id.
+    Route::get('boats/{id}',  [PublicBoatController::class, 'show']);
+    Route::get('yachts/{id}', [PublicBoatController::class, 'show']);
+
+    // Widget boat-context — resolves boat → location for the embed script BFF.
+    Route::get('widget/boat-context', [WidgetLeadController::class, 'context'])->middleware('throttle:120,1');
 });
 
 // Chat widget (public)
