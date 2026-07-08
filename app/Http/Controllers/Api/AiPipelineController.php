@@ -861,7 +861,7 @@ class AiPipelineController extends Controller
                     $pool->as('openai_enrich')->withHeaders(['Authorization' => 'Bearer ' . $openAiKey])
                         ->timeout(45)
                         ->post('https://api.openai.com/v1/chat/completions', [
-                            'model' => 'gpt-4o-mini',
+                            'model' => 'gpt-5.5',
                             'messages' => [
                                 ['role' => 'system', 'content' => $this->getOpenAiEnrichmentPrompt($analysisHintText)],
                                 ['role' => 'user', 'content' => 'Extract boat specs from hint.']
@@ -1655,7 +1655,7 @@ PROMPT;
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $apiKey,
             ])->timeout(45)->post($endpoint, [
-                'model' => 'gpt-4o-mini',
+                'model' => 'gpt-5.5',
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
                     ['role' => 'user', 'content' => 'Please fill in the missing data for this boat in JSON format.']

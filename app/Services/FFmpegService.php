@@ -437,6 +437,50 @@ class FFmpegService
     }
 
     /**
+     * Normalize a location's own intro/outro asset (a still image or a short
+     * video clip) into a clip matching the rest of the render's format, so it
+     * can be spliced in via chainWithXfade() alongside the generated scenes.
+     * Images get the same Ken Burns treatment as regular scene photos; videos
+     * are re-encoded to the target resolution/fps and trimmed to $maxDuration.
+     */
+    public function prepareLocationMediaClip(
+        string $mediaPath,
+        string $outputPath,
+        float $maxDuration,
+        string $resolution = '1920:1080'
+    ): ?string {
+        if (! file_exists($mediaPath)) {
+            return null;
+        }
+
+        $this->ensureParentDirectoryExists($outputPath);
+        $isVideo = in_array(strtolower(pathinfo($mediaPath, PATHINFO_EXTENSION)), ['mp4', 'mov', 'webm', 'm4v'], true);
+
+        if (! $isVideo) {
+            $this->renderKenBurnsClip($mediaPath, $outputPath, $maxDuration, $resolution);
+
+            return $outputPath;
+        }
+
+        [$w, $h] = explode(':', $resolution);
+        $sourceDuration = $this->getDuration($mediaPath);
+        $clipDuration = $sourceDuration > 0 ? min($sourceDuration, $maxDuration) : $maxDuration;
+
+        $this->runFfmpeg([
+            '-y',
+            '-i', $mediaPath,
+            '-t', (string) $clipDuration,
+            '-vf', "scale={$w}:{$h}:force_original_aspect_ratio=decrease,pad={$w}:{$h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p",
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-an',
+            $outputPath,
+        ]);
+
+        return $outputPath;
+    }
+
+    /**
      * Check if FFmpeg is installed and accessible.
      *
      * @return bool
@@ -669,7 +713,9 @@ class FFmpegService
         string $ctaSubText   = '',
         string $transition   = 'fade',
         float  $transitionDur = 0.8,
-        string $resolution   = '1920:1080'
+        string $resolution   = '1920:1080',
+        ?string $locationIntroMediaPath = null,
+        ?string $locationOutroMediaPath = null
     ): string {
         $validPaths = array_values(array_filter($imagePaths, 'file_exists'));
 
@@ -682,6 +728,17 @@ class FFmpegService
         try {
             $allClips     = [];
             $allDurations = [];
+
+            // Location's own opening clip/image, if the boat's location has one —
+            // bookends the video before the generated title card so every
+            // location's videos open with a distinct, recognizable identity.
+            if ($locationIntroMediaPath) {
+                $locIntroOut = "{$tempBase}/loc_intro.mp4";
+                if ($this->prepareLocationMediaClip($locationIntroMediaPath, $locIntroOut, 3.0, $resolution)) {
+                    $allClips[]     = $locIntroOut;
+                    $allDurations[] = min($this->getDuration($locIntroOut) ?: 3.0, 3.0);
+                }
+            }
 
             // Intro
             if ($introTitle !== '') {
@@ -715,6 +772,15 @@ class FFmpegService
                 $this->renderOutroClip($outroPath, $ctaText, $ctaSubText, 4.0, $resolution);
                 $allClips[]     = $outroPath;
                 $allDurations[] = 4.0;
+            }
+
+            // Location's own closing clip/image, spliced in last.
+            if ($locationOutroMediaPath) {
+                $locOutroOut = "{$tempBase}/loc_outro.mp4";
+                if ($this->prepareLocationMediaClip($locationOutroMediaPath, $locOutroOut, 3.0, $resolution)) {
+                    $allClips[]     = $locOutroOut;
+                    $allDurations[] = min($this->getDuration($locOutroOut) ?: 3.0, 3.0);
+                }
             }
 
             if (count($allClips) < 2) {

@@ -27,6 +27,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -126,6 +127,51 @@ class HarborController extends Controller
 
         return response()->json([
             'data' => $this->serializeHarbor($harbor->fresh(), $this->buildSnapshotCounts(collect([$harbor->id]))),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/locations/{harbor}/video-media
+     *
+     * Upload this location's own intro or outro clip/image — spliced into
+     * every yacht video generated for boats at this location (see
+     * FFmpegService::prepareLocationMediaClip / RenderFromPlan).
+     */
+    public function uploadVideoMedia(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'slot' => 'required|in:intro,outro',
+            'file' => 'required|file|mimes:jpg,jpeg,png,webp,mp4,mov,webm|max:51200',
+        ]);
+
+        $column = $validated['slot'] === 'intro' ? 'video_intro_media' : 'video_outro_media';
+
+        // Replace, don't accumulate — a location has exactly one active intro
+        // and one active outro asset at a time.
+        if ($harbor->{$column} && Storage::disk('public')->exists($harbor->{$column})) {
+            Storage::disk('public')->delete($harbor->{$column});
+        }
+
+        $path = $request->file('file')->store("locations/video/{$harbor->id}", 'public');
+        $harbor->update([$column => $path]);
+
+        AuditLog::create([
+            'action'      => 'location.video_media_uploaded',
+            'risk_level'  => 'low',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'location',
+            'entity_id'   => $harbor->id,
+            'meta'        => ['slot' => $validated['slot'], 'path' => $path],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json([
+            'slot' => $validated['slot'],
+            'path' => $path,
+            'url' => Storage::disk('public')->url($path),
         ]);
     }
 
@@ -806,6 +852,8 @@ class HarborController extends Controller
             'public_visible'       => (bool) $harbor->public_visible,
             'location_color'       => $harbor->location_color,
             'hero_image'           => $harbor->hero_image,
+            'video_intro_media'    => $harbor->video_intro_media ? Storage::disk('public')->url($harbor->video_intro_media) : null,
+            'video_outro_media'    => $harbor->video_outro_media ? Storage::disk('public')->url($harbor->video_outro_media) : null,
             'description_nl'       => $harbor->description_nl,
             'description_en'       => $harbor->description_en,
             'description_de'       => $harbor->description_de,
@@ -881,6 +929,8 @@ class HarborController extends Controller
             'public_visible'    => array_merge($p, ['nullable', 'boolean']),
             'location_color'    => array_merge($p, ['nullable', 'string', 'max:20']),
             'hero_image'        => array_merge($p, ['nullable', 'string', 'max:500']),
+            'video_intro_media' => array_merge($p, ['nullable', 'string', 'max:500']),
+            'video_outro_media' => array_merge($p, ['nullable', 'string', 'max:500']),
             'description_nl'    => array_merge($p, ['nullable', 'string']),
             'description_en'    => array_merge($p, ['nullable', 'string']),
             'description_de'    => array_merge($p, ['nullable', 'string']),
@@ -917,7 +967,7 @@ class HarborController extends Controller
         $scalarFields = [
             'address_line1', 'street_number', 'postal_code', 'city', 'country',
             'phone', 'whatsapp_number', 'email', 'sender_email', 'website', 'latitude', 'longitude',
-            'public_visible', 'location_color', 'hero_image',
+            'public_visible', 'location_color', 'hero_image', 'video_intro_media', 'video_outro_media',
             'description_nl', 'description_en', 'description_de',
             'opening_hours', 'default_seller_id', 'lead_assignment_mode',
             'seo_title', 'seo_description', 'seo_keywords',

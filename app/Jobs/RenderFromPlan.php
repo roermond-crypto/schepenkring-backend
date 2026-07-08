@@ -35,7 +35,7 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
 
     public function handle(): void
     {
-        $plan = VideoPlan::with('yacht.images', 'template')->find($this->planId);
+        $plan = VideoPlan::with('yacht.images', 'yacht.location', 'template')->find($this->planId);
         if (!$plan) {
             Log::error("VideoPlan {$this->planId} not found");
             return;
@@ -110,6 +110,13 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
             };
 
             $rawPath = "{$tempBase}/raw.mp4";
+            $location = $plan->yacht->location;
+            $locationIntroPath = $location?->video_intro_media
+                ? $this->resolveLocationMediaPath($location->video_intro_media, $tempBase, "loc_intro_{$location->id}")
+                : null;
+            $locationOutroPath = $location?->video_outro_media
+                ? $this->resolveLocationMediaPath($location->video_outro_media, $tempBase, "loc_outro_{$location->id}")
+                : null;
 
             if ($plan->variation === 'teaser') {
                 $ffmpeg->renderTeaserClip($imagePaths, $rawPath, 5, 2.5, $resolution);
@@ -118,7 +125,9 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
                     $imagePaths, $rawPath, $durations, $overlays,
                     $introTitle, $introSub, $ctaText, $ctaSub,
                     'fade', (float) ($settings['default_transition_duration'] ?? 0.8),
-                    $resolution
+                    $resolution,
+                    $locationIntroPath,
+                    $locationOutroPath
                 );
             }
 
@@ -233,6 +242,38 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
         }
 
         Log::warning("RenderFromPlan: could not resolve image #{$img->id} (url: {$img->url})");
+        return null;
+    }
+
+    /**
+     * Resolve a location's stored intro/outro media (a relative storage path
+     * or a full URL, however it was saved by the admin upload) to a local
+     * file FFmpeg can read, preserving its original extension so
+     * FFmpegService can tell image from video.
+     */
+    private function resolveLocationMediaPath(string $stored, string $tempBase, string $filenameStem): ?string
+    {
+        $extension = pathinfo(parse_url($stored, PHP_URL_PATH) ?: $stored, PATHINFO_EXTENSION) ?: 'jpg';
+
+        $diskPath = Storage::disk('public')->path($stored);
+        if (file_exists($diskPath)) {
+            return $diskPath;
+        }
+
+        $url = filter_var($stored, FILTER_VALIDATE_URL)
+            ? $stored
+            : rtrim(config('app.url'), '/') . '/storage/' . ltrim($stored, '/');
+
+        $localPath = "{$tempBase}/{$filenameStem}.{$extension}";
+        try {
+            $response = Http::timeout(15)->get($url);
+            if ($response->successful()) {
+                file_put_contents($localPath, $response->body());
+                return $localPath;
+            }
+        } catch (\Throwable) {}
+
+        Log::warning("RenderFromPlan: could not resolve location media ({$stored})");
         return null;
     }
 

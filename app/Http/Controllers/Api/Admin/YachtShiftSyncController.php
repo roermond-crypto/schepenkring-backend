@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Yacht;
+use App\Models\YachtshiftSyncConflict;
 use App\Services\YachtCompletenessService;
 use App\Services\YachtShiftSyncService;
 use Illuminate\Http\JsonResponse;
@@ -92,6 +94,37 @@ class YachtShiftSyncController extends Controller
         $result = $this->sync->retryExport($yacht, $validated['dry_run'] ?? false, $request->user());
 
         return response()->json($result, ($result['success'] ?? false) ? 200 : 502);
+    }
+
+    /**
+     * GET /api/admin/yachtshift/conflicts
+     */
+    public function conflicts(Request $request): JsonResponse
+    {
+        $status = $request->query('status', 'pending');
+
+        $conflicts = YachtshiftSyncConflict::with(['yacht:id,boat_name,vessel_id', 'resolvedBy:id,name'])
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->orderByDesc('created_at')
+            ->paginate((int) $request->query('per_page', 25));
+
+        return response()->json($conflicts);
+    }
+
+    /**
+     * GET /api/admin/yachtshift/runs
+     *
+     * Recent sync activity, sourced from the audit trail already written by
+     * YachtShiftSyncService — a "run" here is any yachtshift.* audit event.
+     */
+    public function runs(Request $request): JsonResponse
+    {
+        $runs = AuditLog::query()
+            ->where('action', 'like', 'yachtshift.%')
+            ->orderByDesc('created_at')
+            ->paginate((int) $request->query('per_page', 30));
+
+        return response()->json($runs);
     }
 
     public function resolveConflict(Request $request, int $conflictId): JsonResponse

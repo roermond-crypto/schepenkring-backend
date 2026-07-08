@@ -109,11 +109,21 @@ class YachtCompletenessService
             'weights'    => self::WEIGHTS,
         ];
 
-        $yacht->forceFill([
+        $updates = [
             'completeness_score'          => $totalScore,
             'completeness_breakdown'      => $breakdown,
             'completeness_calculated_at'  => now(),
-        ])->save();
+        ];
+
+        // Surface "ready to publish" once required fields are complete, but
+        // only from the untouched draft state — don't clobber a more specific
+        // sync status (queued/published/failed/import_synced/needs_review).
+        $currentSyncStatus = $yacht->yachtshift_publish_status;
+        if (empty($this->missingRequired($yacht)) && in_array($currentSyncStatus, [null, '', 'draft'], true)) {
+            $updates['yachtshift_publish_status'] = 'ready_to_publish';
+        }
+
+        $yacht->forceFill($updates)->save();
 
         return $breakdown;
     }

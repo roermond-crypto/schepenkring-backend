@@ -23,6 +23,8 @@ class Location extends Model
         'public_visible',
         'location_color',
         'hero_image',
+        'video_intro_media',
+        'video_outro_media',
         'description_nl',
         'description_en',
         'description_de',

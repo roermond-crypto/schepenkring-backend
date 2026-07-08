@@ -95,6 +95,9 @@ class YachtShiftSyncService
                 if (count($fieldConflicts) > 0) {
                     $conflicts = array_merge($conflicts, $fieldConflicts);
                     $skipped++;
+                    if (! $dryRun) {
+                        $existing->update(['yachtshift_publish_status' => 'needs_review']);
+                    }
                     continue;
                 }
             }
@@ -110,6 +113,7 @@ class YachtShiftSyncService
                 'yachtshift_id' => $externalId,
                 'yachtshift_synced_at' => now(),
                 'yachtshift_last_imported_at' => now(),
+                'yachtshift_publish_status' => 'import_synced',
                 'source' => 'yachtshift',
                 'source_identifier' => $externalId,
             ]);

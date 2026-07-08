@@ -193,7 +193,7 @@ PROMPT;
         $response = Http::withToken($apiKey)
             ->timeout(60)
             ->post('https://api.openai.com/v1/chat/completions', [
-                'model'           => 'gpt-4o',
+                'model'           => 'gpt-5.5',
                 'response_format' => ['type' => 'json_object'],
                 'messages'        => [
                     ['role' => 'system', 'content' => $systemPrompt],

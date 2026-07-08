@@ -703,6 +703,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('locations/{harbor}/stats', [AdminHarborController::class, 'stats']);
     Route::get('locations/{harbor}/timeline', [AdminHarborController::class, 'timeline']);
     Route::get('locations/{harbor}/inbox', [AdminHarborController::class, 'inbox']);
+    Route::post('locations/{harbor}/video-media', [AdminHarborController::class, 'uploadVideoMedia']);
     Route::get('locations/{harbor}/booking-settings', [AdminHarborController::class, 'bookingSettings']);
     Route::get('locations/{harbor}/users', [AdminHarborController::class, 'locationUsers']);
     Route::post('locations/{harbor}/users', [AdminHarborController::class, 'addLocationUser']);
@@ -725,6 +726,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     // YachtShift two-way sync
     Route::post('yachtshift/sync', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'trigger']);
     Route::get('yachtshift/sync/status', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'status']);
+    Route::get('yachtshift/conflicts', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'conflicts']);
+    Route::get('yachtshift/runs', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'runs']);
     Route::post('yachts/{yacht}/publish-yachtshift', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'publish']);
     Route::post('yachts/{yacht}/retry-yachtshift-export', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'retryExport']);
     Route::post('yachtshift/conflicts/{conflictId}/resolve', [\App\Http\Controllers\Api\Admin\YachtShiftSyncController::class, 'resolveConflict']);
