@@ -7,10 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Mail\LocationDeleteRequestMail;
 use App\Models\AuditLog;
 use App\Models\Boat;
+use App\Models\Booking;
 use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Location;
 use App\Models\LocationDeleteRequest;
+use App\Models\Offer;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Yacht;
@@ -257,6 +259,43 @@ class HarborController extends Controller
         ]);
 
         return response()->json(['success' => true, 'message' => "User {$user->name} removed from {$harbor->name}."]);
+    }
+
+    /**
+     * PATCH /api/admin/locations/{harbor}/default-seller
+     * Set the default seller for a location.
+     */
+    public function setDefaultSeller(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $validated = $request->validate([
+            'user_id' => 'nullable|integer|exists:users,id',
+        ]);
+
+        $oldSellerId = $harbor->default_seller_id;
+        $newSellerId = $validated['user_id'] ?? null;
+
+        $harbor->update(['default_seller_id' => $newSellerId]);
+
+        AuditLog::create([
+            'action'          => 'location.default_seller_changed',
+            'risk_level'      => 'low',
+            'result'          => 'success',
+            'actor_id'        => $request->user()?->id,
+            'entity_type'     => 'location',
+            'entity_id'       => $harbor->id,
+            'meta'            => [
+                'old_seller_id' => $oldSellerId,
+                'new_seller_id' => $newSellerId,
+            ],
+            'ip_address'      => $request->ip(),
+        ]);
+
+        return response()->json([
+            'success'           => true,
+            'default_seller_id' => $newSellerId,
+        ]);
     }
 
     /**
@@ -756,7 +795,9 @@ class HarborController extends Controller
             'city'                 => $harbor->city,
             'country'              => $harbor->country,
             'phone'                => $harbor->phone,
+            'whatsapp_number'      => $harbor->whatsapp_number,
             'email'                => $harbor->email,
+            'sender_email'         => $harbor->sender_email,
             'website'              => $harbor->website,
             'latitude'             => $harbor->latitude,
             'longitude'            => $harbor->longitude,
@@ -770,6 +811,7 @@ class HarborController extends Controller
             'description_de'       => $harbor->description_de,
             'opening_hours'        => $harbor->opening_hours,
             'default_seller_id'    => $harbor->default_seller_id,
+            'lead_assignment_mode' => $harbor->lead_assignment_mode,
             'default_seller'       => $harbor->relationLoaded('defaultSeller') && $harbor->defaultSeller
                 ? ['id' => $harbor->defaultSeller->id, 'name' => $harbor->defaultSeller->name, 'email' => $harbor->defaultSeller->email]
                 : null,
@@ -828,7 +870,9 @@ class HarborController extends Controller
             'city'              => array_merge($p, ['nullable', 'string', 'max:120']),
             'country'           => array_merge($p, ['nullable', 'string', 'max:120']),
             'phone'             => array_merge($p, ['nullable', 'string', 'max:30']),
+            'whatsapp_number'   => array_merge($p, ['nullable', 'string', 'max:30']),
             'email'             => array_merge($p, ['nullable', 'email', 'max:255']),
+            'sender_email'      => array_merge($p, ['nullable', 'email', 'max:255']),
             'website'           => array_merge($p, ['nullable', 'string', 'max:500']),
             'latitude'          => array_merge($p, ['nullable', 'numeric', 'between:-90,90']),
             'longitude'         => array_merge($p, ['nullable', 'numeric', 'between:-180,180']),
@@ -842,6 +886,7 @@ class HarborController extends Controller
             'description_de'    => array_merge($p, ['nullable', 'string']),
             'opening_hours'     => array_merge($p, ['nullable', 'array']),
             'default_seller_id' => array_merge($p, ['nullable', 'integer', 'exists:users,id']),
+            'lead_assignment_mode' => array_merge($p, ['nullable', 'string', Rule::in(['default_seller', 'round_robin', 'unassigned'])]),
             'seo_title'         => array_merge($p, ['nullable', 'string', 'max:255']),
             'seo_description'   => array_merge($p, ['nullable', 'string']),
             'seo_keywords'      => array_merge($p, ['nullable', 'string', 'max:500']),
@@ -871,10 +916,10 @@ class HarborController extends Controller
 
         $scalarFields = [
             'address_line1', 'street_number', 'postal_code', 'city', 'country',
-            'phone', 'email', 'website', 'latitude', 'longitude',
+            'phone', 'whatsapp_number', 'email', 'sender_email', 'website', 'latitude', 'longitude',
             'public_visible', 'location_color', 'hero_image',
             'description_nl', 'description_en', 'description_de',
-            'opening_hours', 'default_seller_id',
+            'opening_hours', 'default_seller_id', 'lead_assignment_mode',
             'seo_title', 'seo_description', 'seo_keywords',
         ];
         foreach ($scalarFields as $field) {
@@ -903,31 +948,146 @@ class HarborController extends Controller
 
         $activeYachts       = Yacht::where('ref_harbor_id', $id)->where('status', 'ACTIVE')->count();
         $totalYachts        = Yacht::where('ref_harbor_id', $id)->count();
+        $soldYachts         = Yacht::where('ref_harbor_id', $id)->whereRaw("LOWER(status) = 'sold'")->count();
+        // sale_price is not populated anywhere in the app today — asking price
+        // of sold boats is the closest reliable proxy for realised revenue.
+        $revenue            = (float) Yacht::where('ref_harbor_id', $id)->whereRaw("LOWER(status) = 'sold'")->sum('price');
         $activeBoats        = Boat::where('location_id', $id)->where('status', 'ACTIVE')->count();
         $newLeadsMonth      = Lead::where('location_id', $id)->where('created_at', '>=', $monthStart)->count();
         $openLeads          = Lead::where('location_id', $id)->whereNotIn('status', ['CLOSED', 'LOST', 'WON'])->count();
-        $openChats          = Conversation::where('location_id', $id)->where('status', 'OPEN')->count();
+        // NOTE: conversation status is stored lowercase ('open'/'closed') everywhere
+        // it's written (WidgetLeadController, ChatConversationService, etc.) — the
+        // previous 'OPEN' comparison here never matched and silently returned 0.
+        $openChats          = Conversation::where('location_id', $id)->where('status', 'open')->count();
         $totalChats         = Conversation::where('location_id', $id)->count();
+        $openViewings       = Conversation::where('location_id', $id)->where('chat_type', 'plan_viewing')->where('status', '!=', 'closed')->count();
+        $openOffers         = Offer::where('location_id', $id)->whereIn('status', ['new', 'sent_to_seller'])->count();
+        $upcomingBookings   = Booking::where('location_id', $id)->whereDate('date', '>=', $now->toDateString())->count();
         $staffCount         = DB::table('location_user')->where('location_id', $id)->count();
         $clientCount        = User::where('client_location_id', $id)->count();
         $openTasks          = Task::where('location_id', $id)->whereRaw("lower(status) not in ('done', 'completed', 'closed')")->count();
+
+        $conversionRate = $totalYachts > 0 ? round(($soldYachts / $totalYachts) * 100, 1) : 0.0;
+
+        // Average time-to-first-reply: computed in PHP (not SQL date-diff
+        // functions) so it works the same on SQLite, MySQL and Postgres.
+        $firstReplies = DB::table('messages')
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->where('conversations.location_id', $id)
+            ->whereIn('messages.sender_type', ['employee', 'agent'])
+            ->groupBy('conversations.id', 'conversations.created_at')
+            ->selectRaw('conversations.created_at as conv_created_at, MIN(messages.created_at) as first_reply_at')
+            ->get();
+        $avgResponseMinutes = null;
+        if ($firstReplies->isNotEmpty()) {
+            $totalMinutes = $firstReplies->sum(
+                fn ($row) => CarbonImmutable::parse($row->conv_created_at)->diffInMinutes(CarbonImmutable::parse($row->first_reply_at))
+            );
+            $avgResponseMinutes = (int) round($totalMinutes / $firstReplies->count());
+        }
 
         $harbor->load(['defaultSeller', 'employees' => fn ($q) => $q->select('users.id', 'users.name', 'users.email', 'users.type')->orderBy('users.name')]);
 
         return response()->json([
             'location'            => $this->serializeHarbor($harbor, $this->buildSnapshotCounts(collect([$id]))),
             'stats'               => [
-                'active_yachts'   => $activeYachts,
-                'total_yachts'    => $totalYachts,
-                'active_boats'    => $activeBoats,
-                'new_leads_month' => $newLeadsMonth,
-                'open_leads'      => $openLeads,
-                'open_chats'      => $openChats,
-                'total_chats'     => $totalChats,
-                'staff_count'     => $staffCount,
-                'client_count'    => $clientCount,
-                'open_tasks'      => $openTasks,
+                'active_yachts'             => $activeYachts,
+                'total_yachts'              => $totalYachts,
+                'sold_yachts'               => $soldYachts,
+                'revenue'                   => $revenue,
+                'active_boats'              => $activeBoats,
+                'new_leads_month'           => $newLeadsMonth,
+                'open_leads'                => $openLeads,
+                'open_chats'                => $openChats,
+                'total_chats'               => $totalChats,
+                'open_viewing_requests'     => $openViewings,
+                'open_offers'               => $openOffers,
+                'upcoming_bookings'         => $upcomingBookings,
+                'staff_count'               => $staffCount,
+                'client_count'              => $clientCount,
+                'open_tasks'                => $openTasks,
+                'conversion_rate'           => $conversionRate,
+                'avg_response_time_minutes' => $avgResponseMinutes,
             ],
+        ]);
+    }
+
+    /**
+     * GET /api/admin/locations/{harbor}/inbox
+     *
+     * Aggregated per-location inbox: new leads, unread chats, viewing requests,
+     * questions, callback requests and offers awaiting a response.
+     */
+    public function inbox(Request $request, Location $harbor): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $id = $harbor->id;
+        $limit = 10;
+
+        $newLeadsQuery = Lead::where('location_id', $id)->where('status', 'new');
+        $newLeadsCount = (clone $newLeadsQuery)->count();
+        $newLeads = $newLeadsQuery->orderByDesc('created_at')->limit($limit)->get(
+            ['id', 'name', 'email', 'phone', 'yacht_id', 'status', 'created_at']
+        );
+
+        $unreadChatsQuery = Conversation::where('location_id', $id)
+            ->where('status', '!=', 'closed')
+            ->whereNotNull('last_customer_message_at')
+            ->where(function ($q) {
+                $q->whereNull('last_staff_message_at')
+                    ->orWhereColumn('last_customer_message_at', '>', 'last_staff_message_at');
+            });
+        $unreadChatsCount = (clone $unreadChatsQuery)->count();
+        $unreadChats = $unreadChatsQuery->orderByDesc('last_customer_message_at')->limit($limit)->get(
+            ['id', 'boat_id', 'chat_type', 'status', 'last_customer_message_at']
+        );
+
+        $viewingsQuery = Conversation::where('location_id', $id)
+            ->where('chat_type', 'plan_viewing')
+            ->where('status', '!=', 'closed');
+        $viewingsCount = (clone $viewingsQuery)->count();
+        $viewings = $viewingsQuery->orderByDesc('created_at')->limit($limit)->get(
+            ['id', 'boat_id', 'status', 'created_at']
+        );
+
+        $questionsQuery = Conversation::where('location_id', $id)
+            ->where('chat_type', 'question')
+            ->where('status', '!=', 'closed');
+        $questionsCount = (clone $questionsQuery)->count();
+        $questions = $questionsQuery->orderByDesc('created_at')->limit($limit)->get(
+            ['id', 'boat_id', 'status', 'created_at']
+        );
+
+        $callbacksQuery = Conversation::where('location_id', $id)
+            ->where('chat_type', 'callback')
+            ->where('status', '!=', 'closed');
+        $callbacksCount = (clone $callbacksQuery)->count();
+        $callbacks = $callbacksQuery->orderByDesc('created_at')->limit($limit)->get(
+            ['id', 'boat_id', 'status', 'created_at']
+        );
+
+        $offersQuery = Offer::where('location_id', $id)->whereIn('status', ['new', 'sent_to_seller']);
+        $offersCount = (clone $offersQuery)->count();
+        $offers = $offersQuery->orderByDesc('created_at')->limit($limit)->get(
+            ['id', 'yacht_id', 'buyer_name', 'amount', 'status', 'created_at']
+        );
+
+        return response()->json([
+            'counts' => [
+                'new_leads'         => $newLeadsCount,
+                'unread_chats'      => $unreadChatsCount,
+                'viewing_requests'  => $viewingsCount,
+                'questions'         => $questionsCount,
+                'callback_requests' => $callbacksCount,
+                'offers'            => $offersCount,
+            ],
+            'new_leads'         => $newLeads,
+            'unread_chats'      => $unreadChats,
+            'viewing_requests'  => $viewings,
+            'questions'         => $questions,
+            'callback_requests' => $callbacks,
+            'offers'            => $offers,
         ]);
     }
 

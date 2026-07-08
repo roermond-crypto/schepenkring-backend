@@ -2,136 +2,147 @@
 
 namespace App\Services;
 
-use App\Models\Bid;
-use App\Models\Task;
+use App\Models\Conversation;
+use App\Models\Offer;
 use App\Models\User;
 use App\Models\Yacht;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 class SellerDashboardService
 {
     public function summary(User $user): array
     {
-        return Cache::remember("seller_dashboard_{$user->id}", 300, function () use ($user) {
+        return Cache::remember("seller_dashboard_v2_{$user->id}", 300, function () use ($user) {
+            $yachtIds = Yacht::where('seller_id', $user->id)
+                ->orWhere('user_id', $user->id)
+                ->pluck('id');
+
+            $stats = $this->buildStats($yachtIds);
+            $actionNeeded = $this->buildActionNeeded($yachtIds);
+            $boats = $this->buildBoatsList($yachtIds);
+            $latestBids = $this->buildLatestBids($yachtIds);
+
             return [
-                'listings' => $this->listingsSummary($user),
-                'bids' => $this->bidsSummary($user),
-                'conversations' => $this->conversationsSummary($user),
-                'tasks' => $this->tasksSummary($user),
-                'revenue' => $this->revenueSummary($user),
-                'recent_bids' => $this->recentBids($user),
+                'stats'        => $stats,
+                'action_needed' => $actionNeeded,
+                'boats'        => $boats,
+                'latest_bids'  => $latestBids,
             ];
         });
     }
 
-    private function listingsSummary(User $user): array
+    private function buildStats(Collection $yachtIds): array
     {
-        $counts = Yacht::where('user_id', $user->id)
-            ->select('status', DB::raw('count(*) as total'))
-            ->groupBy('status')
-            ->pluck('total', 'status');
+        $boatCount = $yachtIds->count();
 
-        return [
-            'active' => (int) ($counts['published'] ?? $counts['active'] ?? 0),
-            'draft' => (int) ($counts['draft'] ?? 0),
-            'sold' => (int) ($counts['sold'] ?? 0),
-        ];
-    }
+        $openBids = Offer::whereIn('yacht_id', $yachtIds)
+            ->whereIn('status', ['new', 'sent_to_seller'])
+            ->count();
 
-    private function bidsSummary(User $user): array
-    {
-        $yachtIds = Yacht::where('user_id', $user->id)->pluck('id');
-
-        $counts = Bid::whereIn('yacht_id', $yachtIds)
-            ->select('status', DB::raw('count(*) as total'))
-            ->groupBy('status')
-            ->pluck('total', 'status');
-
-        return [
-            'total_received' => (int) $counts->sum(),
-            'pending_review' => (int) ($counts['pending'] ?? 0),
-            'accepted' => (int) ($counts['accepted'] ?? 0),
-        ];
-    }
-
-    private function conversationsSummary(User $user): array
-    {
-        if (!class_exists(\App\Models\ChatConversation::class)) {
-            return ['open' => 0, 'unread' => 0];
-        }
-
-        $open = \App\Models\ChatConversation::where('user_id', $user->id)
+        $openConversations = Conversation::whereIn('boat_id', $yachtIds)
             ->where('status', '!=', 'closed')
             ->count();
 
-        $unread = \App\Models\ChatConversation::where('user_id', $user->id)
-            ->where('has_unread', true)
+        // Viewings are conversations of type plan_viewing
+        $pendingViewings = Conversation::whereIn('boat_id', $yachtIds)
+            ->where('chat_type', 'plan_viewing')
+            ->where('status', '!=', 'closed')
             ->count();
 
-        return ['open' => $open, 'unread' => $unread];
-    }
-
-    private function tasksSummary(User $user): array
-    {
-        $pending = Task::where('assigned_to', $user->id)
-            ->where('status', 'pending')
+        // Questions are conversations of type question
+        $openQuestions = Conversation::whereIn('boat_id', $yachtIds)
+            ->where('chat_type', 'question')
+            ->where('status', '!=', 'closed')
             ->count();
-
-        $overdue = Task::where('assigned_to', $user->id)
-            ->where('status', 'pending')
-            ->whereNotNull('due_date')
-            ->where('due_date', '<', now())
-            ->count();
-
-        return ['pending' => $pending, 'overdue' => $overdue];
-    }
-
-    private function revenueSummary(User $user): array
-    {
-        $yachtIds = Yacht::where('user_id', $user->id)->pluck('id');
-
-        if (!class_exists(\App\Models\YachtFinancialLog::class)) {
-            return ['total_eur' => 0, 'this_month_eur' => 0];
-        }
-
-        try {
-            $total = \App\Models\YachtFinancialLog::whereIn('yacht_id', $yachtIds)
-                ->where('type', 'sale')
-                ->sum('amount_eur');
-
-            $thisMonth = \App\Models\YachtFinancialLog::whereIn('yacht_id', $yachtIds)
-                ->where('type', 'sale')
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->sum('amount_eur');
-        } catch (\Throwable) {
-            return ['total_eur' => 0, 'this_month_eur' => 0];
-        }
 
         return [
-            'total_eur' => (int) $total,
-            'this_month_eur' => (int) $thisMonth,
+            'boat_count'         => $boatCount,
+            'open_bids'          => $openBids,
+            'open_conversations' => $openConversations,
+            'pending_viewings'   => $pendingViewings,
+            'open_questions'     => $openQuestions,
+            'contracts'          => 0,
         ];
     }
 
-    private function recentBids(User $user): array
+    private function buildActionNeeded(Collection $yachtIds): array
     {
-        $yachtIds = Yacht::where('user_id', $user->id)->pluck('id');
+        $items = [];
 
-        return Bid::with(['yacht:id,name', 'user:id,name'])
-            ->whereIn('yacht_id', $yachtIds)
+        $newBids = Offer::whereIn('yacht_id', $yachtIds)
+            ->where('status', 'new')
+            ->count();
+
+        if ($newBids > 0) {
+            $items[] = [
+                'type'  => 'new_bids',
+                'label' => "{$newBids} nieuw bod" . ($newBids !== 1 ? 'en' : '') . " wacht op reactie",
+                'count' => $newBids,
+                'href'  => '/bids',
+            ];
+        }
+
+        $unansweredQuestions = Conversation::whereIn('boat_id', $yachtIds)
+            ->where('chat_type', 'question')
+            ->where('status', 'open')
+            ->whereNull('last_staff_message_at')
+            ->count();
+
+        if ($unansweredQuestions > 0) {
+            $items[] = [
+                'type'  => 'unanswered_questions',
+                'label' => "{$unansweredQuestions} onbeantwoorde vraag" . ($unansweredQuestions !== 1 ? 'en' : ''),
+                'count' => $unansweredQuestions,
+                'href'  => '/chat',
+            ];
+        }
+
+        return $items;
+    }
+
+    private function buildBoatsList(Collection $yachtIds): array
+    {
+        return Yacht::whereIn('id', $yachtIds)
+            ->select('id', 'boat_name', 'status', 'price')
             ->latest()
             ->limit(5)
             ->get()
-            ->map(fn($bid) => [
-                'id' => $bid->id,
-                'yacht_name' => $bid->yacht?->name ?? 'Unknown',
-                'amount' => $bid->amount,
-                'bidder' => $bid->user?->name ?? 'Anonymous',
-                'status' => $bid->status,
-                'created_at' => $bid->created_at?->toISOString(),
-            ])
+            ->map(function ($yacht) {
+                $newBidsCount = Offer::where('yacht_id', $yacht->id)
+                    ->where('status', 'new')
+                    ->count();
+
+                return [
+                    'id'            => $yacht->id,
+                    'boat_name'     => $yacht->boat_name,
+                    'status'        => $yacht->status,
+                    'price'         => $yacht->price,
+                    'new_bids_count' => $newBidsCount,
+                ];
+            })
+            ->toArray();
+    }
+
+    private function buildLatestBids(Collection $yachtIds): array
+    {
+        return Offer::with('yacht:id,boat_name')
+            ->whereIn('yacht_id', $yachtIds)
+            ->whereIn('status', ['new', 'sent_to_seller', 'seller_countered'])
+            ->latest()
+            ->limit(5)
+            ->get()
+            ->map(function ($offer) {
+                return [
+                    'id'         => $offer->id,
+                    'yacht_id'   => $offer->yacht_id,
+                    'boat_name'  => $offer->yacht?->boat_name,
+                    'buyer_name' => $offer->buyer_name,
+                    'amount'     => $offer->amount,
+                    'status'     => $offer->status,
+                    'chat_url'   => $offer->conversation_id ? "/chat?conversation={$offer->conversation_id}" : null,
+                ];
+            })
             ->toArray();
     }
 }

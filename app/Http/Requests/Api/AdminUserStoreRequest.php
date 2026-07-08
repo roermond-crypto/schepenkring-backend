@@ -44,6 +44,7 @@ class AdminUserStoreRequest extends ApiRequest
                     UserType::CLIENT->value,
                     UserType::BUYER->value,
                     UserType::SELLER->value,
+                    UserType::PARTNER->value,
                 ], true)),
                 'nullable',
                 'integer',

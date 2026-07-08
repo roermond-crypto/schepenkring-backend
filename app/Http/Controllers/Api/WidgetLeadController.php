@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Mail\SellerOfferNotificationMail;
 use App\Models\AuditLog;
@@ -61,12 +62,13 @@ class WidgetLeadController extends Controller
 
         return response()->json([
             'boat' => $boat ? [
-                'id'       => $boat->id,
-                'name'     => trim(($boat->manufacturer ?? $boat->make ?? '') . ' ' . ($boat->model ?? '')),
-                'brand'    => $boat->manufacturer ?? $boat->make ?? null,
-                'model'    => $boat->model ?? null,
-                'url'      => $request->input('source_url'),
-                'seller_id' => $boat->user_id ?? null,
+                'id'                   => $boat->id,
+                'name'                 => trim(($boat->manufacturer ?? $boat->make ?? '') . ' ' . ($boat->model ?? '')),
+                'brand'                => $boat->manufacturer ?? $boat->make ?? null,
+                'model'                => $boat->model ?? null,
+                'url'                  => $request->input('source_url'),
+                'seller_id'            => $boat->user_id ?? null,
+                'minimum_offer_amount' => $boat->minimum_offer_amount ?? null,
             ] : null,
             'location' => $location ? [
                 'id'   => $location->id,
@@ -146,7 +148,7 @@ class WidgetLeadController extends Controller
             'offer_amount' => 'required|numeric|min:1',
             'name'         => 'required|string|max:255',
             'phone'        => 'required|string|max:50',
-            'email'        => 'nullable|email|max:255',
+            'email'        => 'required|email|max:255',
             'message'      => 'nullable|string|max:2000',
             'source_url'   => 'nullable|string',
         ]);
@@ -170,7 +172,7 @@ class WidgetLeadController extends Controller
             $offer = Offer::create([
                 'yacht_id'       => $boat->id,
                 'location_id'    => $locationId,
-                'seller_id'      => $boat->seller_id ?? $boat->user_id,
+                'seller_id'      => $this->resolveSellerId($boat, $locationId),
                 'amount'         => $offerAmount,
                 'asking_price'   => $boat->price,
                 'minimum_amount' => $boat->minimum_offer_amount,
@@ -422,6 +424,58 @@ class WidgetLeadController extends Controller
         return [$boat, (int) $locationId];
     }
 
+    /**
+     * Resolve who a new lead/chat/offer should be assigned to: the boat's own
+     * seller/owner first, then the location's configured assignment rule
+     * (a specific default seller, round-robin across active staff, or always
+     * unassigned), else null (falls into that location's general inbox).
+     */
+    private function resolveSellerId(Yacht $boat, int $locationId): ?int
+    {
+        if ($boat->seller_id) {
+            return (int) $boat->seller_id;
+        }
+
+        if ($boat->user_id) {
+            return (int) $boat->user_id;
+        }
+
+        $location = Location::query()->find($locationId, ['id', 'default_seller_id', 'lead_assignment_mode']);
+        if (! $location) {
+            return null;
+        }
+
+        return match ($location->lead_assignment_mode) {
+            'unassigned'  => null,
+            'round_robin' => $this->resolveRoundRobinSellerId($location),
+            default       => $location->default_seller_id ? (int) $location->default_seller_id : null,
+        };
+    }
+
+    /**
+     * Rotates assignment across the location's active staff, using the count
+     * of conversations already assigned at this location as the cursor —
+     * avoids needing a separate "last assigned" state column.
+     */
+    private function resolveRoundRobinSellerId(Location $location): ?int
+    {
+        $staffIds = $location->users()
+            ->whereIn('users.type', [UserType::EMPLOYEE->value, UserType::PARTNER->value])
+            ->orderBy('users.id')
+            ->pluck('users.id')
+            ->all();
+
+        if (empty($staffIds)) {
+            return $location->default_seller_id ? (int) $location->default_seller_id : null;
+        }
+
+        $assignedCount = Conversation::where('location_id', $location->id)
+            ->whereNotNull('assigned_employee_id')
+            ->count();
+
+        return (int) $staffIds[$assignedCount % count($staffIds)];
+    }
+
     private function resolveContact(array $data, Request $request): ?Contact
     {
         return $this->contactService->resolveContact([
@@ -453,10 +507,13 @@ class WidgetLeadController extends Controller
             'page_url'         => $data['source_url'] ?? null,
         ]);
 
-        // Assign to boat's seller if available
-        if ($boat->user_id) {
-            $conversation->assigned_employee_id = $boat->user_id;
-            $conversation->assigned_to = $boat->user_id;
+        // Assign to the boat's own seller, falling back to the location's default seller.
+        // Leaving both null (no default seller either) means it lands in that location's
+        // general inbox rather than a specific person's queue.
+        $sellerId = $this->resolveSellerId($boat, $locationId);
+        if ($sellerId) {
+            $conversation->assigned_employee_id = $sellerId;
+            $conversation->assigned_to = $sellerId;
             $conversation->save();
         }
 
@@ -490,7 +547,7 @@ class WidgetLeadController extends Controller
             'email'                => $data['email'] ?? null,
             'phone'                => $data['phone'] ?? null,
             'notes'                => "Flow: {$flowType}",
-            'assigned_employee_id' => $boat->user_id ?? null,
+            'assigned_employee_id' => $this->resolveSellerId($boat, $locationId),
         ]);
 
         $conversation->lead_id = $lead->id;

@@ -154,7 +154,7 @@ class CreateUserAction
 
         $user->load('locations');
 
-        $this->security->log('admin.user.create', RiskLevel::MEDIUM, $actor, $user, [
+        $this->security->log('partner.created', RiskLevel::MEDIUM, $actor, $user, [
             'type'        => UserType::PARTNER->value,
             'location_id' => (int) $data['location_id'],
         ], [

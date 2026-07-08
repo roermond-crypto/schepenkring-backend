@@ -21,7 +21,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use App\Mail\SellerInviteMail;
+use App\Models\AuditLog;
 
 class YachtController extends Controller
 {
@@ -54,6 +57,7 @@ class YachtController extends Controller
             'status',
             'sort_by',
             'sort_dir',
+            'location_id',
         ]);
 
         if (! $hasPaginationRequest) {
@@ -82,8 +86,12 @@ class YachtController extends Controller
         $sortDir = strtolower((string) $request->input('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
         $search = trim((string) $request->input('search', ''));
         $status = trim((string) $request->input('status', ''));
+        $locationId = $request->integer('location_id');
 
         $query = $this->visibleYachtsQuery($request->user());
+        if ($locationId) {
+            $query->where('ref_harbor_id', $locationId);
+        }
         $stats = $this->buildFleetStats(clone $query);
 
         if ($search !== '') {
@@ -268,8 +276,64 @@ class YachtController extends Controller
                 $yacht->min_bid_amount = $yacht->price * 0.9;
             }
 
+            // Handle seller_invite_enabled and seller_login_enabled from request
+            if ($request->has('seller_invite_enabled')) {
+                $yacht->seller_invite_enabled = filter_var($request->input('seller_invite_enabled'), FILTER_VALIDATE_BOOLEAN);
+            }
+            if ($request->has('seller_login_enabled')) {
+                $yacht->seller_login_enabled = filter_var($request->input('seller_login_enabled'), FILTER_VALIDATE_BOOLEAN);
+            }
+            if ($request->has('seller_email_notifications')) {
+                $yacht->seller_email_notifications = filter_var($request->input('seller_email_notifications'), FILTER_VALIDATE_BOOLEAN);
+            }
+            if ($request->has('seller_counter_offer_enabled')) {
+                $yacht->seller_counter_offer_enabled = filter_var($request->input('seller_counter_offer_enabled'), FILTER_VALIDATE_BOOLEAN);
+            }
+            if ($request->has('minimum_offer_amount')) {
+                $min = $request->input('minimum_offer_amount');
+                $yacht->minimum_offer_amount = ($min !== null && $min !== '') ? (float) $min : null;
+            }
+            if ($request->has('seller_id') && $request->input('seller_id')) {
+                $yacht->seller_id = (int) $request->input('seller_id');
+            }
+
             $yacht->save();
             $yacht->saveSubTables($request->all());
+
+            // Fire seller invite email only when seller_invite_enabled or seller_id just changed
+            // (not on every save — the flags stay true across unrelated edits).
+            $inviteTriggered = $yacht->seller_invite_enabled
+                && $yacht->seller_id
+                && ($yacht->wasChanged('seller_invite_enabled') || $yacht->wasChanged('seller_id'));
+
+            if ($inviteTriggered) {
+                try {
+                    $seller = User::find($yacht->seller_id);
+                    if ($seller && $seller->email) {
+                        $yacht->loadMissing('location');
+                        Mail::to($seller->email)->queue(new SellerInviteMail($seller, $yacht));
+                        Log::info("[YachtController] Seller invite queued for seller {$seller->id} on yacht {$yacht->id}");
+
+                        AuditLog::create([
+                            'action'       => 'seller_invited',
+                            'risk_level'   => 'low',
+                            'result'       => 'success',
+                            'entity_type'  => 'yacht',
+                            'entity_id'    => $yacht->id,
+                            'actor_id'     => $actor?->id,
+                            'meta'         => [
+                                'seller_id'    => $seller->id,
+                                'seller_email' => $seller->email,
+                                'yacht_id'     => $yacht->id,
+                            ],
+                            'ip_address'   => $request->ip(),
+                            'user_agent'   => substr($request->userAgent() ?? '', 0, 500),
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("[YachtController] Seller invite failed: " . $e->getMessage());
+                }
+            }
 
             if ($request->filled('availability_rules')) {
                 try {

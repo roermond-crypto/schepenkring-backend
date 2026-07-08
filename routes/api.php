@@ -199,6 +199,7 @@ Route::post('verify-email', [EmailVerificationCodeController::class, 'verify'])
 // Public widget (leads, chat, bids)
 Route::prefix('public')->group(function () {
     Route::get('locations', [LocationController::class, 'index']);
+    Route::get('locations/{slug}', [LocationController::class, 'show'])->where('slug', '[a-z0-9\-]+');
     Route::get('locations/{id}/availability', [\App\Http\Controllers\Api\BookingController::class, 'availability']);
     Route::post('bookings', [\App\Http\Controllers\Api\BookingController::class, 'store'])->middleware('auth.optional');
     Route::post('chat/translate', [ChatTranslationController::class, 'translatePublic']);
@@ -421,12 +422,16 @@ Route::middleware('auth:sanctum')->group(function () {
         });
     });
 
-    // Leads & conversations
-    Route::get('leads', [LeadController::class, 'index']);
-    Route::post('leads', [LeadController::class, 'store']);
-    Route::get('leads/{id}', [LeadController::class, 'show']);
-    Route::patch('leads/{id}', [LeadController::class, 'update']);
-    Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
+    // Leads (staff-only, location-scoped inside the controller for employees)
+    Route::middleware('role:admin,employee')->group(function () {
+        Route::get('leads', [LeadController::class, 'index']);
+        Route::post('leads', [LeadController::class, 'store']);
+        Route::get('leads/{id}', [LeadController::class, 'show']);
+        Route::patch('leads/{id}', [LeadController::class, 'update']);
+        Route::post('leads/{id}/convert-to-client', [LeadConversionController::class, 'store']);
+    });
+
+    // Conversations
     Route::post('conversations/{conversationId}/messages', [ConversationMessageController::class, 'store']);
     Route::get('conversations/{conversationId}/messages', [ConversationMessageController::class, 'index']);
 
@@ -675,6 +680,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::delete('offers/{offer}', [\App\Http\Controllers\Api\Admin\OfferController::class, 'destroy']);
     Route::get('yachts/{yacht}/offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'byYacht']);
     Route::get('sellers/{seller}/offers', [\App\Http\Controllers\Api\Admin\OfferController::class, 'bySeller']);
+    Route::post('bids/extract', [\App\Http\Controllers\Api\Admin\BidExtractController::class, 'extract']);
 
     // Bookings
     Route::get('bookings', [AdminBookingController::class, 'index']);
@@ -696,10 +702,12 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('locations/{harbor}/impact', [AdminHarborController::class, 'impact']);
     Route::get('locations/{harbor}/stats', [AdminHarborController::class, 'stats']);
     Route::get('locations/{harbor}/timeline', [AdminHarborController::class, 'timeline']);
+    Route::get('locations/{harbor}/inbox', [AdminHarborController::class, 'inbox']);
     Route::get('locations/{harbor}/booking-settings', [AdminHarborController::class, 'bookingSettings']);
     Route::get('locations/{harbor}/users', [AdminHarborController::class, 'locationUsers']);
     Route::post('locations/{harbor}/users', [AdminHarborController::class, 'addLocationUser']);
     Route::delete('locations/{harbor}/users/{userId}', [AdminHarborController::class, 'removeLocationUser']);
+    Route::patch('locations/{harbor}/default-seller', [AdminHarborController::class, 'setDefaultSeller']);
     Route::post('locations/{harbor}/request-delete', [AdminHarborController::class, 'requestDeletion']);
     Route::post('locations/{id}/restore', [AdminHarborController::class, 'restore']);
     Route::delete('locations/{id}/permanent', [AdminHarborController::class, 'permanentDelete']);

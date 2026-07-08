@@ -25,15 +25,29 @@ class LoginUserAction
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             $this->security->log('auth.login', RiskLevel::MEDIUM, $user, $user, [
                 'email' => $data['email'],
+                'reason' => 'invalid_credentials',
             ], [
                 'result' => AuditResult::FAIL->value,
             ]);
             throw ValidationException::withMessages([
-                'email' => 'Invalid credentials.',
+                'email' => 'auth.invalid_credentials',
             ]);
         }
 
-        if (! $user->isActive() && !in_array($user->status, [\App\Enums\UserStatus::PENDING_APPROVAL, \App\Enums\UserStatus::PENDING], true)) {
+        // Block accounts awaiting admin approval before checking email verification.
+        if (in_array($user->status, [\App\Enums\UserStatus::PENDING_APPROVAL, \App\Enums\UserStatus::PENDING], true)) {
+            $this->security->log('auth.login', RiskLevel::MEDIUM, $user, $user, [
+                'email' => $data['email'],
+                'reason' => 'pending_approval',
+            ], [
+                'result' => AuditResult::FAIL->value,
+            ]);
+            throw ValidationException::withMessages([
+                'email' => 'auth.pending_approval',
+            ]);
+        }
+
+        if (! $user->isActive()) {
             $this->security->log('auth.login', RiskLevel::MEDIUM, $user, $user, [
                 'email' => $data['email'],
                 'reason' => 'inactive',
@@ -41,7 +55,7 @@ class LoginUserAction
                 'result' => AuditResult::FAIL->value,
             ]);
             throw ValidationException::withMessages([
-                'email' => 'Account is not active.',
+                'email' => 'auth.account_inactive',
             ]);
         }
 
@@ -53,7 +67,7 @@ class LoginUserAction
                 'result' => AuditResult::FAIL->value,
             ]);
             throw ValidationException::withMessages([
-                'email' => 'Please verify your email address before logging in.',
+                'email' => 'auth.email_not_verified',
             ]);
         }
 
