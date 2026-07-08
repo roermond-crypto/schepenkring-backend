@@ -33,6 +33,8 @@ class Message extends Model
         'client_message_id',
         'delivery_state',
         'role_visibility',
+        'delivery_status',
+        'is_internal_note',
     ];
 
     protected $casts = [
@@ -41,6 +43,7 @@ class Message extends Model
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
         'ai_confidence' => 'decimal:2',
+        'is_internal_note' => 'boolean',
     ];
 
     public function conversation(): BelongsTo

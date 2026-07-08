@@ -31,6 +31,13 @@ class ChatConversationController extends Controller
             'location:id,name,code',
             'assignedEmployee:id,name,email',
         ])
+            // Unread means "a visitor message no staff member has opened
+            // this conversation to see yet" — read_at is cleared for the
+            // whole conversation when any staff member opens it (see show()),
+            // matching a shared-inbox model rather than per-agent read state.
+            ->withCount(['messages as unread_count' => function ($q) {
+                $q->where('sender_type', 'visitor')->whereNull('read_at');
+            }])
             ->orderByDesc('last_message_at')
             ->orderByDesc('updated_at');
 
@@ -86,16 +93,28 @@ class ChatConversationController extends Controller
             'lead',
             'location:id,name,code',
             'assignedEmployee:id,name,email',
-            'messages' => function ($query) {
-                $query->with(['attachments', 'employee:id,name,email'])
-                    ->orderBy('created_at', 'asc')
-                    ->limit(200);
-            },
         ])->findOrFail($id);
 
         if (!$access->canAccessConversation($user, $conversation)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+
+        // Opening a conversation is what "reading" it means in this shared
+        // staff inbox — clear unread visitor messages before loading them so
+        // the list-view unread count drops for every agent, not just this one.
+        $conversation->messages()
+            ->where('sender_type', 'visitor')
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+
+        $conversation->load([
+            'messages' => function ($query) {
+                $query->with(['attachments', 'employee:id,name,email'])
+                    ->orderBy('created_at', 'asc')
+                    ->limit(200);
+            },
+        ]);
+        $conversation->unread_count = 0;
 
         return response()->json($conversation);
     }

@@ -149,6 +149,15 @@ class ChatConversationService
             'metadata' => $metadata,
             'client_message_id' => $payload['client_message_id'] ?? null,
             'delivery_state' => $payload['delivery_state'] ?? 'sent',
+            // Internal notes never reach the customer, so they have no
+            // delivery outcome to track. delivery_status tracks the
+            // sent/failed/opened/bounced lifecycle of an actual email send —
+            // it only applies to the email channel; chat delivery already
+            // has delivery_state above.
+            'is_internal_note' => (bool) ($payload['is_internal_note'] ?? false),
+            'delivery_status' => (! ($payload['is_internal_note'] ?? false) && ($payload['channel'] ?? 'web') === 'email')
+                ? ($payload['delivery_status'] ?? 'sent')
+                : null,
         ]);
 
         if ($message->channel === 'whatsapp' && $message->sender_type !== 'visitor' && ! $message->status) {

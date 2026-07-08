@@ -34,7 +34,8 @@ class ConversationMessageController extends Controller
 
         $validated = $request->validate([
             'body' => 'required|string',
-            'client_message_id' => 'required|string'
+            'client_message_id' => 'required|string',
+            'is_internal_note' => 'sometimes|boolean',
         ]);
 
         // Deduplicate using combination of conversation_id and client_message_id
@@ -68,6 +69,7 @@ class ConversationMessageController extends Controller
             'language' => $resolvedLanguage['language'],
             'client_message_id' => $validated['client_message_id'],
             'delivery_state' => 'sent',
+            'is_internal_note' => $validated['is_internal_note'] ?? false,
         ], $request, $request->user());
 
         $service->syncLanguageContext($conversation, $resolvedLanguage, $request->user(), 'employee', true);

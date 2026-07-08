@@ -20,7 +20,10 @@ class PublicConversationMessageController extends Controller
             'contact',
             'lead',
             'messages' => function ($query) {
+                // Internal notes are staff-only and must never reach the
+                // customer-facing widget.
                 $query->with(['attachments', 'employee:id,name,email'])
+                    ->where('is_internal_note', false)
                     ->orderBy('created_at', 'asc')
                     ->limit(200);
             },
