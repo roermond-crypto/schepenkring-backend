@@ -193,7 +193,8 @@ class BuyerVerificationController extends Controller
         $user = $this->ensureBuyer($request);
         $verification = $orchestrator->getOrCreate($user);
 
-        if ($verification->idin_status !== 'completed' || $verification->ideal_status !== 'completed') {
+        if ($this->identityVerificationEnforced()
+            && ($verification->idin_status !== 'completed' || $verification->ideal_status !== 'completed')) {
             return response()->json(['message' => 'Verification must be completed before KYC submission.'], 422);
         }
 
@@ -296,7 +297,8 @@ class BuyerVerificationController extends Controller
             return 'profile';
         }
 
-        if ($verification->idin_status !== 'completed' || $verification->ideal_status !== 'completed') {
+        if ($this->identityVerificationEnforced()
+            && ($verification->idin_status !== 'completed' || $verification->ideal_status !== 'completed')) {
             return 'verification';
         }
 
@@ -305,5 +307,10 @@ class BuyerVerificationController extends Controller
         }
 
         return null;
+    }
+
+    private function identityVerificationEnforced(): bool
+    {
+        return (bool) config('services.buyer_verification.enforce_identity_verification', true);
     }
 }

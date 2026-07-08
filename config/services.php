@@ -120,6 +120,16 @@ return [
         'webhook_auth' => env('SIGNHOST_WEBHOOK_AUTH'),
     ],
 
+    'buyer_verification' => [
+        // Gates the iDIN identity check + €0,01 iDEAL bank check + the KYC
+        // submit block behind Signhost. Defaults to enforced (production
+        // behavior unchanged); set BUYER_VERIFICATION_ENFORCE=false in an
+        // environment's .env to let buyers complete their profile and reach
+        // the dashboard without those steps while identity/bank verification
+        // is deferred to the deal/transaction stage instead.
+        'enforce_identity_verification' => env('BUYER_VERIFICATION_ENFORCE', true),
+    ],
+
     'telnyx' => [
         'base_url' => env('TELNYX_BASE_URL', 'https://api.telnyx.com/v2'),
         'api_key' => env('TELNYX_API_KEY'),

@@ -60,11 +60,36 @@ class BuyerVerificationOrchestrator
                 $payload
             );
 
+            if (! $this->identityVerificationEnforced()) {
+                // Identity verification (iDIN), bank verification (€0,01
+                // iDEAL) and KYC scoring are deferred to the deal/transaction
+                // stage while this flag is off — profile completion alone
+                // is enough to unlock the dashboard for this stage.
+                $verification->idin_status = 'completed';
+                $verification->ideal_status = 'completed';
+                $verification->kyc_status = 'completed';
+                $verification->decision = 'approved';
+                $verification->decision_reason = 'identity_verification_deferred';
+                $verification->verified_at = now();
+                $verification->expires_at = now()->addDays(90);
+                $verification->status = BuyerVerificationStatus::APPROVED;
+                $verification->approved_at = now();
+                $verification->manual_review_required = false;
+                $verification->save();
+
+                return $verification->fresh(['profile', 'flags', 'latestSignhostPhase']);
+            }
+
             $verification->status = BuyerVerificationStatus::PROFILE_COMPLETED;
             $verification->save();
 
             return $verification->fresh(['profile', 'flags', 'latestSignhostPhase']);
         });
+    }
+
+    private function identityVerificationEnforced(): bool
+    {
+        return (bool) config('services.buyer_verification.enforce_identity_verification', true);
     }
 
     public function startVerification(BuyerVerification $verification, string $providerStep = 'idin'): BuyerVerificationSignhostTransaction

@@ -9,12 +9,14 @@ use App\Models\AuditLog;
 use App\Models\BoatIntake;
 use App\Models\BoatIntakeFile;
 use App\Models\Location;
+use App\Enums\UserType;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Services\BoatIntakeScoreService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -59,9 +61,11 @@ class BoatIntakeController extends Controller
         [$intake, $score, $resumeToken] = DB::transaction(function () use ($data, $request) {
             $descLen = strlen($data['short_description'] ?? '');
             $resumeToken = Str::random(64);
+            $seller = $this->findOrCreateSeller($data);
 
             $intake = BoatIntake::create([
                 ...$data,
+                'seller_user_id'           => $seller->id,
                 'status'                   => 'frontend_draft',
                 'description_length'       => $descLen,
                 'resume_token'             => $resumeToken,
@@ -309,6 +313,37 @@ class BoatIntakeController extends Controller
 
     // ── Helpers ──────────────────────────────────────────────
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function findOrCreateSeller(array $data): User
+    {
+        $existing = User::where('email', $data['seller_email'])->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return User::create([
+            'name'               => trim("{$data['seller_first_name']} {$data['seller_last_name']}"),
+            'first_name'         => $data['seller_first_name'],
+            'last_name'          => $data['seller_last_name'],
+            'email'              => $data['seller_email'],
+            'phone'              => $data['seller_phone'],
+            // No login flow exists for this account yet — the seller reaches
+            // their intake via the emailed resume link, not a password.
+            // A random password keeps the column non-null without implying
+            // a usable credential.
+            'password'           => Hash::make(Str::random(32)),
+            'type'               => UserType::SELLER,
+            'role'               => 'seller',
+            'client_location_id' => $data['location_id'] ?? null,
+            'address_line1'      => $data['seller_address'] ?? null,
+            'city'               => $data['seller_city'] ?? null,
+            'postal_code'        => $data['seller_postal_code'] ?? null,
+            'country'            => $data['seller_country'] ?? null,
+        ]);
+    }
+
     private function resolveToken(string $token): BoatIntake
     {
         return BoatIntake::where('resume_token', $token)
@@ -320,6 +355,10 @@ class BoatIntakeController extends Controller
     {
         return Yacht::create([
             'location_id'         => $intake->location_id,
+            // Employee-scoped visibility (visibleYachtsQuery()) filters on
+            // ref_harbor_id, not location_id — without this the yacht is
+            // created successfully but invisible to location staff.
+            'ref_harbor_id'       => $intake->location_id,
             'user_id'             => $intake->seller_user_id,
             'seller_id'           => $intake->seller_user_id,
             'status'              => 'draft',
