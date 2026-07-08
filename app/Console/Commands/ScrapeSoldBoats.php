@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\AuditLog;
 use App\Models\Yacht;
 use App\Models\Location;
 use App\Models\ScrapeRun;
@@ -80,7 +81,21 @@ class ScrapeSoldBoats extends Command
                 'min_completeness' => $minimumCompleteness,
             ],
         ]);
-        
+
+        AuditLog::create([
+            'action' => 'scrape.started',
+            'category' => 'scraper',
+            'risk_level' => 'low',
+            'result' => 'success',
+            'entity_type' => 'scrape_run',
+            'entity_id' => $this->scrapeRun->id,
+            'meta' => [
+                'source' => 'schepenkring_sold_archive',
+                'expected_total' => $expectedTotal,
+                'min_completeness' => $minimumCompleteness,
+            ],
+        ]);
+
         $this->loadLocations();
         
         $boatsProcessed = 0;
@@ -192,6 +207,18 @@ class ScrapeSoldBoats extends Command
                 'error' => $exception->getMessage(),
             ]);
 
+            AuditLog::create([
+                'action' => 'scrape.failed',
+                'category' => 'scraper',
+                'risk_level' => 'high',
+                'result' => 'fail',
+                'entity_type' => 'scrape_run',
+                'entity_id' => $this->scrapeRun?->id,
+                'meta' => [
+                    'reason' => $exception->getMessage(),
+                ],
+            ]);
+
             throw $exception;
         }
     }
@@ -244,6 +271,25 @@ class ScrapeSoldBoats extends Command
                 'available_total' => $availableTotal,
                 'enforced_completeness' => $enforceCompleteness,
             ]),
+        ]);
+
+        AuditLog::create([
+            'action' => $status === 'completed' ? 'scrape.completed' : 'scrape.incomplete',
+            'category' => 'scraper',
+            'risk_level' => $status === 'completed' ? 'low' : 'medium',
+            'result' => $status === 'completed' ? 'success' : 'fail',
+            'entity_type' => 'scrape_run',
+            'entity_id' => $this->scrapeRun?->id,
+            'meta' => [
+                'expected_boats' => $expectedTotal,
+                'imported_boats' => $imported,
+                'updated_boats' => $updated,
+                'skipped_boats' => $skipped,
+                'invalid_boats' => $invalid,
+                'failed_pages' => $failedPages,
+                'completeness_ratio' => $ratio,
+                'available_total' => $availableTotal,
+            ],
         ]);
 
         $this->info("Scraping completed. Processed: {$processed}, Imported: {$imported}, Updated: {$updated}, Skipped: {$skipped}, Invalid: {$invalid}");

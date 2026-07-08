@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Exceptions\RetryableOpenAiVideoException;
+use App\Models\AuditLog;
 use App\Models\Video;
 use App\Models\Yacht;
 use App\Services\FFmpegService;
@@ -437,6 +438,21 @@ class RenderMarketingVideo implements ShouldQueue
             'thumbnail_path' => $thumbnailStoragePath,
         ], $video, $yacht);
 
+        AuditLog::create([
+            'action' => 'video.generated',
+            'category' => 'video',
+            'risk_level' => 'low',
+            'result' => 'success',
+            'entity_type' => 'yacht',
+            'entity_id' => $yacht->id,
+            'meta' => [
+                'video_id' => $video->id,
+                'video_url' => $video->video_url,
+                'generation_provider' => $video->generation_provider,
+                'duration_seconds' => $video->duration_seconds,
+            ],
+        ]);
+
         $this->cleanup($workDir);
         $this->runPostReadyActions($video, $yacht, $startedAt);
     }
@@ -669,6 +685,19 @@ class RenderMarketingVideo implements ShouldQueue
         $video->update([
             'status' => 'failed',
             'error_message' => $error,
+        ]);
+
+        AuditLog::create([
+            'action' => 'video.generation_failed',
+            'category' => 'video',
+            'risk_level' => 'medium',
+            'result' => 'fail',
+            'entity_type' => 'yacht',
+            'entity_id' => $video->yacht_id,
+            'meta' => [
+                'video_id' => $video->id,
+                'reason' => $error,
+            ],
         ]);
 
         $this->logError('marked_failed', [

@@ -20,6 +20,8 @@ class AdminAuditIndexRequest extends ApiRequest
             'entity_type' => ['nullable'],
             'entity_type.*' => ['string', 'max:255'],
             'entity_id' => ['nullable', 'integer'],
+            'category' => ['nullable'],
+            'category.*' => ['string', 'max:80'],
             'risk_level' => ['nullable', Rule::in(['LOW', 'MED', ...array_map(fn (RiskLevel $level) => $level->value, RiskLevel::cases())])],
             'result' => ['nullable', Rule::in(array_map(fn (AuditResult $result) => $result->value, AuditResult::cases()))],
             'direction' => ['nullable', 'string', 'max:40'],

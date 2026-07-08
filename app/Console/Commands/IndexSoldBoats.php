@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\AuditLog;
 use App\Models\Yacht;
 use App\Models\ScrapeRun;
 use App\Services\YachtEnrichmentService;
@@ -45,10 +46,38 @@ class IndexSoldBoats extends Command
             return 1;
         }
 
-        if ($this->option('rebuild') && ! $pineconeService->deleteAllYachtVectors()) {
-            $this->error('Failed to delete old Pinecone vectors. Indexing stopped to avoid mixing stale and fresh data.');
+        $isRebuild = (bool) $this->option('rebuild');
 
-            return 1;
+        if ($isRebuild) {
+            AuditLog::create([
+                'action' => 'pinecone.rebuild_started',
+                'category' => 'pinecone',
+                'risk_level' => 'medium',
+                'result' => 'success',
+                'meta' => ['forced' => (bool) $this->option('force')],
+            ]);
+
+            if (! $pineconeService->deleteAllYachtVectors()) {
+                $this->error('Failed to delete old Pinecone vectors. Indexing stopped to avoid mixing stale and fresh data.');
+
+                AuditLog::create([
+                    'action' => 'pinecone.rebuild_completed',
+                    'category' => 'pinecone',
+                    'risk_level' => 'high',
+                    'result' => 'fail',
+                    'meta' => ['reason' => 'Failed to delete existing vectors'],
+                ]);
+
+                return 1;
+            }
+        } else {
+            AuditLog::create([
+                'action' => 'pinecone.sync_started',
+                'category' => 'pinecone',
+                'risk_level' => 'low',
+                'result' => 'success',
+                'meta' => ['yacht_id' => $yachtId, 'limit' => $limit],
+            ]);
         }
 
         if ($yachtId) {
@@ -67,21 +96,39 @@ class IndexSoldBoats extends Command
 
         $this->info("Processing " . $yachts->count() . " boats...");
 
+        $indexed = 0;
+        $failed = 0;
+
         foreach ($yachts as $yacht) {
             $this->comment("Enriching boat: {$yacht->boat_name} (ID: {$yacht->id})");
-            
+
             if ($enrichmentService->enrich($yacht)) {
                 $this->info("Enrichment successful. Indexing in Pinecone...");
-                
+
                 if ($pineconeService->upsertYacht($yacht)) {
                     $this->info("Indexing successful.");
+                    $indexed++;
                 } else {
                     $this->error("Indexing failed.");
+                    $failed++;
                 }
             } else {
                 $this->error("Enrichment failed.");
+                $failed++;
             }
         }
+
+        AuditLog::create([
+            'action' => $isRebuild ? 'pinecone.rebuild_completed' : 'pinecone.sync_completed',
+            'category' => 'pinecone',
+            'risk_level' => 'low',
+            'result' => $failed > 0 ? 'fail' : 'success',
+            'meta' => [
+                'processed' => $yachts->count(),
+                'indexed' => $indexed,
+                'failed' => $failed,
+            ],
+        ]);
 
         $this->info('Done.');
         return 0;

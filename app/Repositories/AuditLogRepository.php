@@ -86,6 +86,13 @@ class AuditLogRepository
             }
         }
 
+        if (! empty($filters['category'])) {
+            $categories = $this->normalizeList($filters['category']);
+            if (count($categories) > 0) {
+                $query->whereIn('category', $categories);
+            }
+        }
+
         foreach (['direction', 'source', 'target', 'sync_type'] as $metaFilter) {
             if (! empty($filters[$metaFilter])) {
                 $query->where('meta', 'like', '%"' . $metaFilter . '":"' . addcslashes((string) $filters[$metaFilter], '%_\\') . '"%');

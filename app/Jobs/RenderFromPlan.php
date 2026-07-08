@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AuditLog;
 use App\Models\VideoPlan;
 use App\Services\FFmpegService;
 use Illuminate\Bus\Queueable;
@@ -180,6 +181,22 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
                         config('services.yext.entity_id')
                     );
                 }
+
+                AuditLog::create([
+                    'action' => 'video.generated',
+                    'category' => 'video',
+                    'risk_level' => 'low',
+                    'result' => 'success',
+                    'entity_type' => 'yacht',
+                    'entity_id' => $plan->yacht_id,
+                    'meta' => [
+                        'video_plan_id' => $plan->id,
+                        'video_id' => $video->id,
+                        'video_url' => $outputUrl,
+                        'template_type' => 'ai_plan',
+                        'variation' => $plan->variation,
+                    ],
+                ]);
             }
 
             Log::info("VideoPlan {$plan->id} rendered: {$outputUrl}");
@@ -230,14 +247,29 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
      * Persist a render failure in a way that is readable for non-technical users,
      * while still keeping actionable technical details for debugging.
      */
-    private function fail(VideoPlan $plan, \Throwable $exception): void
+    private function fail(VideoPlan $plan, \Throwable|string $exception): void
     {
+        $message = $exception instanceof \Throwable ? $exception->getMessage() : $exception;
         $details = $this->formatFailureDetails($exception);
         $plan->update([
             'status' => 'failed',
             'validation_errors' => $details,
         ]);
-        Log::error("VideoPlan {$plan->id} failed: {$exception->getMessage()}");
+
+        AuditLog::create([
+            'action' => 'video.generation_failed',
+            'category' => 'video',
+            'risk_level' => 'medium',
+            'result' => 'fail',
+            'entity_type' => 'yacht',
+            'entity_id' => $plan->yacht_id,
+            'meta' => [
+                'video_plan_id' => $plan->id,
+                'reason' => $message,
+            ],
+        ]);
+
+        Log::error("VideoPlan {$plan->id} failed: {$message}");
     }
 
     public function failed(\Throwable $exception): void
@@ -266,9 +298,9 @@ class RenderFromPlan implements ShouldQueue, ShouldBeUniqueUntilProcessing
     /**
      * @return array<int, string>
      */
-    private function formatFailureDetails(\Throwable $exception): array
+    private function formatFailureDetails(\Throwable|string $exception): array
     {
-        $raw = trim((string) $exception->getMessage());
+        $raw = trim($exception instanceof \Throwable ? $exception->getMessage() : $exception);
         $rawLower = strtolower($raw);
 
         $friendly = 'The video could not be rendered. Please try again.';

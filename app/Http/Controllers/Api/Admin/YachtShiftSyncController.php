@@ -4,14 +4,17 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Yacht;
+use App\Services\YachtCompletenessService;
 use App\Services\YachtShiftSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class YachtShiftSyncController extends Controller
 {
-    public function __construct(private YachtShiftSyncService $sync)
-    {
+    public function __construct(
+        private YachtShiftSyncService $sync,
+        private YachtCompletenessService $completeness,
+    ) {
     }
 
     public function trigger(Request $request): JsonResponse
@@ -63,7 +66,17 @@ class YachtShiftSyncController extends Controller
     {
         $validated = $request->validate([
             'dry_run' => 'sometimes|boolean',
+            'force' => 'sometimes|boolean',
         ]);
+
+        $missing = $this->completeness->missingRequired($yacht);
+        if (! empty($missing) && ! ($validated['force'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Required fields are missing. Pass force=true to publish anyway.',
+                'missing_required' => $missing,
+            ], 422);
+        }
 
         $result = $this->sync->publishYacht($yacht, $validated['dry_run'] ?? false, $request->user());
 

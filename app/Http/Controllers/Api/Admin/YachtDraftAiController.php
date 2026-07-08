@@ -3,16 +3,24 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Yacht;
 use App\Models\YachtDraft;
 use App\Services\PineconeMatcherService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class YachtDraftAiController extends Controller
 {
+    // Confidence tiers applied to PineconeMatcherService::matchAndBuildConsensus()'s
+    // per-field confidence output. That service only ever returns a field when it
+    // found a real majority-agreement or a high-similarity top match (>= 0.75), so
+    // "low confidence" already means the field is simply absent — never suggested,
+    // never blindly saved. This just splits the remaining range into an
+    // auto-fill-eligible tier and a confirm-before-applying tier.
+    private const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+
     public function __construct(private PineconeMatcherService $pinecone)
     {
     }
@@ -40,70 +48,106 @@ class YachtDraftAiController extends Controller
     public function aiAutofill(Request $request, string $draftId): JsonResponse
     {
         $draft = YachtDraft::where('draft_id', $draftId)->firstOrFail();
-
-        $referenceId = $draft->ai_state_json['reference_yacht_id'] ?? null;
-        if (!$referenceId) {
-            return response()->json(['message' => 'No reference boat selected. Call select-reference-boat first.'], 422);
-        }
-
-        $reference = Yacht::findOrFail($referenceId);
-
-        $referencePayload = $this->buildReferencePayload($reference);
         $draftPayload = $draft->payload_json ?? [];
 
-        $prompt = <<<PROMPT
-You are an AI assistant for a Dutch boat marketplace.
+        // A manually-selected reference boat (via select-reference-boat) is
+        // optional context, not a requirement — retrieval runs automatically
+        // against the draft's own current field values either way, same as
+        // aiMatches(). If one was selected, fold its identifying fields into
+        // the query so it biases retrieval without gating the whole feature
+        // on a manual step.
+        $referenceId = $draft->ai_state_json['reference_yacht_id'] ?? null;
+        $queryPayload = $draftPayload;
+        if ($referenceId && ($reference = Yacht::find($referenceId))) {
+            $queryPayload = array_merge(
+                array_filter($reference->only(['boat_name', 'manufacturer', 'model', 'boat_type'])),
+                $draftPayload,
+            );
+        }
 
-Given a reference yacht's known data, fill in the missing fields for a new draft.
-Return ONLY a flat JSON object with field names and values. Do not include fields that are already filled.
-
-Reference yacht data:
-{$referencePayload}
-
-Current draft payload (already filled):
-{$this->encodePayload($draftPayload)}
-
-Return only new fields to add. Example: {"length": 8.6, "beam": 2.9, "fuel_type": "gasoline"}
-PROMPT;
-
-        $response = Http::withToken(config('services.openai.api_key'))
-            ->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    ['role' => 'system', 'content' => 'You are a yacht data enrichment engine. Return only valid JSON.'],
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-                'max_tokens' => 500,
-                'response_format' => ['type' => 'json_object'],
-            ]);
-
-        if ($response->failed()) {
-            Log::error('YachtDraftAiController: autofill GPT call failed', ['status' => $response->status()]);
+        try {
+            $match = $this->pinecone->matchAndBuildConsensus($queryPayload);
+        } catch (\Throwable $e) {
+            Log::error('YachtDraftAiController: autofill retrieval failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'AI autofill temporarily unavailable.'], 502);
         }
 
-        $filled = json_decode($response->json('choices.0.message.content', '{}'), true) ?? [];
+        $consensusValues = $match['consensus_values'] ?? [];
+        $fieldConfidence = $match['field_confidence'] ?? [];
+        $fieldSources = $match['field_sources'] ?? [];
+
+        // Never suggest a field the draft already has a value for, and never
+        // suggest a field with no confidence score at all — matchAndBuildConsensus
+        // only emits a field when it found real agreement across similar boats,
+        // so an absent field already means "too low confidence, leave empty".
+        $tieredFields = [];
+        foreach ($consensusValues as $field => $value) {
+            if (array_key_exists($field, $draftPayload) && $draftPayload[$field] !== null && $draftPayload[$field] !== '') {
+                continue;
+            }
+            $confidence = $fieldConfidence[$field] ?? null;
+            if ($confidence === null) {
+                continue;
+            }
+            $tieredFields[$field] = [
+                'value' => $value,
+                'confidence' => $confidence,
+                'tier' => $confidence >= self::HIGH_CONFIDENCE_THRESHOLD ? 'high' : 'medium',
+                'source' => $fieldSources[$field] ?? 'pinecone_consensus',
+            ];
+        }
+
+        $overallConfidence = empty($tieredFields)
+            ? 0.0
+            : round(array_sum(array_column($tieredFields, 'confidence')) / count($tieredFields), 2);
+
+        $sourceBoats = collect($match['top_matches'] ?? [])
+            ->map(fn (array $m) => [
+                'yacht_id' => $m['boat']['id'] ?? null,
+                'boat_name' => $m['boat']['boat_name'] ?? null,
+                'source_url' => $m['boat']['external_url'] ?? null,
+                'score' => $m['score'] ?? null,
+            ])
+            ->values();
 
         $aiState = $draft->ai_state_json ?? [];
         $aiState['autofill_suggestions'] = [
             'status' => 'pending_review',
-            'reference_yacht_id' => $reference->id,
-            'confidence' => 0.88,
-            'fields' => $filled,
+            'reference_yacht_id' => $referenceId,
+            'confidence' => $overallConfidence,
+            'fields' => array_map(fn ($f) => $f['value'], $tieredFields),
+            'field_tiers' => $tieredFields,
             'source_log' => [
                 'source' => 'verified_schepenkring_ai_library',
-                'reference_yacht_id' => $reference->id,
-                'reference_boat_name' => $reference->boat_name,
-                'reference_external_url' => $reference->external_url,
+                'reference_yacht_id' => $referenceId,
+                'source_boats' => $sourceBoats,
                 'generated_at' => now()->toISOString(),
             ],
         ];
         $draft->ai_state_json = $aiState;
         $draft->save();
 
+        AuditLog::create([
+            'action' => 'ai_autofill_generated',
+            'risk_level' => 'low',
+            'result' => 'success',
+            'actor_id' => $request->user()?->id,
+            'entity_type' => 'yacht_draft',
+            'entity_id' => $draft->id,
+            'meta' => [
+                'draft_id' => $draftId,
+                'suggested_fields' => array_keys($tieredFields),
+                'high_confidence_fields' => array_keys(array_filter($tieredFields, fn ($f) => $f['tier'] === 'high')),
+                'medium_confidence_fields' => array_keys(array_filter($tieredFields, fn ($f) => $f['tier'] === 'medium')),
+                'overall_confidence' => $overallConfidence,
+                'source_boats' => $sourceBoats,
+            ],
+        ]);
+
         return response()->json([
-            'suggested_fields' => array_keys($filled),
-            'confidence' => 0.88,
+            'suggested_fields' => array_keys($tieredFields),
+            'field_tiers' => $tieredFields,
+            'confidence' => $overallConfidence,
             'review_required' => true,
             'source_log' => $aiState['autofill_suggestions']['source_log'],
             'draft' => $draft->fresh(),
@@ -134,6 +178,20 @@ PROMPT;
         $aiState['autofill_suggestions']['approved_at'] = now()->toISOString();
         $draft->ai_state_json = $aiState;
         $draft->save();
+
+        AuditLog::create([
+            'action' => 'ai_autofill_approved',
+            'risk_level' => 'low',
+            'result' => 'success',
+            'actor_id' => $request->user()?->id,
+            'entity_type' => 'yacht_draft',
+            'entity_id' => $draft->id,
+            'meta' => [
+                'draft_id' => $draftId,
+                'approved_fields' => array_keys($approved),
+                'rejected_fields' => array_keys(array_diff_key($suggestions, $approved)),
+            ],
+        ]);
 
         return response()->json([
             'applied_fields' => array_keys($approved),
@@ -173,26 +231,5 @@ PROMPT;
         })->values();
 
         return response()->json(['matches' => $enriched]);
-    }
-
-    private function buildReferencePayload(Yacht $yacht): string
-    {
-        $data = array_merge(
-            $yacht->only(['boat_name', 'manufacturer', 'model', 'year', 'boat_type', 'price', 'external_url']),
-            [
-                'loa' => $yacht->dimensions?->loa,
-                'beam' => $yacht->dimensions?->beam,
-                'draft' => $yacht->dimensions?->draft,
-                'fuel' => $yacht->engine?->fuel,
-                'engine_manufacturer' => $yacht->engine?->engine_manufacturer,
-            ]
-        );
-
-        return json_encode($data, JSON_PRETTY_PRINT);
-    }
-
-    private function encodePayload(array $payload): string
-    {
-        return json_encode($payload, JSON_PRETTY_PRINT);
     }
 }

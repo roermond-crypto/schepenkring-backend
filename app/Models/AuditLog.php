@@ -10,6 +10,7 @@ class AuditLog extends Model
 {
     protected $fillable = [
         'action',
+        'category',
         'risk_level',
         'result',
         'actor_id',

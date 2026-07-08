@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\ScrapeRun;
 use App\Models\Yacht;
 use App\Services\BoatImportValidationService;
@@ -75,6 +76,19 @@ class AiLibraryController extends Controller
             ->first();
 
         if (! $force && ! ($lastRun?->passedCompletenessGate($minimumCompleteness) ?? false)) {
+            AuditLog::create([
+                'action' => 'pinecone.reindex_blocked',
+                'category' => 'pinecone',
+                'risk_level' => 'medium',
+                'result' => 'fail',
+                'actor_id' => $request->user()?->id,
+                'meta' => [
+                    'reason' => 'Latest scrape run has not passed the completeness gate',
+                    'required_completeness' => $minimumCompleteness,
+                    'scrape_run_id' => $lastRun?->id,
+                ],
+            ]);
+
             return response()->json([
                 'message' => 'Latest scrape run has not passed the completeness gate.',
                 'required_completeness' => $minimumCompleteness,
@@ -82,7 +96,25 @@ class AiLibraryController extends Controller
             ], 409);
         }
 
+        AuditLog::create([
+            'action' => $deleteExisting ? 'pinecone.rebuild_started' : 'pinecone.sync_started',
+            'category' => 'pinecone',
+            'risk_level' => 'medium',
+            'result' => 'success',
+            'actor_id' => $request->user()?->id,
+            'meta' => ['forced' => $force, 'delete_existing' => $deleteExisting, 'scrape_run_id' => $lastRun?->id],
+        ]);
+
         if ($deleteExisting && ! $this->pinecone->deleteAllYachtVectors()) {
+            AuditLog::create([
+                'action' => 'pinecone.rebuild_completed',
+                'category' => 'pinecone',
+                'risk_level' => 'high',
+                'result' => 'fail',
+                'actor_id' => $request->user()?->id,
+                'meta' => ['reason' => 'Failed to delete existing vectors'],
+            ]);
+
             return response()->json([
                 'message' => 'Could not delete old Pinecone vectors. Re-index aborted.',
             ], 502);
@@ -109,6 +141,20 @@ class AiLibraryController extends Controller
                 $failed++;
             }
         }
+
+        AuditLog::create([
+            'action' => $deleteExisting ? 'pinecone.rebuild_completed' : 'pinecone.sync_completed',
+            'category' => 'pinecone',
+            'risk_level' => 'low',
+            'result' => $failed > 0 ? 'fail' : 'success',
+            'actor_id' => $request->user()?->id,
+            'meta' => [
+                'indexed' => $indexed,
+                'failed' => $failed,
+                'total_attempted' => $yachts->count(),
+                'scrape_run_id' => $lastRun?->id,
+            ],
+        ]);
 
         return response()->json([
             'indexed' => $indexed,
