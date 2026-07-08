@@ -484,22 +484,35 @@ class YachtController extends Controller
 
     private function applyRequestedHarbor(Request $request, Yacht $yacht, ?User $actor, bool $isUpdate): void
     {
-        if ($request->has('ref_harbor_id')) {
-            $requestedHarborId = $request->integer('ref_harbor_id') ?: null;
+        // The frontend wizard sends the location as `location_id`; the rest of
+        // this controller (visibility scoping, fleet stats, list filtering) has
+        // always keyed off `ref_harbor_id`. Accepting both here — and writing
+        // both columns together below — means a yacht created via the wizard no
+        // longer ends up with an unset location that makes it invisible to
+        // every non-admin actor. This does not touch historical rows where the
+        // two columns may already disagree; it only keeps new writes in sync.
+        $harborKey = $request->has('ref_harbor_id') ? 'ref_harbor_id' : ($request->has('location_id') ? 'location_id' : null);
+
+        if ($harborKey !== null) {
+            $requestedHarborId = $request->integer($harborKey) ?: null;
 
             if ($actor?->isClient()) {
-                $yacht->ref_harbor_id = $actor->client_location_id;
+                $resolvedHarborId = $actor->client_location_id;
             } elseif ($actor?->isEmployee()) {
                 if ($requestedHarborId !== null && ! $this->locationAccess->sharesLocation($actor, $requestedHarborId)) {
                     abort(403, 'Forbidden');
                 }
 
-                $yacht->ref_harbor_id = $requestedHarborId;
+                $resolvedHarborId = $requestedHarborId;
             } else {
-                $yacht->ref_harbor_id = $requestedHarborId;
+                $resolvedHarborId = $requestedHarborId;
             }
+
+            $yacht->ref_harbor_id = $resolvedHarborId;
+            $yacht->location_id = $resolvedHarborId;
         } elseif (! $isUpdate && $actor?->client_location_id) {
             $yacht->ref_harbor_id = $actor->client_location_id;
+            $yacht->location_id = $actor->client_location_id;
         }
     }
 
