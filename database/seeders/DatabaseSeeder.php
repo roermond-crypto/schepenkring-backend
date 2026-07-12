@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
         $this->call(DefaultPlatformsSeeder::class);
         $this->call(OpenMarineFieldMappingSeeder::class);
         $this->call(CmsBoatAanmeldenSeeder::class);
+        $this->call(NavigationSeeder::class);
         // Seeds the 14 spec §8 agents with DRAFT prompts (status=inactive) —
         // an admin should review and adjust before enabling any of them.
         $this->call(VoiceAgentSeeder::class);

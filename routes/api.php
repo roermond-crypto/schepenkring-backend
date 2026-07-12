@@ -17,7 +17,9 @@ use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldM
 use App\Http\Controllers\Api\Admin\CatalogValueGovernanceController;
 use App\Http\Controllers\Api\Admin\CmsPageController as AdminCmsPageController;
 use App\Http\Controllers\Api\Admin\MediaController as AdminMediaController;
+use App\Http\Controllers\Api\Admin\NavigationController as AdminNavigationController;
 use App\Http\Controllers\Api\CmsPageController as PublicCmsPageController;
+use App\Http\Controllers\Api\NavigationController as PublicNavigationController;
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
@@ -137,6 +139,9 @@ Route::get('locations/{id}/booking-settings', [\App\Http\Controllers\Api\Admin\H
 
 // ── CMS pages (public, published content only) ──────────────
 Route::get('cms/pages/{slug}', [PublicCmsPageController::class, 'show'])->where('slug', '.*');
+
+// ── Site navigation (public, visible items only) ──────────────
+Route::get('navigation', [PublicNavigationController::class, 'index']);
 
 // ── Schepenkring Lead Widget (public, no auth) ──────────────
 Route::prefix('widget')->group(function () {
@@ -863,6 +868,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('media/{medium}/usages', [AdminMediaController::class, 'usages']);
     Route::post('media/{medium}/ai-alt-text', [AdminMediaController::class, 'generateAiAltText']);
     Route::post('media/{medium}/ai-seo-title', [AdminMediaController::class, 'generateAiSeoTitle']);
+
+    // CMS — navigation (header/footer) + site settings
+    Route::get('navigation', [AdminNavigationController::class, 'index']);
+    Route::post('navigation', [AdminNavigationController::class, 'store']);
+    Route::put('navigation/reorder', [AdminNavigationController::class, 'reorder']);
+    Route::put('navigation/site-settings', [AdminNavigationController::class, 'updateSiteSettings']);
+    Route::put('navigation/{navItem}', [AdminNavigationController::class, 'update']);
+    Route::delete('navigation/{navItem}', [AdminNavigationController::class, 'destroy']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
