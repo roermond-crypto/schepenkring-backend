@@ -34,6 +34,23 @@ class CatalogValueBackfillSeeder extends Seeder
         'boat_type' => [null, 'boat_type', 'Boat Type'],
         'boat_category' => [null, 'boat_category', 'Boat Category'],
         'steering_system' => [null, 'steering_system', 'Steering'],
+        'location_country' => [null, 'location_country', 'Country'],
+    ];
+
+    /**
+     * location_country is a brand-new column with no existing yacht data to
+     * backfill from, so it starts empty unless seeded directly — a common
+     * starter list covering this brokerage's actual market (NL-based,
+     * Western Europe-heavy) plus the rest of the EU and a few common
+     * non-EU flag states, rather than shipping an empty autocomplete.
+     */
+    private const STARTER_COUNTRIES = [
+        'Netherlands', 'Belgium', 'Germany', 'France', 'United Kingdom',
+        'Spain', 'Italy', 'Portugal', 'Denmark', 'Sweden', 'Norway',
+        'Finland', 'Ireland', 'Switzerland', 'Austria', 'Poland',
+        'Greece', 'Croatia', 'Malta', 'Cyprus', 'Luxembourg',
+        'United States', 'Panama', 'Cayman Islands', 'Marshall Islands',
+        'Monaco', 'Turkey', 'Montenegro',
     ];
 
     /**
@@ -78,6 +95,9 @@ class CatalogValueBackfillSeeder extends Seeder
 
             $this->backfillFromYachts($internalKey, $relation, $column, $fuzzyMatcher);
         }
+
+        $this->linkModelsToManufacturers($fuzzyMatcher);
+        $this->seedStarterCountries($fuzzyMatcher);
 
         foreach (self::EXISTING_GOVERNED_FIELDS as $internalKey) {
             $field = BoatField::query()->where('internal_key', $internalKey)->first();
@@ -131,6 +151,81 @@ class CatalogValueBackfillSeeder extends Seeder
                 [
                     'value' => $value,
                     'usage_count' => (int) $total,
+                    'status' => CatalogValue::STATUS_ACTIVE,
+                    'created_via' => 'seed',
+                ],
+            );
+        }
+    }
+
+    /**
+     * Sets catalog_values(model).parent_value_id to the model's most common
+     * manufacturer, so the wizard can narrow model suggestions to the
+     * selected brand (CatalogValueService::search()'s parent filter is
+     * inclusive of NULL, so models with no dominant manufacturer — or that
+     * genuinely exist under several brands — simply stay unscoped rather
+     * than being hidden).
+     */
+    private function linkModelsToManufacturers(CopilotFuzzyMatcher $fuzzyMatcher): void
+    {
+        $pairCounts = DB::table('yachts')
+            ->selectRaw('model, manufacturer, COUNT(*) as total')
+            ->whereNotNull('model')->where('model', '!=', '')
+            ->whereNotNull('manufacturer')->where('manufacturer', '!=', '')
+            ->groupBy('model', 'manufacturer')
+            ->get();
+
+        if ($pairCounts->isEmpty()) {
+            return;
+        }
+
+        $dominantManufacturerByModel = [];
+        foreach ($pairCounts as $row) {
+            $normalizedModel = $fuzzyMatcher->normalize((string) $row->model);
+            if ($normalizedModel === '') {
+                continue;
+            }
+
+            $existing = $dominantManufacturerByModel[$normalizedModel] ?? null;
+            if (! $existing || $row->total > $existing['total']) {
+                $dominantManufacturerByModel[$normalizedModel] = [
+                    'manufacturer' => (string) $row->manufacturer,
+                    'total' => (int) $row->total,
+                ];
+            }
+        }
+
+        $manufacturerIdsByNormalized = CatalogValue::query()
+            ->forField('manufacturer')
+            ->pluck('id', 'normalized_value');
+
+        foreach ($dominantManufacturerByModel as $normalizedModel => $winner) {
+            $normalizedManufacturer = $fuzzyMatcher->normalize($winner['manufacturer']);
+            $manufacturerId = $manufacturerIdsByNormalized[$normalizedManufacturer] ?? null;
+            if (! $manufacturerId) {
+                continue;
+            }
+
+            CatalogValue::query()
+                ->forField('model')
+                ->where('normalized_value', $normalizedModel)
+                ->update(['parent_value_id' => $manufacturerId]);
+        }
+    }
+
+    private function seedStarterCountries(CopilotFuzzyMatcher $fuzzyMatcher): void
+    {
+        foreach (self::STARTER_COUNTRIES as $country) {
+            $normalized = $fuzzyMatcher->normalize($country);
+            if ($normalized === '') {
+                continue;
+            }
+
+            CatalogValue::query()->firstOrCreate(
+                ['field_key' => 'location_country', 'normalized_value' => $normalized],
+                [
+                    'value' => $country,
+                    'usage_count' => 0,
                     'status' => CatalogValue::STATUS_ACTIVE,
                     'created_via' => 'seed',
                 ],

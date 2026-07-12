@@ -63,6 +63,13 @@ class BoatFieldConfigService
                 'storage_relation' => $field->storage_relation,
                 'storage_column' => $field->storage_column,
                 'ai_relevance' => $field->ai_relevance,
+                'enable_autocomplete' => $field->enable_autocomplete,
+                'value_source' => $field->value_source,
+                'allow_new_values' => $field->allow_new_values,
+                'allow_inline_archive' => $field->allow_inline_archive,
+                'fuzzy_matching' => $field->fuzzy_matching,
+                'is_required' => $field->is_required,
+                'is_searchable' => $field->is_searchable,
             ];
 
             if ($priority === 'secondary') {

@@ -43,7 +43,17 @@ class CatalogValueService
         $candidates = CatalogValue::query()
             ->forField($fieldKey)
             ->active()
-            ->when($parentValueId !== null, fn ($q) => $q->where('parent_value_id', $parentValueId))
+            // Inclusive, not exclusive: a value with no recorded parent (e.g.
+            // a model name backfilled before brand linkage existed, or one
+            // shared across multiple brands) stays visible for every brand
+            // rather than disappearing once any hierarchy is introduced.
+            // Only a value explicitly tied to a *different* parent is hidden.
+            ->when(
+                $parentValueId !== null,
+                fn ($q) => $q->where(fn ($sub) => $sub
+                    ->whereNull('parent_value_id')
+                    ->orWhere('parent_value_id', $parentValueId)),
+            )
             ->orderByDesc('usage_count')
             ->limit(500)
             ->get();

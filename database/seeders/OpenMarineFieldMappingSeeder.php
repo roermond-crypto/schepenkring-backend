@@ -68,7 +68,7 @@ class OpenMarineFieldMappingSeeder extends Seeder
             ['schepenkring_field' => 'short_description_fr', 'openmarine_xml_path' => 'boat.descriptions.description[lang=fr]', 'group_label' => 'Descriptions', 'is_required' => false, 'notes' => null],
 
             ['schepenkring_field' => 'location_city', 'openmarine_xml_path' => 'boat.location.city', 'group_label' => 'Location', 'is_required' => false, 'notes' => null],
-            ['schepenkring_field' => 'location_country', 'openmarine_xml_path' => 'boat.location.country', 'group_label' => 'Location', 'is_required' => false, 'notes' => "KNOWN GAP: yachts has no location_country column — this always exports the hardcoded fallback 'NL' regardless of the yacht's actual location."],
+            ['schepenkring_field' => 'location_country', 'openmarine_xml_path' => 'boat.location.country', 'group_label' => 'Location', 'is_required' => false, 'notes' => "Falls back to 'NL' when unset. Column added 2026-07-12 — governed autocomplete field, editable in the wizard."],
             ['schepenkring_field' => 'location_lat', 'openmarine_xml_path' => 'boat.location.lat', 'group_label' => 'Location', 'is_required' => false, 'notes' => null],
             ['schepenkring_field' => 'location_lng', 'openmarine_xml_path' => 'boat.location.lng', 'group_label' => 'Location', 'is_required' => false, 'notes' => null],
 

@@ -210,7 +210,7 @@ class YachtController extends Controller
                 'external_url', 'print_url', 'owners_comment', 'reg_details',
                 'known_defects', 'last_serviced',
                 'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
-                'vessel_lying', 'location_city', 'location_lat', 'location_lng',
+                'vessel_lying', 'location_city', 'location_country', 'location_lat', 'location_lng',
                 'short_description_nl', 'short_description_en', 'short_description_de', 'short_description_fr', 'advertise_as',
                 'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
                 'open_cockpit', 'aft_cockpit', 'ballast_tank',
