@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\SalesCommandCenterController;
 use App\Http\Controllers\Api\Admin\EmailTemplateController;
 use App\Http\Controllers\Api\Admin\ContractTemplateController;
 use App\Http\Controllers\Api\Admin\ContractTypeController;
@@ -647,6 +648,15 @@ Route::post('/onboarding/webhooks/signhost', [OnboardingWebhookController::class
 Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
     Route::post('boats/{yachtId}/auction/start', [AdminBoatAuctionController::class, 'start']);
     Route::post('boats/{yachtId}/auction/end', [AdminBoatAuctionController::class, 'end']);
+});
+
+// Sales Command Center (spec §17) — staff who work leads day to day, not
+// admin-only, since location employees need this at least as much as admins.
+Route::prefix('admin/sales-command-center')->middleware(['auth:sanctum', 'role:admin,employee'])->group(function () {
+    Route::get('/', [SalesCommandCenterController::class, 'index']);
+    Route::post('call-now', [SalesCommandCenterController::class, 'callNow']);
+    Route::post('schedule-callback', [SalesCommandCenterController::class, 'scheduleCallback']);
+    Route::post('mark-outcome', [SalesCommandCenterController::class, 'markOutcome']);
 });
 
 Route::prefix('employee')->middleware(['auth:sanctum', 'role:employee'])->group(function () {

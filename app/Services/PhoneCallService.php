@@ -819,6 +819,7 @@ class PhoneCallService
             'call_session_id' => $session->id,
             'duration_seconds' => $session->duration_seconds,
             'cost_eur' => $session->cost_eur,
+            'source' => $this->messageSource($session),
         ]);
     }
 
@@ -839,7 +840,19 @@ class PhoneCallService
 
         $this->createSystemMessage($session->conversation_id, $session->transcript_text, 'call_transcript', [
             'call_session_id' => $session->id,
+            'source' => $this->messageSource($session),
+            'ai_summary' => data_get($session->metadata, 'ai_summary'),
         ]);
+    }
+
+    /**
+     * Lets the Chat Hub UI visually distinguish an AI-driven Retell call
+     * from a staff-initiated Telnyx call in the same thread (spec §10:
+     * "Store AI call summaries as Chat Hub messages: source = retell_voice").
+     */
+    private function messageSource(CallSession $session): string
+    {
+        return $session->provider === 'retell' ? 'retell_voice' : (string) ($session->provider ?? 'phone');
     }
 
     private function createSystemMessage(string $conversationId, string $text, string $messageType, array $metadata = []): void
