@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(BoatFieldSeeder::class);
         $this->call(BoatFieldMappingSeeder::class);
+        $this->call(CatalogValueBackfillSeeder::class);
         $this->call(KycQuestionSeeder::class);
         $this->call(SellerOnboardingKycSeeder::class);
         $this->call(EmailTemplateSeeder::class);

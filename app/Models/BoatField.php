@@ -28,6 +28,13 @@ class BoatField extends Model
         'can_import',
         'can_export',
         'never_export',
+        'enable_autocomplete',
+        'value_source',
+        'allow_new_values',
+        'allow_inline_archive',
+        'fuzzy_matching',
+        'is_required',
+        'is_searchable',
     ];
 
     protected $casts = [
@@ -40,6 +47,12 @@ class BoatField extends Model
         'can_import' => 'boolean',
         'can_export' => 'boolean',
         'never_export' => 'boolean',
+        'enable_autocomplete' => 'boolean',
+        'allow_new_values' => 'boolean',
+        'allow_inline_archive' => 'boolean',
+        'fuzzy_matching' => 'boolean',
+        'is_required' => 'boolean',
+        'is_searchable' => 'boolean',
         'mappings_count' => 'integer',
         'value_observations_count' => 'integer',
         'value_observations_total' => 'integer',
@@ -48,6 +61,11 @@ class BoatField extends Model
     public function priorities(): HasMany
     {
         return $this->hasMany(BoatFieldPriority::class, 'field_id');
+    }
+
+    public function catalogValues(): HasMany
+    {
+        return $this->hasMany(CatalogValue::class, 'field_key', 'internal_key');
     }
 
     public function mappings(): HasMany

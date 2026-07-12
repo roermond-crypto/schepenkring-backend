@@ -340,6 +340,13 @@ class BoatFieldController extends Controller
             'can_import' => 'nullable|boolean',
             'can_export' => 'nullable|boolean',
             'never_export' => 'nullable|boolean',
+            'enable_autocomplete' => 'nullable|boolean',
+            'value_source' => ['nullable', Rule::in(['freetext', 'fixed', 'database', 'ai'])],
+            'allow_new_values' => 'nullable|boolean',
+            'allow_inline_archive' => 'nullable|boolean',
+            'fuzzy_matching' => 'nullable|boolean',
+            'is_required' => 'nullable|boolean',
+            'is_searchable' => 'nullable|boolean',
             'priorities' => 'sometimes|array',
             'priorities.*.boat_type_key' => 'required|string|max:80',
             'priorities.*.priority' => ['required', Rule::in(BoatFieldPriority::PRIORITIES)],
@@ -410,6 +417,13 @@ class BoatFieldController extends Controller
                 'can_import' => $validated['can_import'] ?? true,
                 'can_export' => $validated['can_export'] ?? true,
                 'never_export' => $validated['never_export'] ?? false,
+                'enable_autocomplete' => $validated['enable_autocomplete'] ?? false,
+                'value_source' => $validated['value_source'] ?? 'freetext',
+                'allow_new_values' => $validated['allow_new_values'] ?? true,
+                'allow_inline_archive' => $validated['allow_inline_archive'] ?? true,
+                'fuzzy_matching' => $validated['fuzzy_matching'] ?? true,
+                'is_required' => $validated['is_required'] ?? false,
+                'is_searchable' => $validated['is_searchable'] ?? true,
             ]);
             $boatField->save();
 

@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Admin\ContractTypeController;
 use App\Http\Controllers\Api\Admin\ContractInstanceController;
 use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
 use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
+use App\Http\Controllers\Api\Admin\CatalogValueGovernanceController;
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
@@ -44,7 +45,7 @@ use App\Http\Controllers\Api\BoatFormConfigController;
 use App\Http\Controllers\Api\BoatVideoController;
 use App\Http\Controllers\Api\BoatVideoSettingController;
 use App\Http\Controllers\Api\ChecklistTemplateController;
-use App\Http\Controllers\Api\CatalogAutocompleteController;
+use App\Http\Controllers\Api\CatalogValueController;
 use App\Http\Controllers\Api\ChatConversationController;
 use App\Http\Controllers\Api\ChatMessageController;
 use App\Http\Controllers\Api\ChatTranslationController;
@@ -290,6 +291,13 @@ Route::get('/video-plans/{id}/stream', [VideoPlanController::class, 'streamRende
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('boat-form-config', [BoatFormConfigController::class, 'index']);
+
+    // Catalog values (smart database autocomplete for Brand/Model/Boat Type/
+    // etc.) — search + inline create. Available to any authenticated actor
+    // editing a yacht, since the same wizard is shared across seller/broker/
+    // admin. Archive/merge are admin-only (see admin group below).
+    Route::get('catalog-values', [CatalogValueController::class, 'index']);
+    Route::post('catalog-values', [CatalogValueController::class, 'store']);
 
     // Yachts
     Route::apiResource('yachts', YachtController::class);
@@ -818,6 +826,12 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('boat-fields/{boatField}/mappings', [AdminBoatFieldMappingController::class, 'index']);
     Route::put('boat-fields/{boatField}/mappings', [AdminBoatFieldMappingController::class, 'update']);
     Route::post('boat-fields/{boatField}/mappings/generate-ai', [AdminBoatFieldMappingController::class, 'generateAiSuggestions']);
+
+    // Catalog value governance — browse (incl. archived), archive, merge.
+    // Surfaced inline inside the autocomplete dropdown, not a separate page.
+    Route::get('catalog-values/manage', [CatalogValueGovernanceController::class, 'index']);
+    Route::post('catalog-values/{catalogValue}/archive', [CatalogValueGovernanceController::class, 'archive']);
+    Route::post('catalog-values/{catalogValue}/merge', [CatalogValueGovernanceController::class, 'merge']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
