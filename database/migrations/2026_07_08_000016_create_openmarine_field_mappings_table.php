@@ -21,7 +21,9 @@ return new class extends Migration
             $table->text('notes')->nullable();
             $table->timestamps();
 
-            $table->unique(['schepenkring_field', 'openmarine_xml_path']);
+            // Explicit short name — the auto-generated name for this column
+            // pair (73 chars) exceeds MySQL's 64-char identifier limit.
+            $table->unique(['schepenkring_field', 'openmarine_xml_path'], 'openmarine_mapping_unique');
         });
     }
 
