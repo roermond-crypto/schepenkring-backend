@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\EnhanceYachtImageJob;
 use App\Jobs\ProcessYachtImageJob;
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Models\YachtImage;
@@ -105,6 +106,10 @@ class ImagePipelineController extends Controller
 
         if ($uploaded !== []) {
             $this->triggerAutomaticVideoFlows($yacht->fresh(['images', 'owner']));
+            $this->logImageAudit('image_uploaded', $yacht, $request->user(), [
+                'count' => count($uploaded),
+                'image_ids' => collect($uploaded)->pluck('id')->all(),
+            ]);
         }
 
         return response()->json([
@@ -170,11 +175,13 @@ class ImagePipelineController extends Controller
      */
     public function deleteImage(Request $request, $yachtId, $imageId): JsonResponse
     {
-        $this->findAuthorizedYacht($request, $yachtId);
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
 
         $image = YachtImage::where('yacht_id', $yachtId)
             ->where('id', $imageId)
             ->firstOrFail();
+
+        $wasFirst = (int) ($yacht->images()->whereNotIn('status', ['deleted'])->orderBy('sort_order')->value('id')) === (int) $image->id;
 
         // Delete all associated files
         $pathsToDelete = array_filter([
@@ -189,6 +196,11 @@ class ImagePipelineController extends Controller
         }
 
         $image->update(['status' => 'deleted']);
+
+        $this->logImageAudit('image_deleted', $yacht, $request->user(), [
+            'image_id' => (int) $imageId,
+            'was_main_image' => $wasFirst,
+        ]);
 
         return response()->json([
             'status'  => 'success',
@@ -265,15 +277,17 @@ class ImagePipelineController extends Controller
         ]);
 
         $yacht = $this->findAuthorizedYacht($request, $yachtId);
-        $images = $yacht->images()->whereNotIn('status', ['deleted'])->get(['id']);
+        $images = $yacht->images()->whereNotIn('status', ['deleted'])->orderBy('sort_order')->get(['id']);
         $existingIds = $images->pluck('id')->all();
+        $previousFirstId = $existingIds[0] ?? null;
         $incomingIds = array_values(array_map('intval', $request->input('image_ids', [])));
 
-        sort($existingIds);
+        $sortedExisting = $existingIds;
+        sort($sortedExisting);
         $sortedIncoming = $incomingIds;
         sort($sortedIncoming);
 
-        if ($existingIds !== $sortedIncoming) {
+        if ($sortedExisting !== $sortedIncoming) {
             return response()->json([
                 'error' => 'Image order payload does not match existing yacht images.',
             ], 422);
@@ -284,6 +298,18 @@ class ImagePipelineController extends Controller
                 YachtImage::whereKey($imageId)->update(['sort_order' => $index]);
             }
         });
+
+        $newFirstId = $incomingIds[0] ?? null;
+        $this->logImageAudit('image_reordered', $yacht, $request->user(), [
+            'image_ids' => $incomingIds,
+        ]);
+
+        if ($newFirstId !== null && $newFirstId !== $previousFirstId) {
+            $this->logImageAudit('main_image_changed', $yacht, $request->user(), [
+                'previous_first_image_id' => $previousFirstId,
+                'new_first_image_id' => $newFirstId,
+            ]);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -424,6 +450,25 @@ class ImagePipelineController extends Controller
             Storage::disk('public')->delete($image->original_temp_url);
             Log::info("Cleaned up temp original: {$image->original_temp_url}");
         }
+    }
+
+    /**
+     * Writes to the same entity_type='yacht' AuditLog stream that
+     * YachtCompletenessController::audit() reads — image lifecycle events
+     * show up in the yacht's existing Audit Timeline alongside field
+     * changes, rather than a separate, unsurfaced log.
+     */
+    private function logImageAudit(string $action, Yacht $yacht, ?User $actor, array $meta = []): void
+    {
+        AuditLog::create([
+            'action' => $action,
+            'risk_level' => 'low',
+            'result' => 'success',
+            'entity_type' => 'yacht',
+            'entity_id' => $yacht->id,
+            'actor_id' => $actor?->id,
+            'meta' => $meta,
+        ]);
     }
 
     private function triggerAutomaticVideoFlows(Yacht $yacht): void

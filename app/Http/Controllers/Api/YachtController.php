@@ -385,6 +385,18 @@ class YachtController extends Controller
 
             $this->syncYachtKnowledgeSafely($yacht);
 
+            if (! $isUpdate) {
+                AuditLog::create([
+                    'action' => 'yacht_created',
+                    'risk_level' => 'low',
+                    'result' => 'success',
+                    'entity_type' => 'yacht',
+                    'entity_id' => $yacht->id,
+                    'actor_id' => $actor?->id,
+                    'meta' => ['source' => 'wizard_save'],
+                ]);
+            }
+
             // Fire task automation for newly created yachts
             if (! $isUpdate && $yacht->boat_type) {
                 try {
@@ -478,6 +490,16 @@ class YachtController extends Controller
         }
 
         $yacht->save();
+
+        AuditLog::create([
+            'action' => 'yacht_created',
+            'risk_level' => 'low',
+            'result' => 'success',
+            'entity_type' => 'yacht',
+            'entity_id' => $yacht->id,
+            'actor_id' => $actor?->id,
+            'meta' => ['source' => 'bootstrap_draft'],
+        ]);
 
         return $yacht;
     }
