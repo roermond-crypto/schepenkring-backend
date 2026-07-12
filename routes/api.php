@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\Admin\ContractInstanceController;
 use App\Http\Controllers\Api\Admin\BoatFieldController as AdminBoatFieldController;
 use App\Http\Controllers\Api\Admin\BoatFieldMappingController as AdminBoatFieldMappingController;
 use App\Http\Controllers\Api\Admin\CatalogValueGovernanceController;
+use App\Http\Controllers\Api\Admin\CmsPageController as AdminCmsPageController;
+use App\Http\Controllers\Api\Admin\MediaController as AdminMediaController;
+use App\Http\Controllers\Api\CmsPageController as PublicCmsPageController;
 use App\Http\Controllers\Api\Admin\BookingController as AdminBookingController;
 use App\Http\Controllers\Api\Admin\CopilotActionCatalogController;
 use App\Http\Controllers\Api\Admin\CopilotActionController;
@@ -131,6 +134,9 @@ Route::prefix('locations/delete')->group(function () {
 
 // ── Location booking-settings (public alias, no auth required) ──────────────
 Route::get('locations/{id}/booking-settings', [\App\Http\Controllers\Api\Admin\HarborController::class, 'bookingSettings']);
+
+// ── CMS pages (public, published content only) ──────────────
+Route::get('cms/pages/{slug}', [PublicCmsPageController::class, 'show'])->where('slug', '.*');
 
 // ── Schepenkring Lead Widget (public, no auth) ──────────────
 Route::prefix('widget')->group(function () {
@@ -835,6 +841,28 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('catalog-values/manage', [CatalogValueGovernanceController::class, 'index']);
     Route::post('catalog-values/{catalogValue}/archive', [CatalogValueGovernanceController::class, 'archive']);
     Route::post('catalog-values/{catalogValue}/merge', [CatalogValueGovernanceController::class, 'merge']);
+
+    // CMS — pages/sections/versions
+    Route::get('cms/component-registry', [AdminCmsPageController::class, 'componentRegistry']);
+    Route::get('cms/pages', [AdminCmsPageController::class, 'index']);
+    Route::post('cms/pages', [AdminCmsPageController::class, 'store']);
+    Route::get('cms/pages/{cmsPage}', [AdminCmsPageController::class, 'show']);
+    Route::put('cms/pages/{cmsPage}', [AdminCmsPageController::class, 'updateMeta']);
+    Route::put('cms/pages/{cmsPage}/sections', [AdminCmsPageController::class, 'saveSections']);
+    Route::post('cms/pages/{cmsPage}/publish', [AdminCmsPageController::class, 'publish']);
+    Route::post('cms/pages/{cmsPage}/schedule', [AdminCmsPageController::class, 'schedule']);
+    Route::post('cms/pages/{cmsPage}/archive', [AdminCmsPageController::class, 'archive']);
+    Route::get('cms/pages/{cmsPage}/versions', [AdminCmsPageController::class, 'versions']);
+    Route::post('cms/pages/{cmsPage}/restore-version', [AdminCmsPageController::class, 'restoreVersion']);
+
+    // CMS — media library
+    Route::get('media', [AdminMediaController::class, 'index']);
+    Route::post('media/upload', [AdminMediaController::class, 'upload']);
+    Route::put('media/{medium}', [AdminMediaController::class, 'update']);
+    Route::delete('media/{medium}', [AdminMediaController::class, 'destroy']);
+    Route::get('media/{medium}/usages', [AdminMediaController::class, 'usages']);
+    Route::post('media/{medium}/ai-alt-text', [AdminMediaController::class, 'generateAiAltText']);
+    Route::post('media/{medium}/ai-seo-title', [AdminMediaController::class, 'generateAiSeoTitle']);
 
     // Impersonation
     Route::post('impersonate/{userId}', [AdminImpersonationController::class, 'store']);
