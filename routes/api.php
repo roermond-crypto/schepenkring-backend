@@ -71,6 +71,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublicLeadController;
 use App\Http\Controllers\Api\PublicConversationMessageController;
 use App\Http\Controllers\Api\SentryWebhookController;
+use App\Http\Controllers\Api\RetellWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
 use App\Http\Controllers\Api\TelnyxVoiceWebhookController;
@@ -240,6 +241,7 @@ Route::get('analytics/summary', [AnalyticsController::class, 'summary']);
 Route::post('webhooks/signhost', [WebhookController::class, 'signhost']);
 Route::post('webhooks/whatsapp/360dialog', [WhatsApp360DialogWebhookController::class, 'handle']);
 Route::post('webhooks/telnyx/voice', [TelnyxVoiceWebhookController::class, 'handle']);
+Route::post('webhooks/retell', [RetellWebhookController::class, 'handle']);
 Route::post('sentry/webhook', [SentryWebhookController::class, 'handle']);
 
 // Internal voice gateway callbacks

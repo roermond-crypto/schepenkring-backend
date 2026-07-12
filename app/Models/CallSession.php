@@ -44,6 +44,19 @@ class CallSession extends Model
         'outcome',
         'failure_reason',
         'metadata',
+        'provider',
+        'external_call_id',
+        'campaign_id',
+        'seller_id',
+        'yacht_id',
+        'deal_id',
+        'owner_bid_id',
+        'agent_id',
+        'agent_version',
+        'model',
+        'voice',
+        'transfer_status',
+        'analysis',
     ];
 
     protected $casts = [
@@ -53,6 +66,7 @@ class CallSession extends Model
         'charged_at' => 'datetime',
         'cost_eur' => 'decimal:2',
         'metadata' => 'array',
+        'analysis' => 'array',
     ];
 
     public function conversation(): BelongsTo
@@ -78,5 +92,25 @@ class CallSession extends Model
     public function transcripts(): HasMany
     {
         return $this->hasMany(CallSessionTranscript::class, 'call_session_id');
+    }
+
+    public function seller(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'seller_id');
+    }
+
+    public function yacht(): BelongsTo
+    {
+        return $this->belongsTo(Yacht::class, 'yacht_id');
+    }
+
+    public function deal(): BelongsTo
+    {
+        return $this->belongsTo(Deal::class, 'deal_id');
+    }
+
+    public function ownerBid(): BelongsTo
+    {
+        return $this->belongsTo(OwnerBid::class, 'owner_bid_id');
     }
 }

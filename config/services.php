@@ -139,6 +139,15 @@ return [
         'application_id' => env('TELNYX_APPLICATION_ID'),
     ],
 
+    // Legacy voice-calling backend, kept dormant (see config/voice.php's
+    // 'provider' key) after the switch to Retell — not deleted, so a
+    // rollback to Telnyx stays possible without reconstructing config.
+    'retell' => [
+        'base_url' => env('RETELL_BASE_URL', 'https://api.retellai.com'),
+        'api_key' => env('RETELL_API_KEY'),
+        'webhook_secret' => env('RETELL_WEBHOOK_SECRET'),
+    ],
+
     'integrations' => [
         'access_delivery_allowed_emails' => array_filter(array_map(
             'trim',

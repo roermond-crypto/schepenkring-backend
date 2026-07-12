@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Contracts\VoiceProvider;
 use App\Models\CallSession;
 use App\Models\ChannelIdentity;
 use App\Models\Conversation;
 use App\Models\HarborChannel;
 use App\Models\Message;
+use App\Services\Voice\TelnyxVoiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +21,7 @@ class PhoneCallService
         private PhoneAbuseService $abuse,
         private ChatConversationService $chatService,
         private ChatContactService $contactService,
-        private TelnyxService $telnyx,
+        private VoiceProvider $voiceProvider,
         private PhoneBillingService $billing
     ) {
     }
@@ -71,14 +73,16 @@ class PhoneCallService
         $session->status = 'answered';
         $session->save();
 
-        $alreadyStreaming = data_get($session->metadata, 'streaming_started_at');
-        $gatewayUrl = $this->buildStreamUrl($session);
-        if ($gatewayUrl && ! $alreadyStreaming) {
-            $this->telnyx->startStreaming($callControlId, $gatewayUrl, 'both');
-            $session->metadata = array_merge($session->metadata ?? [], [
-                'streaming_started_at' => now()->toIso8601String(),
-            ]);
-            $session->save();
+        if ($this->voiceProvider->usesMediaStreaming() && $this->voiceProvider instanceof TelnyxVoiceProvider) {
+            $alreadyStreaming = data_get($session->metadata, 'streaming_started_at');
+            $gatewayUrl = $this->buildStreamUrl($session);
+            if ($gatewayUrl && ! $alreadyStreaming) {
+                $this->voiceProvider->startStreaming($callControlId, $gatewayUrl, 'both');
+                $session->metadata = array_merge($session->metadata ?? [], [
+                    'streaming_started_at' => now()->toIso8601String(),
+                ]);
+                $session->save();
+            }
         }
     }
 
@@ -176,6 +180,157 @@ class PhoneCallService
         }
     }
 
+    // ── Retell webhook handlers ─────────────────────────────
+    // Retell's event/payload shape is fundamentally different from Telnyx's
+    // (flat call object vs. nested Call Control event envelope), so these
+    // are purpose-built rather than forced through the handleCall*() methods
+    // above, which stay exactly as they were for a Telnyx rollback.
+    // Payload field names below reflect Retell's documented v2 webhook
+    // shape as of when this was written — no live account existed to
+    // verify against; re-check against Retell's current webhook reference
+    // if fields come through empty/renamed in production.
+
+    public function handleRetellCallStarted(array $call): void
+    {
+        $externalCallId = $call['call_id'] ?? null;
+        if (! $externalCallId) {
+            return;
+        }
+
+        $direction = $this->normalizeDirection($call['direction'] ?? null);
+        $fromNumber = $this->numbers->normalize($call['from_number'] ?? null);
+        $toNumber = $this->numbers->normalize($call['to_number'] ?? null);
+        $metadata = is_array($call['metadata'] ?? null) ? $call['metadata'] : [];
+
+        $session = CallSession::firstOrNew(['external_call_id' => $externalCallId]);
+        $isNew = ! $session->exists;
+
+        $session->provider = 'retell';
+        $session->direction = $session->direction ?: ($direction ?: 'unknown');
+        $session->status = $session->status ?: 'initiated';
+        $session->from_number = $session->from_number ?: $fromNumber;
+        $session->to_number = $session->to_number ?: $toNumber;
+        $session->call_control_id = $session->call_control_id ?: $externalCallId;
+        $session->started_at = $session->started_at ?: $this->parseRetellTimestamp($call['start_timestamp'] ?? null) ?? now();
+        $session->agent_id = $session->agent_id ?: ($call['agent_id'] ?? null);
+        $session->agent_version = $session->agent_version ?: (isset($call['agent_version']) ? (string) $call['agent_version'] : null);
+        $session->campaign_id = $session->campaign_id ?: ($metadata['campaign_id'] ?? null);
+        $session->seller_id = $session->seller_id ?: ($metadata['seller_id'] ?? null);
+        $session->yacht_id = $session->yacht_id ?: ($metadata['yacht_id'] ?? null);
+        $session->deal_id = $session->deal_id ?: ($metadata['deal_id'] ?? null);
+        $session->owner_bid_id = $session->owner_bid_id ?: ($metadata['bid_id'] ?? $metadata['owner_bid_id'] ?? null);
+        $session->metadata = array_merge($session->metadata ?? [], ['dynamic_variables' => $metadata, 'raw_started' => $call]);
+        $session->save();
+
+        if ($isNew && $direction === 'inbound' && $fromNumber && $toNumber) {
+            $this->handleInboundCall($session, ['to' => ['phone_number' => $toNumber]], $fromNumber, $toNumber);
+        }
+    }
+
+    public function handleRetellCallEnded(array $call): void
+    {
+        $externalCallId = $call['call_id'] ?? null;
+        if (! $externalCallId) {
+            return;
+        }
+
+        $session = CallSession::where('external_call_id', $externalCallId)->first();
+        if (! $session) {
+            return;
+        }
+
+        $session->ended_at = $session->ended_at ?: ($this->parseRetellTimestamp($call['end_timestamp'] ?? null) ?? now());
+
+        $durationMs = $call['duration_ms'] ?? null;
+        $duration = $durationMs !== null ? (int) round($durationMs / 1000) : null;
+        if ($duration === null && $session->answered_at) {
+            $duration = $session->answered_at->diffInSeconds($session->ended_at ?? now());
+        }
+        $session->duration_seconds = $session->duration_seconds ?: $duration;
+        $session->transfer_status = $call['transfer_status'] ?? $session->transfer_status;
+        $session->outcome = $session->outcome ?: ($session->answered_at ? 'completed' : 'missed');
+
+        $callCost = data_get($call, 'call_cost.combined_cost');
+        if ($callCost !== null) {
+            // Retell reports cost directly (in cents, per their docs) rather
+            // than needing PhoneBillingService's minute-rate calculation —
+            // prefer it when present, fall back to the existing calculator.
+            $session->cost_eur = round(((float) $callCost) / 100, 2);
+            $session->billable_seconds = $session->duration_seconds;
+        } elseif ($session->duration_seconds !== null) {
+            $costData = $this->billing->computeCost((int) $session->duration_seconds);
+            $session->billable_seconds = $costData['billable_seconds'];
+            $session->cost_eur = $costData['cost'];
+        }
+
+        $session->status = 'ended';
+        $session->metadata = array_merge($session->metadata ?? [], ['raw_ended' => $call]);
+        $session->save();
+
+        if ($session->conversation_id) {
+            $conversation = Conversation::find($session->conversation_id);
+            if ($conversation) {
+                $conversation->last_call_at = now();
+                $conversation->save();
+            }
+        }
+
+        $this->createSummaryMessage($session);
+    }
+
+    public function handleRetellCallAnalyzed(array $call): void
+    {
+        $externalCallId = $call['call_id'] ?? null;
+        if (! $externalCallId) {
+            return;
+        }
+
+        $session = CallSession::where('external_call_id', $externalCallId)->first();
+        if (! $session) {
+            return;
+        }
+
+        $session->transcript_text = $call['transcript'] ?? $session->transcript_text;
+        $session->recording_url = $call['recording_url'] ?? $session->recording_url;
+        $session->analysis = data_get($call, 'call_analysis');
+
+        $summary = data_get($call, 'call_analysis.call_summary');
+        if ($summary) {
+            $session->metadata = array_merge($session->metadata ?? [], ['ai_summary' => $summary]);
+        }
+
+        $session->save();
+
+        if (config('voice.recordings.download') && $session->recording_url && ! $session->recording_storage_path) {
+            $storagePath = $this->downloadRecording($session, $session->recording_url);
+            if ($storagePath) {
+                $session->recording_storage_path = $storagePath;
+                $session->save();
+            }
+        }
+
+        $this->createTranscriptMessage($session);
+
+        // Structured-outcome validation and downstream actions (follow-ups,
+        // deal/bid/appointment updates, suppression) are applied by
+        // RetellCallOutcomeValidator + FollowUpService — added in the next
+        // milestone. This method only persists what Retell reported.
+    }
+
+    private function parseRetellTimestamp(mixed $value): ?Carbon
+    {
+        if (! $value) {
+            return null;
+        }
+
+        try {
+            // Retell timestamps are milliseconds since epoch.
+            return Carbon::createFromTimestampMs((int) $value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     public function initiateOutboundCall(Message $message): void
     {
         if ($message->message_type !== 'call') {
@@ -246,6 +401,7 @@ class PhoneCallService
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
             'started_at' => now(),
+            'provider' => $this->voiceProvider->name(),
         ]);
 
         $conversation->last_call_at = now();
@@ -254,41 +410,41 @@ class PhoneCallService
         $payload = [
             'to' => $toNumber,
             'from' => $fromNumber,
+            // Telnyx-specific routing hints; RetellVoiceProvider ignores
+            // these and reads 'agent_id' instead (set below).
+            'connection_id' => data_get($channel->metadata, 'connection_id') ?? config('services.telnyx.connection_id'),
+            'application_id' => data_get($channel->metadata, 'application_id') ?? config('services.telnyx.application_id'),
+            'agent_id' => data_get($channel->metadata, 'agent_id'),
         ];
 
-        $connectionId = data_get($channel->metadata, 'connection_id') ?? config('services.telnyx.connection_id');
-        $applicationId = data_get($channel->metadata, 'application_id') ?? config('services.telnyx.application_id');
+        $result = $this->voiceProvider->initiateOutboundCall(array_filter($payload, fn ($value) => $value !== null));
+        $externalCallId = $result['external_call_id'] ?? null;
 
-        if ($connectionId) {
-            $payload['connection_id'] = $connectionId;
-        }
-        if ($applicationId) {
-            $payload['application_id'] = $applicationId;
-        }
-
-        $response = $this->telnyx->initiateCall($payload);
-        $callControlId = data_get($response, 'data.call_control_id');
-
-        if (! $callControlId) {
+        if (! $externalCallId) {
             $session->status = 'failed';
-            $session->failure_reason = 'telnyx_initiate_failed';
+            $session->failure_reason = $this->voiceProvider->name().'_initiate_failed';
             $session->save();
 
             $message->status = 'failed';
-            $message->metadata = array_merge($message->metadata ?? [], ['error' => 'telnyx_initiate_failed']);
+            $message->metadata = array_merge($message->metadata ?? [], ['error' => $this->voiceProvider->name().'_initiate_failed']);
             $message->save();
 
             return;
         }
 
-        $session->call_control_id = $callControlId;
+        // Both columns get the same value for a new call: external_call_id is
+        // the provider-agnostic column going forward; call_control_id is kept
+        // in step so any code still querying by the old Telnyx-era column
+        // name keeps working.
+        $session->call_control_id = $externalCallId;
+        $session->external_call_id = $externalCallId;
         $session->status = 'ringing';
         $session->save();
 
         $message->status = 'calling';
         $message->metadata = array_merge($message->metadata ?? [], [
             'call_session_id' => $session->id,
-            'call_control_id' => $callControlId,
+            'call_control_id' => $externalCallId,
         ]);
         $message->save();
     }
@@ -340,7 +496,7 @@ class PhoneCallService
             $conversation->save();
         }
 
-        $this->telnyx->answerCall($session->call_control_id);
+        $this->voiceProvider->answerCall($session->call_control_id);
     }
 
     private function rejectCall(CallSession $session, string $reason): void
@@ -352,7 +508,7 @@ class PhoneCallService
         $session->save();
 
         if ($session->call_control_id) {
-            $this->telnyx->hangupCall($session->call_control_id, $reason);
+            $this->voiceProvider->hangupCall($session->call_control_id, $reason);
         }
     }
 
@@ -364,7 +520,7 @@ class PhoneCallService
 
         $query = HarborChannel::query()
             ->where('channel', 'phone')
-            ->where('provider', 'telnyx')
+            ->where('provider', $this->voiceProvider->name())
             ->where('status', 'active');
 
         $query->where(function ($sub) use ($toNumber, $phoneNumberId) {
@@ -385,7 +541,7 @@ class PhoneCallService
 
         return HarborChannel::query()
             ->where('channel', 'phone')
-            ->where('provider', 'telnyx')
+            ->where('provider', $this->voiceProvider->name())
             ->where('harbor_id', $harborId)
             ->where('status', 'active')
             ->first();

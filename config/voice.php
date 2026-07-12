@@ -1,7 +1,10 @@
 <?php
 
 return [
-    'provider' => env('VOICE_PROVIDER', 'telnyx'),
+    // Bound to App\Contracts\VoiceProvider in AppServiceProvider — 'retell'
+    // is the active provider; 'telnyx' remains a dormant, still-registered
+    // option for rollback but is no longer implemented behind the interface.
+    'provider' => env('VOICE_PROVIDER', 'retell'),
     'gateway_url' => env('VOICE_GATEWAY_URL'),
     'internal_secret' => env('VOICE_INTERNAL_SECRET'),
     'conversation_reuse_days' => (int) env('VOICE_CONVERSATION_REUSE_DAYS', 90),

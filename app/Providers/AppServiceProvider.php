@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Contracts\VoiceProvider;
 use App\Events\BoatStatusActivated;
 use App\Events\TaskCreated;
 use App\Listeners\SendTaskNotification;
@@ -9,6 +10,8 @@ use App\Listeners\TriggerAiVideoGeneration;
 use App\Models\Location;
 use App\Observers\LocationObserver;
 use App\Services\ImpersonationContext;
+use App\Services\Voice\RetellVoiceProvider;
+use App\Services\Voice\TelnyxVoiceProvider;
 use App\Support\AuthEmailSupport;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Vite;
@@ -22,6 +25,13 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ImpersonationContext::class);
+
+        $this->app->singleton(VoiceProvider::class, function ($app) {
+            return match (config('voice.provider', 'retell')) {
+                'telnyx' => $app->make(TelnyxVoiceProvider::class),
+                default => $app->make(RetellVoiceProvider::class),
+            };
+        });
     }
 
     /**
