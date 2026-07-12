@@ -663,6 +663,13 @@ Route::middleware('auth:sanctum')->prefix('onboarding')->group(function () {
     Route::get('thank-you', [\App\Http\Controllers\Api\Onboarding\ClientOnboardingController::class, 'thankYou']);
 });
 
+// Onboarding questions (dynamic, admin-managed — additive to the fixed
+// profile fields) — seller/buyer dashboards read/answer these.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('onboarding-questions', [\App\Http\Controllers\Api\OnboardingQuestionController::class, 'index']);
+    Route::post('onboarding-questions/answers', [\App\Http\Controllers\Api\OnboardingQuestionController::class, 'storeAnswers']);
+});
+
 // Onboarding Webhooks
 Route::post('/onboarding/webhooks/mollie', [OnboardingWebhookController::class, 'mollie']);
 Route::post('/onboarding/webhooks/signhost', [OnboardingWebhookController::class, 'signhost']);
@@ -869,6 +876,13 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('media/{medium}/usages', [AdminMediaController::class, 'usages']);
     Route::post('media/{medium}/ai-alt-text', [AdminMediaController::class, 'generateAiAltText']);
     Route::post('media/{medium}/ai-seo-title', [AdminMediaController::class, 'generateAiSeoTitle']);
+
+    // Onboarding questions CRUD (seller/buyer/both, dynamic profile questions)
+    Route::get('onboarding-questions', [\App\Http\Controllers\Api\Admin\OnboardingQuestionController::class, 'index']);
+    Route::post('onboarding-questions', [\App\Http\Controllers\Api\Admin\OnboardingQuestionController::class, 'store']);
+    Route::put('onboarding-questions/reorder', [\App\Http\Controllers\Api\Admin\OnboardingQuestionController::class, 'reorder']);
+    Route::put('onboarding-questions/{onboardingQuestion}', [\App\Http\Controllers\Api\Admin\OnboardingQuestionController::class, 'update']);
+    Route::delete('onboarding-questions/{onboardingQuestion}', [\App\Http\Controllers\Api\Admin\OnboardingQuestionController::class, 'destroy']);
 
     // CMS — navigation (header/footer) + site settings
     Route::get('navigation', [AdminNavigationController::class, 'index']);
