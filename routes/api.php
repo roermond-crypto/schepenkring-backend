@@ -311,6 +311,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{imageId}/approve', [ImagePipelineController::class, 'approve']);
         Route::post('/{imageId}/delete', [ImagePipelineController::class, 'deleteImage']);
         Route::post('/{imageId}/toggle-keep-original', [ImagePipelineController::class, 'toggleKeepOriginal']);
+        Route::post('/{imageId}/rotate', [ImagePipelineController::class, 'rotate']);
+        Route::post('/{imageId}/caption', [ImagePipelineController::class, 'updateCaption']);
+        Route::post('/{imageId}/set-main', [ImagePipelineController::class, 'setMain']);
         Route::post('/approve-all', [ImagePipelineController::class, 'approveAll']);
     });
     Route::get('yachts/{yachtId}/step2-unlocked', [ImagePipelineController::class, 'step2Unlocked']);

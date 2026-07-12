@@ -9,6 +9,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Models\YachtImage;
+use App\Services\ImageProcessingService;
 use App\Services\LocationAccessService;
 use App\Services\VideoAutomationService;
 use App\Support\YachtImageLimits;
@@ -209,6 +210,77 @@ class ImagePipelineController extends Controller
     }
 
     /**
+     * POST /yachts/{yachtId}/images/{imageId}/rotate
+     * Manually rotate an image 90 degrees clockwise or counter-clockwise.
+     */
+    public function rotate(Request $request, ImageProcessingService $imageProcessing, $yachtId, $imageId): JsonResponse
+    {
+        $validated = $request->validate([
+            'direction' => 'required|string|in:cw,ccw',
+        ]);
+
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
+
+        $image = YachtImage::where('yacht_id', $yachtId)
+            ->where('id', $imageId)
+            ->firstOrFail();
+
+        $rotatedAny = false;
+        foreach (['optimized_master_url', 'thumb_url'] as $column) {
+            $relativePath = $image->{$column};
+            if (!$relativePath) {
+                continue;
+            }
+
+            $absolutePath = storage_path('app/public/' . ltrim($relativePath, '/'));
+            if ($imageProcessing->rotateInPlace($absolutePath, $validated['direction'])) {
+                $rotatedAny = true;
+            }
+        }
+
+        if (!$rotatedAny) {
+            return response()->json([
+                'error' => 'Image is not yet processed — try again once processing finishes.',
+            ], 422);
+        }
+
+        $this->logImageAudit('image_rotated', $yacht, $request->user(), [
+            'image_id' => (int) $imageId,
+            'direction' => $validated['direction'],
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Image rotated.',
+            'image' => $image->fresh(),
+        ]);
+    }
+
+    /**
+     * POST /yachts/{yachtId}/images/{imageId}/caption
+     * Set or clear the display caption for one image.
+     */
+    public function updateCaption(Request $request, $yachtId, $imageId): JsonResponse
+    {
+        $validated = $request->validate([
+            'caption' => 'nullable|string|max:255',
+        ]);
+
+        $this->findAuthorizedYacht($request, $yachtId);
+
+        $image = YachtImage::where('yacht_id', $yachtId)
+            ->where('id', $imageId)
+            ->firstOrFail();
+
+        $image->update(['caption' => $validated['caption'] ?? null]);
+
+        return response()->json([
+            'status' => 'success',
+            'image' => $image->fresh(),
+        ]);
+    }
+
+    /**
      * POST /yachts/{yachtId}/images/{imageId}/toggle-keep-original
      * Toggle the keep_original flag.
      */
@@ -314,6 +386,52 @@ class ImagePipelineController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Image order updated.',
+        ]);
+    }
+
+    /**
+     * POST /yachts/{yachtId}/images/{imageId}/set-main
+     * Move one image to sort_order 0 (the gallery's main/cover image),
+     * keeping the rest in their existing relative order.
+     */
+    public function setMain(Request $request, $yachtId, $imageId): JsonResponse
+    {
+        $yacht = $this->findAuthorizedYacht($request, $yachtId);
+        $existingIds = $yacht->images()
+            ->whereNotIn('status', ['deleted'])
+            ->orderBy('sort_order')
+            ->pluck('id')
+            ->all();
+
+        if (!in_array((int) $imageId, $existingIds, true)) {
+            return response()->json(['error' => 'Image not found for this yacht.'], 404);
+        }
+
+        $previousFirstId = $existingIds[0] ?? null;
+        if ($previousFirstId === (int) $imageId) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Image is already the main image.',
+            ]);
+        }
+
+        $incomingIds = array_values(array_filter($existingIds, fn ($id) => $id !== (int) $imageId));
+        array_unshift($incomingIds, (int) $imageId);
+
+        DB::transaction(function () use ($incomingIds) {
+            foreach ($incomingIds as $index => $id) {
+                YachtImage::whereKey($id)->update(['sort_order' => $index]);
+            }
+        });
+
+        $this->logImageAudit('main_image_changed', $yacht, $request->user(), [
+            'previous_first_image_id' => $previousFirstId,
+            'new_first_image_id' => (int) $imageId,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Main image updated.',
         ]);
     }
 

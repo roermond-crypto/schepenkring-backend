@@ -224,6 +224,45 @@ class ImageProcessingService
     }
 
     /**
+     * Manually rotate an already-processed WebP file in place (master or
+     * thumb) — user-triggered rotation, separate from the automatic EXIF
+     * auto-rotate applied during initial processing. The pipeline always
+     * exports WebP (see processWithImagick/processWithGD above), so GD's
+     * imagewebp reader/writer works regardless of which engine produced
+     * the file originally.
+     */
+    public function rotateInPlace(string $absolutePath, string $direction): bool
+    {
+        if (!file_exists($absolutePath)) {
+            return false;
+        }
+
+        $image = @imagecreatefromwebp($absolutePath);
+        if (!$image) {
+            return false;
+        }
+
+        $angle = $direction === 'ccw' ? 90 : -90;
+        $rotated = imagerotate($image, $angle, 0);
+        imagedestroy($image);
+
+        if (!$rotated) {
+            return false;
+        }
+
+        if (!imageistruecolor($rotated)) {
+            imagepalettetotruecolor($rotated);
+        }
+        imagealphablending($rotated, true);
+        imagesavealpha($rotated, true);
+
+        $result = imagewebp($rotated, $absolutePath, 82);
+        imagedestroy($rotated);
+
+        return $result;
+    }
+
+    /**
      * Load an image with GD based on mime type.
      */
     protected function loadImageGD(string $path, string $mimeType)

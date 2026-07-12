@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Storage;
 
 class YachtImage extends Model {
     protected $fillable = [
-        'yacht_id', 'url', 'category', 'part_name', 'sort_order',
+        'yacht_id', 'url', 'category', 'part_name', 'caption', 'sort_order',
         // Pipeline fields
         'original_temp_url', 'optimized_master_url', 'thumb_url',
         'original_kept_url', 'status', 'keep_original',
