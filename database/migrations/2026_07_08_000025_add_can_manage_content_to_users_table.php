@@ -15,7 +15,13 @@ return new class extends Migration
             // check across the app. This is deliberately the smaller,
             // narrower change: not every admin should see Global Edit Mode,
             // but it's still gated behind isAdmin() first.
-            $table->boolean('can_manage_content')->default(false)->after('is_active');
+            //
+            // Positioned after `status`, not `is_active` — despite
+            // User::casts() listing 'is_active' => 'boolean', no migration
+            // ever actually created that column (confirmed by checking
+            // every users-table migration); it's stale dead code in the
+            // model, not a real column.
+            $table->boolean('can_manage_content')->default(false)->after('status');
         });
     }
 
