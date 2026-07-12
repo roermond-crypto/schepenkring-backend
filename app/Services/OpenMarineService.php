@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\OpenMarineFieldMapping;
 use App\Models\Yacht;
 use SimpleXMLElement;
 
@@ -96,6 +97,59 @@ class OpenMarineService
     }
 
     /**
+     * For the Integration Center's debugging view: every seeded field
+     * mapping alongside this yacht's current resolved value, so an admin
+     * can see field-by-field exactly why an export is failing or thin
+     * without reading buildXml() source.
+     *
+     * @return array<int, array{schepenkring_field: string, openmarine_xml_path: string, group_label: ?string, is_required: bool, notes: ?string, current_value: mixed, populated: bool}>
+     */
+    public function inspectMapping(Yacht $yacht): array
+    {
+        return OpenMarineFieldMapping::query()
+            ->orderBy('group_label')
+            ->orderBy('id')
+            ->get()
+            ->map(function (OpenMarineFieldMapping $mapping) use ($yacht) {
+                [$value, $populated] = $this->resolveMappedValue($yacht, $mapping->schepenkring_field);
+
+                return [
+                    'schepenkring_field' => $mapping->schepenkring_field,
+                    'openmarine_xml_path' => $mapping->openmarine_xml_path,
+                    'group_label' => $mapping->group_label,
+                    'is_required' => $mapping->is_required,
+                    'notes' => $mapping->notes,
+                    'current_value' => $value,
+                    'populated' => $populated,
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return array{0: mixed, 1: bool}
+     */
+    private function resolveMappedValue(Yacht $yacht, string $field): array
+    {
+        if (str_starts_with($field, '(')) {
+            return [null, true];
+        }
+
+        if (str_starts_with($field, 'images[].')) {
+            $column = substr($field, strlen('images[].'));
+            $images = $yacht->images ?? collect();
+            $total = $images->count();
+            $populatedCount = $images->filter(fn ($image) => filled($image->{$column} ?? null))->count();
+
+            return ["{$populatedCount}/{$total} images", $total > 0 && $populatedCount === $total];
+        }
+
+        $value = $yacht->{$field} ?? null;
+
+        return [$value, $value !== null && $value !== ''];
+    }
+
+    /**
      * Build the OpenMarine 2.0 XML string.
      */
     private function buildXml(Yacht $yacht): string
@@ -167,9 +221,14 @@ class OpenMarineService
         $imagesNode = $boatNode->addChild('images');
         foreach (($yacht->images ?? []) as $image) {
             $imgNode = $imagesNode->addChild('image');
-            $this->addSafe($imgNode, 'url',     $image->url ?? $image->cloudinary_url ?? '');
-            $this->addSafe($imgNode, 'caption', $image->alt_text ?? '');
-            $imgNode->addAttribute('order', (string) ($image->order ?? 0));
+            // optimized_url resolves to a fully-qualified public URL (falls back
+            // to full_url internally) — the raw `url` column is a storage-relative
+            // path and `alt_text`/`order` never existed as YachtImage columns
+            // (the real columns are `caption` and `sort_order`), so this was
+            // silently exporting broken image URLs and empty captions/order.
+            $this->addSafe($imgNode, 'url',     $image->optimized_url ?? '');
+            $this->addSafe($imgNode, 'caption', $image->caption ?? '');
+            $imgNode->addAttribute('order', (string) ($image->sort_order ?? 0));
         }
 
         // Format

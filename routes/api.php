@@ -976,6 +976,12 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/yachts/{yacht}')->gr
     Route::post('open-marine/generate', [\App\Http\Controllers\Api\Admin\OpenMarineController::class, 'generate']);
 });
 
+// OpenMarine Integration Center — field mapping reference + per-yacht inspect
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/openmarine')->group(function () {
+    Route::get('mappings', [\App\Http\Controllers\Api\Admin\OpenMarineController::class, 'mappings']);
+    Route::get('mappings/inspect/{yacht}', [\App\Http\Controllers\Api\Admin\OpenMarineController::class, 'inspect']);
+});
+
 // Publishing health dashboard widget
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/publishing')->group(function () {
     Route::get('health', [\App\Http\Controllers\Api\Admin\PublishingHealthController::class, 'health']);
