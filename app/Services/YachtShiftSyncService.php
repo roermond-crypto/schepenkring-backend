@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AuditLog;
 use App\Models\BoatField;
 use App\Models\BoatFieldChange;
+use App\Models\Location;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Models\YachtshiftSyncConflict;
@@ -124,6 +125,19 @@ class YachtShiftSyncService
 
             if (! $existing && empty($payload['status'])) {
                 $payload['status'] = 'imported';
+            }
+
+            // Same location_id/ref_harbor_id split that previously left yachts
+            // created via the wizard and public intake invisible to
+            // location-scoped staff (visibleYachtsQuery() filters on
+            // ref_harbor_id) — YachtShift-imported yachts need both columns
+            // set on creation too.
+            if (! $existing && empty($payload['location_id'])) {
+                $resolvedLocationId = $this->resolveImportLocationId($listing, $actor);
+                if ($resolvedLocationId) {
+                    $payload['location_id'] = $resolvedLocationId;
+                    $payload['ref_harbor_id'] = $resolvedLocationId;
+                }
             }
 
             if ($existing) {
@@ -725,6 +739,29 @@ class YachtShiftSyncService
         $normalized = str_replace(',', '.', preg_replace('/[^0-9,.\-]/', '', $value) ?? '');
 
         return is_numeric($normalized) ? (float) $normalized : null;
+    }
+
+    private function resolveImportLocationId(array $listing, ?User $actor): ?int
+    {
+        $code = $this->firstString($listing, ['location_code', 'harbor_code']);
+        if ($code) {
+            $locationId = Location::query()->where('code', $code)->value('id');
+            if ($locationId) {
+                return (int) $locationId;
+            }
+        }
+
+        $id = $this->firstInt($listing, ['location_id', 'harbor_id']);
+        if ($id && Location::query()->whereKey($id)->exists()) {
+            return $id;
+        }
+
+        if ($actor?->client_location_id) {
+            return (int) $actor->client_location_id;
+        }
+
+        return (int) (Location::query()->where('code', 'HQ')->value('id')
+            ?? Location::query()->orderBy('id')->value('id')) ?: null;
     }
 
     private function parseDate(mixed $value): ?Carbon
