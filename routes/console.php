@@ -33,3 +33,11 @@ Schedule::command('app:signhost-reminders')
     ->dailyAt('09:00')
     ->timezone(config('app.timezone', 'Europe/Amsterdam'))
     ->withoutOverlapping();
+
+// Email-first campaign funnel (spec §2): send due emails, score engaged
+// leads once they've had time to open/click, then trigger prioritised
+// voice calls within each campaign's configured calling hours.
+Schedule::command('campaigns:process')
+    ->everyFiveMinutes()
+    ->timezone(config('app.timezone', 'Europe/Amsterdam'))
+    ->withoutOverlapping();

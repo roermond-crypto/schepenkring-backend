@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\CopilotAuditController;
 use App\Http\Controllers\Api\CopilotController;
 use App\Http\Controllers\Api\CopilotVoiceSettingsController;
 use App\Http\Controllers\Api\ContractPartyController;
+use App\Http\Controllers\Api\EmailTrackingController;
 use App\Http\Controllers\Api\EmployeeUserController;
 use App\Http\Controllers\Api\FaqController;
 use App\Http\Controllers\Api\FaqKnowledgeController;
@@ -247,6 +248,11 @@ Route::post('sentry/webhook', [SentryWebhookController::class, 'handle']);
 // Internal voice gateway callbacks
 Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'store'])
     ->middleware('internal.secret');
+
+// Campaign email open/click tracking — hit directly by email clients and
+// recipients, never authenticated.
+Route::get('email/track/{token}.gif', [EmailTrackingController::class, 'pixel'])->name('email.track');
+Route::get('email/click/{token}', [EmailTrackingController::class, 'click'])->name('email.click');
 
 // ──────────────────────────────────────────────────────────
 // Authenticated routes

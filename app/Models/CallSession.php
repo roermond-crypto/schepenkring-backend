@@ -109,6 +109,11 @@ class CallSession extends Model
         return $this->belongsTo(Deal::class, 'deal_id');
     }
 
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
+    }
+
     public function ownerBid(): BelongsTo
     {
         return $this->belongsTo(OwnerBid::class, 'owner_bid_id');

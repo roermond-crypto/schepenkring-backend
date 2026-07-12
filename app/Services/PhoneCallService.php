@@ -402,6 +402,12 @@ class PhoneCallService
             'to_number' => $toNumber,
             'started_at' => now(),
             'provider' => $this->voiceProvider->name(),
+            'campaign_id' => data_get($message->metadata, 'campaign_id'),
+            'seller_id' => data_get($message->metadata, 'seller_id'),
+            'yacht_id' => data_get($message->metadata, 'yacht_id'),
+            'deal_id' => data_get($message->metadata, 'deal_id'),
+            'owner_bid_id' => data_get($message->metadata, 'owner_bid_id'),
+            'agent_id' => data_get($channel->metadata, 'agent_id') ?? data_get($message->metadata, 'agent_id'),
         ]);
 
         $conversation->last_call_at = now();
@@ -411,10 +417,22 @@ class PhoneCallService
             'to' => $toNumber,
             'from' => $fromNumber,
             // Telnyx-specific routing hints; RetellVoiceProvider ignores
-            // these and reads 'agent_id' instead (set below).
+            // these and reads 'agent_id'/'dynamic_variables'/'metadata' instead.
             'connection_id' => data_get($channel->metadata, 'connection_id') ?? config('services.telnyx.connection_id'),
             'application_id' => data_get($channel->metadata, 'application_id') ?? config('services.telnyx.application_id'),
-            'agent_id' => data_get($channel->metadata, 'agent_id'),
+            'agent_id' => $session->agent_id,
+            // Personalization variables per spec §6 (user_name, yacht_name,
+            // onboarding_url, ...) — set by the caller (e.g. CampaignService)
+            // on $message->metadata['dynamic_variables'].
+            'dynamic_variables' => data_get($message->metadata, 'dynamic_variables'),
+            'metadata' => array_filter([
+                'campaign_id' => $session->campaign_id,
+                'campaign_target_id' => data_get($message->metadata, 'campaign_target_id'),
+                'seller_id' => $session->seller_id,
+                'yacht_id' => $session->yacht_id,
+                'deal_id' => $session->deal_id,
+                'owner_bid_id' => $session->owner_bid_id,
+            ], fn ($value) => $value !== null),
         ];
 
         $result = $this->voiceProvider->initiateOutboundCall(array_filter($payload, fn ($value) => $value !== null));
