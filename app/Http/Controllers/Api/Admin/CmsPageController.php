@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CmsPage;
 use App\Services\Cms\CmsComponentRegistry;
 use App\Services\Cms\CmsPageService;
+use App\Services\Cms\LanguageQualityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -13,8 +14,15 @@ use Illuminate\Validation\ValidationException;
 
 class CmsPageController extends Controller
 {
-    public function __construct(private readonly CmsPageService $cmsPages)
+    public function __construct(
+        private readonly CmsPageService $cmsPages,
+        private readonly LanguageQualityService $languageQuality,
+    ) {
+    }
+
+    public function checkLanguageQuality(CmsPage $cmsPage): JsonResponse
     {
+        return response()->json(['data' => $this->languageQuality->check($cmsPage)]);
     }
 
     public function componentRegistry(): JsonResponse
@@ -109,7 +117,18 @@ class CmsPageController extends Controller
 
     public function publish(Request $request, CmsPage $cmsPage): JsonResponse
     {
-        return response()->json(['data' => $this->cmsPages->publish($cmsPage, $request->user())]);
+        $force = $request->boolean('force');
+
+        try {
+            $page = $this->cmsPages->publish($cmsPage, $request->user(), $force);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Language quality issues found — review before publishing.',
+                'quality_issues' => $e->errors()['_issues'] ?? [],
+            ], 422);
+        }
+
+        return response()->json(['data' => $page]);
     }
 
     public function schedule(Request $request, CmsPage $cmsPage): JsonResponse

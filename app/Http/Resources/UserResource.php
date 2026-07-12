@@ -85,6 +85,7 @@ class UserResource extends JsonResource
                 : ($this->relationLoaded('locations')
                     ? $this->locations->isNotEmpty()
                     : $this->location_id !== null),
+            'can_manage_content' => $this->canManageContent(),
             'can_access_board' => $this->isAdmin()
                 || ($this->isClient() && $this->client_location_id !== null)
                 || ($this->isEmployee() && (

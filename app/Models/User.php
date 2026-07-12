@@ -37,6 +37,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'phone',
         'avatar',
         'is_active',
+        'can_manage_content',
         'invited_by',
         'last_login_at',
         'lockscreen_code',
@@ -79,6 +80,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'last_login_at'               => 'datetime',
             'password'                    => 'hashed',
             'is_active'                   => 'boolean',
+            'can_manage_content'          => 'boolean',
             'lockscreen_timeout'          => 'integer',
             'otp_enabled'                 => 'boolean',
             'type'                        => UserType::class,
@@ -97,6 +99,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isStaff(): bool
     {
         return $this->isAdmin() || $this->isEmployee();
+    }
+
+    public function canManageContent(): bool
+    {
+        return $this->isAdmin() && (bool) $this->can_manage_content;
     }
 
     // ── Relationships ────────────────────────────────────

@@ -29,6 +29,7 @@ class UpdateUserAction
             'street', 'house_number', 'address_line1', 'address_line2',
             'city', 'state', 'postal_code', 'country',
             'two_factor_enabled',
+            'can_manage_content',
         ]);
 
         $target->loadMissing(['locations', 'clientLocation']);

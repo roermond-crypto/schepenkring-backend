@@ -858,6 +858,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('cms/pages/{cmsPage}/schedule', [AdminCmsPageController::class, 'schedule']);
     Route::post('cms/pages/{cmsPage}/archive', [AdminCmsPageController::class, 'archive']);
     Route::get('cms/pages/{cmsPage}/versions', [AdminCmsPageController::class, 'versions']);
+    Route::get('cms/pages/{cmsPage}/language-quality', [AdminCmsPageController::class, 'checkLanguageQuality']);
     Route::post('cms/pages/{cmsPage}/restore-version', [AdminCmsPageController::class, 'restoreVersion']);
 
     // CMS — media library

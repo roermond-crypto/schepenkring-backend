@@ -34,6 +34,9 @@ class AdminUserUpdateRequest extends ApiRequest
 
             // Security
             'two_factor_enabled'    => ['sometimes', 'boolean'],
+
+            // Permissions
+            'can_manage_content'    => ['sometimes', 'boolean'],
             'password'              => ['sometimes', 'nullable', 'string', 'min:8'],
             'password_confirmation' => ['sometimes', 'nullable', 'string', 'same:password'],
 

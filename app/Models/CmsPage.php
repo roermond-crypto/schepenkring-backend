@@ -15,10 +15,17 @@ class CmsPage extends Model
     public const STATUS_SCHEDULED = 'scheduled';
     public const STATUS_ARCHIVED = 'archived';
 
+    public const LOCALE_STATUS_MISSING = 'missing';
+    public const LOCALE_STATUS_DRAFT = 'draft';
+    public const LOCALE_STATUS_NEEDS_REVIEW = 'needs_review';
+    public const LOCALE_STATUS_APPROVED = 'approved';
+    public const LOCALE_STATUS_PUBLISHED = 'published';
+
     protected $fillable = [
         'slug',
         'name',
         'status',
+        'locale_status',
         'scheduled_publish_at',
         'published_at',
         'seo',
@@ -28,6 +35,7 @@ class CmsPage extends Model
 
     protected $casts = [
         'seo' => 'array',
+        'locale_status' => 'array',
         'scheduled_publish_at' => 'datetime',
         'published_at' => 'datetime',
         'current_version' => 'integer',
