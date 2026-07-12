@@ -3,7 +3,11 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\AuditLogController as AdminAuditLogController;
+use App\Http\Controllers\Api\Admin\CampaignController as AdminCampaignController;
 use App\Http\Controllers\Api\Admin\SalesCommandCenterController;
+use App\Http\Controllers\Api\Admin\VoiceAgentController;
+use App\Http\Controllers\Api\Admin\VoiceCallController;
+use App\Http\Controllers\Api\Admin\VoiceNumberController;
 use App\Http\Controllers\Api\Admin\EmailTemplateController;
 use App\Http\Controllers\Api\Admin\ContractTemplateController;
 use App\Http\Controllers\Api\Admin\ContractTypeController;
@@ -657,6 +661,20 @@ Route::prefix('admin/sales-command-center')->middleware(['auth:sanctum', 'role:a
     Route::post('call-now', [SalesCommandCenterController::class, 'callNow']);
     Route::post('schedule-callback', [SalesCommandCenterController::class, 'scheduleCallback']);
     Route::post('mark-outcome', [SalesCommandCenterController::class, 'markOutcome']);
+});
+
+// Voice AI admin (spec §18) — agent/campaign/number configuration is
+// admin-only (spend caps, calling hours, credentials); call history stays
+// admin,employee like the rest of the Sales Command Center.
+Route::prefix('admin/voice-ai')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::apiResource('agents', VoiceAgentController::class)->except(['show']);
+    Route::apiResource('campaigns', AdminCampaignController::class);
+    Route::post('campaigns/{campaign}/targets', [AdminCampaignController::class, 'addTargets']);
+    Route::apiResource('numbers', VoiceNumberController::class)->except(['show']);
+});
+Route::prefix('admin/voice-ai')->middleware(['auth:sanctum', 'role:admin,employee'])->group(function () {
+    Route::get('calls', [VoiceCallController::class, 'index']);
+    Route::get('calls/{callSession}', [VoiceCallController::class, 'show']);
 });
 
 Route::prefix('employee')->middleware(['auth:sanctum', 'role:employee'])->group(function () {
