@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
+
 class EmailTemplateRendererService
 {
     /** All available tags (35 total) */
@@ -178,13 +180,25 @@ HTML;
     }
 
     /**
-     * Replace {{tag}} placeholders in a string.
+     * Replace {{tag}} placeholders in a string. Any {{tag}} left over after
+     * known substitutions — a template referencing a tag that was never in
+     * $tags — is logged and stripped rather than sent to a real recipient
+     * verbatim (this is what previously let raw "{{location_name}}" etc.
+     * reach the registration email).
      */
     public function replaceTags(string $content, array $tags): string
     {
         foreach ($tags as $key => $value) {
             $content = str_replace('{{' . $key . '}}', (string) ($value ?? ''), $content);
         }
+
+        if (preg_match_all('/\{\{\s*([\w.]+)\s*\}\}/', $content, $matches) > 0) {
+            Log::warning('Email template rendered with unresolved variables', [
+                'unresolved_tags' => array_values(array_unique($matches[1])),
+            ]);
+            $content = preg_replace('/\{\{\s*[\w.]+\s*\}\}/', '', $content);
+        }
+
         return $content;
     }
 
@@ -321,6 +335,13 @@ HTML;
         $alt    = $this->replaceTags($s['alt'] ?? '{{location_name}}', $tags);
         $height = (int) ($s['height'] ?? 50);
         $align  = $s['align'] ?? 'center';
+
+        // No logo configured (empty COMPANY_LOGO_URL and no location-specific
+        // override) — omit the block entirely rather than emit a broken
+        // <img> with an empty src, matching renderImage()'s existing guard.
+        if ($src === '') {
+            return '';
+        }
 
         return <<<HTML
 <div style="text-align:{$align};margin-bottom:20px;">
