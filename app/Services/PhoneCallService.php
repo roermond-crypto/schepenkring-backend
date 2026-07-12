@@ -225,6 +225,12 @@ class PhoneCallService
         $session->metadata = array_merge($session->metadata ?? [], ['dynamic_variables' => $metadata, 'raw_started' => $call]);
         $session->save();
 
+        if ($isNew) {
+            $this->activityFeed->record('call_session', $session->id, 'call.created', "Retell {$direction} call started", [
+                'external_call_id' => $externalCallId,
+            ]);
+        }
+
         if ($isNew && $direction === 'inbound' && $fromNumber && $toNumber) {
             $this->handleInboundCall($session, ['to' => ['phone_number' => $toNumber]], $fromNumber, $toNumber);
         }
@@ -279,6 +285,11 @@ class PhoneCallService
         }
 
         $this->createSummaryMessage($session);
+
+        $this->activityFeed->record('call_session', $session->id, 'call.ended', "Call ended ({$session->duration_seconds}s, {$session->outcome})", [
+            'duration_seconds' => $session->duration_seconds,
+            'cost_eur' => $session->cost_eur,
+        ]);
     }
 
     public function handleRetellCallAnalyzed(array $call): void
@@ -313,6 +324,10 @@ class PhoneCallService
         }
 
         $this->createTranscriptMessage($session);
+
+        if ($session->transcript_text) {
+            $this->activityFeed->record('call_session', $session->id, 'call.transcript_received', 'Transcript received');
+        }
 
         $this->applyCallOutcome($session, data_get($call, 'call_analysis.custom_analysis_data', []));
     }

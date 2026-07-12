@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\CampaignTarget;
 use App\Models\Contact;
 use App\Models\FollowUp;
@@ -146,6 +147,29 @@ class FollowUpService
     private function suppressPermanently(string $subjectType, $subjectId, array $context): FollowUp
     {
         $this->markContactDoNotContact($subjectType, $subjectId);
+
+        // A separate, security-flavored AuditLog entry (not just the
+        // generic Activity Feed followup.created event created below) —
+        // permanent suppression is exactly the kind of event spec §19 calls
+        // out by name ("Suppression applied") and callers reviewing the
+        // compliance trail shouldn't have to infer it from a follow-up row.
+        // AuditLog.target_id is a legacy unsignedBigInteger column — only
+        // set it when the subject actually has a numeric id (call_session
+        // uses UUIDs and goes through meta instead, matching the same
+        // pattern used in RetellToolHelpers::safe()).
+        AuditLog::create([
+            'action' => 'suppression.applied',
+            'category' => 'voice_ai',
+            'risk_level' => 'low',
+            'result' => 'success',
+            'target_type' => is_numeric($subjectId) ? $subjectType : null,
+            'target_id' => is_numeric($subjectId) ? $subjectId : null,
+            'meta' => [
+                'reason' => $context['suppression_reason'] ?? 'requested_do_not_call',
+                'subject_type' => $subjectType,
+                'subject_id' => $subjectId,
+            ],
+        ]);
 
         return $this->create($subjectType, $subjectId, 'suppress', $context, [
             'status' => 'done',

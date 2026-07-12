@@ -134,24 +134,26 @@ class RetellToolContextController extends Controller
     {
         $validated = $request->validate(['location_id' => 'required|integer']);
 
-        $location = Location::find($validated['location_id']);
-        if (! $location) {
-            return response()->json(['found' => false]);
-        }
+        return $this->safe(function () use ($validated) {
+            $location = Location::find($validated['location_id']);
+            if (! $location) {
+                return response()->json(['found' => false]);
+            }
 
-        $address = implode(', ', array_filter([
-            trim($location->address_line1.' '.$location->street_number),
-            $location->postal_code,
-            $location->city,
-        ]));
+            $address = implode(', ', array_filter([
+                trim($location->address_line1.' '.$location->street_number),
+                $location->postal_code,
+                $location->city,
+            ]));
 
-        return response()->json([
-            'found' => true,
-            'name' => $location->name,
-            'phone' => $location->phone,
-            'email' => $location->email,
-            'address' => $address !== '' ? $address : null,
-        ]);
+            return response()->json([
+                'found' => true,
+                'name' => $location->name,
+                'phone' => $location->phone,
+                'email' => $location->email,
+                'address' => $address !== '' ? $address : null,
+            ]);
+        });
     }
 
     public function dealStatus(Request $request): JsonResponse

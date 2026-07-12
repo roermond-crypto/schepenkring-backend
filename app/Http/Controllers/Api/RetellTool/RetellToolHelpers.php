@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api\RetellTool;
 
+use App\Models\AuditLog;
 use App\Models\CallSession;
 use App\Services\IdempotencyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Shared plumbing for every POST /api/integrations/retell/tools/* endpoint:
@@ -38,14 +40,49 @@ trait RetellToolHelpers
         }
     }
 
+    /**
+     * Every tool call — successful or not — gets an AuditLog row (spec §19:
+     * "Tool call executed" / "Tool call failed", with actor/endpoint/
+     * status/request_id). There's no acting user to log as actor, and
+     * AuditLog.target_id is a legacy unsignedBigInteger column shared with
+     * many other features — CallSession uses UUID primary keys, so the
+     * call is identified via meta.call_session_id instead of target_id
+     * rather than risking an insert failure on a column this feature
+     * doesn't own.
+     */
     protected function safe(\Closure $callback): JsonResponse
     {
+        $requestId = (string) Str::uuid();
+        $endpoint = request()->path();
+        $session = $this->resolveCallSession(request());
+
         try {
-            return $callback();
+            $response = $callback();
+
+            AuditLog::create([
+                'action' => 'retell_tool.executed',
+                'category' => 'voice_ai',
+                'result' => 'success',
+                'location_id' => $session?->harbor_id,
+                'meta' => ['endpoint' => $endpoint, 'status' => $response->getStatusCode(), 'call_session_id' => $session?->id],
+                'request_id' => $requestId,
+            ]);
+
+            return $response;
         } catch (\Throwable $e) {
             Log::error('Retell tool call failed', [
-                'endpoint' => request()->path(),
+                'endpoint' => $endpoint,
                 'error' => $e->getMessage(),
+            ]);
+
+            AuditLog::create([
+                'action' => 'retell_tool.failed',
+                'category' => 'voice_ai',
+                'risk_level' => 'medium',
+                'result' => 'failure',
+                'location_id' => $session?->harbor_id,
+                'meta' => ['endpoint' => $endpoint, 'error' => $e->getMessage(), 'call_session_id' => $session?->id],
+                'request_id' => $requestId,
             ]);
 
             return response()->json(['error' => 'internal_error'], 500);
