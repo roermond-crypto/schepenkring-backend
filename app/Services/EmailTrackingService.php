@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\CampaignTarget;
+use App\Models\Conversation;
 use App\Models\EmailEvent;
+use App\Models\Message;
 use Illuminate\Support\Str;
 
 /**
@@ -61,11 +63,57 @@ class EmailTrackingService
 
     public function recordOpen(string $token): void
     {
-        EmailEvent::where('token', $token)->first()?->recordOpen();
+        $event = EmailEvent::where('token', $token)->first();
+        if (! $event) {
+            return;
+        }
+
+        $isFirstOpen = $event->recordOpen();
+
+        // Only the first open posts to Chat Hub (spec §10) — repeat pixel
+        // loads from email-client image re-fetching would otherwise spam
+        // the thread with "opened" messages on every scroll.
+        if ($isFirstOpen) {
+            $this->postToChatHub($event, 'campaign_email_opened', 'E-mail geopend door ontvanger.');
+        }
     }
 
     public function recordClick(string $token, string $url): void
     {
-        EmailEvent::where('token', $token)->first()?->recordClick($url);
+        $event = EmailEvent::where('token', $token)->first();
+        if (! $event) {
+            return;
+        }
+
+        $isNewUrl = $event->recordClick($url);
+
+        if ($isNewUrl) {
+            $this->postToChatHub($event, 'campaign_email_clicked', "Link aangeklikt in e-mail: {$url}");
+        }
+    }
+
+    private function postToChatHub(EmailEvent $event, string $messageType, string $text): void
+    {
+        if (! $event->conversation_id) {
+            return;
+        }
+
+        $conversation = Conversation::find($event->conversation_id);
+        if (! $conversation) {
+            return;
+        }
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'sender_type' => 'system',
+            'text' => $text,
+            'body' => $text,
+            'channel' => 'email',
+            'message_type' => $messageType,
+            'metadata' => ['email_event_id' => $event->id, 'source' => 'retell_voice'],
+        ]);
+
+        $conversation->last_message_at = now();
+        $conversation->save();
     }
 }

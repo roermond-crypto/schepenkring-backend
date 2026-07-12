@@ -8,6 +8,7 @@ use App\Models\Location;
 use App\Models\User;
 use App\Services\ActivityFeedService;
 use App\Services\FollowUpService;
+use App\Services\NotificationDispatchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,6 +24,7 @@ class RetellToolHandoffController extends Controller
     public function __construct(
         private FollowUpService $followUps,
         private ActivityFeedService $activityFeed,
+        private NotificationDispatchService $notifications,
     ) {
     }
 
@@ -43,6 +45,19 @@ class RetellToolHandoffController extends Controller
 
             if (! $broker || ! $broker->phone) {
                 $followUp = $this->fallbackToCallback($validated);
+
+                // Spec §11: "If nobody answers... Notify assigned broker" —
+                // applies just as much when nobody was even reachable to
+                // attempt the transfer in the first place.
+                if ($broker) {
+                    $this->notifications->notifyUser(
+                        $broker,
+                        'voice_call_transfer_missed',
+                        'Gemiste warme overdracht',
+                        $validated['reason'] ?? 'Een beller wilde worden doorverbonden, maar er was geen bereikbaar telefoonnummer geregistreerd.',
+                        ['location_id' => $location?->id, 'follow_up_id' => $followUp?->id],
+                    );
+                }
 
                 return response()->json([
                     'transfer_allowed' => false,

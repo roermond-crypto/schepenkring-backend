@@ -675,6 +675,7 @@ Route::prefix('admin/voice-ai')->middleware(['auth:sanctum', 'admin'])->group(fu
 Route::prefix('admin/voice-ai')->middleware(['auth:sanctum', 'role:admin,employee'])->group(function () {
     Route::get('calls', [VoiceCallController::class, 'index']);
     Route::get('calls/{callSession}', [VoiceCallController::class, 'show']);
+    Route::get('analytics', [VoiceCallController::class, 'analytics']);
 });
 
 Route::prefix('employee')->middleware(['auth:sanctum', 'role:employee'])->group(function () {

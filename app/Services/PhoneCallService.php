@@ -7,7 +7,9 @@ use App\Models\CallSession;
 use App\Models\ChannelIdentity;
 use App\Models\Conversation;
 use App\Models\HarborChannel;
+use App\Models\Location;
 use App\Models\Message;
+use App\Models\User;
 use App\Services\Voice\TelnyxVoiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -26,6 +28,7 @@ class PhoneCallService
         private RetellCallOutcomeValidator $outcomeValidator,
         private FollowUpService $followUps,
         private ActivityFeedService $activityFeed,
+        private NotificationDispatchService $notifications,
     ) {
     }
 
@@ -257,7 +260,21 @@ class PhoneCallService
         }
         $session->duration_seconds = $session->duration_seconds ?: $duration;
         $session->transfer_status = $call['transfer_status'] ?? $session->transfer_status;
-        $session->outcome = $session->outcome ?: ($session->answered_at ? 'completed' : 'missed');
+
+        // Retell has no separate "call errored" webhook event — a failed
+        // call still arrives as call_ended, distinguished by call_status
+        // and/or disconnection_reason (e.g. error_llm_websocket_open,
+        // error_no_audio_received, error_twilio, ...).
+        $callStatus = $call['call_status'] ?? null;
+        $disconnectionReason = (string) ($call['disconnection_reason'] ?? '');
+        $isError = $callStatus === 'error' || str_starts_with($disconnectionReason, 'error_');
+
+        if ($isError) {
+            $session->outcome = $session->outcome ?: 'failed';
+            $session->failure_reason = $session->failure_reason ?: $disconnectionReason;
+        } else {
+            $session->outcome = $session->outcome ?: ($session->answered_at ? 'completed' : 'missed');
+        }
 
         $callCost = data_get($call, 'call_cost.combined_cost');
         if ($callCost !== null) {
@@ -286,10 +303,72 @@ class PhoneCallService
 
         $this->createSummaryMessage($session);
 
-        $this->activityFeed->record('call_session', $session->id, 'call.ended', "Call ended ({$session->duration_seconds}s, {$session->outcome})", [
-            'duration_seconds' => $session->duration_seconds,
-            'cost_eur' => $session->cost_eur,
-        ]);
+        $this->activityFeed->record(
+            'call_session',
+            $session->id,
+            $isError ? 'call.error' : 'call.ended',
+            $isError ? "Call ended in error ({$session->failure_reason})" : "Call ended ({$session->duration_seconds}s, {$session->outcome})",
+            [
+                'duration_seconds' => $session->duration_seconds,
+                'cost_eur' => $session->cost_eur,
+                'failure_reason' => $session->failure_reason,
+            ],
+        );
+
+        $this->notifyBrokerIfTransferUnanswered($session);
+    }
+
+    /**
+     * Spec §11: "If nobody answers [a warm transfer]... notify assigned
+     * broker." A transfer that was attempted but never picked up is
+     * reported here, in the call's own end-of-call payload (transfer_status)
+     * — distinct from RetellToolHandoffController's notification for a
+     * transfer that couldn't even be attempted (no reachable broker at all).
+     */
+    private function notifyBrokerIfTransferUnanswered(CallSession $session): void
+    {
+        $status = strtolower((string) ($session->transfer_status ?? ''));
+        if ($status === '' || in_array($status, ['completed', 'successful', 'success', 'answered'], true)) {
+            return;
+        }
+
+        if (! $session->harbor_id) {
+            return;
+        }
+
+        $location = Location::find($session->harbor_id);
+        $broker = $location?->default_seller_id ? User::find($location->default_seller_id) : null;
+        if (! $broker) {
+            return;
+        }
+
+        $this->notifications->notifyUser(
+            $broker,
+            'voice_call_transfer_missed',
+            'Warme overdracht niet beantwoord',
+            "Een warme overdracht naar u werd niet beantwoord (status: {$status}). Bekijk de wachtrij in het Sales Command Center.",
+            ['call_session_id' => $session->id, 'location_id' => $location->id],
+        );
+    }
+
+    /**
+     * Records a webhook event Retell sent under a name this integration
+     * doesn't recognize yet, so it isn't silently lost — check
+     * activity_events for 'webhook.unrecognized_event' if Retell's API
+     * ever adds a new event type this code hasn't been updated for.
+     */
+    public function handleRetellUnknownEvent(?string $eventType, array $call, array $payload): void
+    {
+        $externalCallId = $call['call_id'] ?? null;
+        $session = $externalCallId ? CallSession::where('external_call_id', $externalCallId)->first() : null;
+
+        $this->activityFeed->record(
+            'call_session',
+            $session?->id ?? 'unknown',
+            'webhook.unrecognized_event',
+            "Retell sent an unrecognized webhook event: {$eventType}",
+            ['event_type' => $eventType, 'payload' => $payload],
+        );
     }
 
     public function handleRetellCallAnalyzed(array $call): void

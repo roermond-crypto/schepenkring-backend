@@ -6,6 +6,7 @@ use App\Mail\TemplatedMail;
 use App\Models\Campaign;
 use App\Models\CampaignTarget;
 use App\Models\Contact;
+use App\Models\Conversation;
 use App\Models\Lead;
 use App\Models\Location;
 use App\Models\Message;
@@ -98,10 +99,30 @@ class CampaignService
             return;
         }
 
+        // Resolve/reuse the same conversation a later call to this target
+        // would use, so send/open/click events land in the one Chat Hub
+        // thread alongside the call (spec §10).
+        $conversation = $this->resolveConversationForTarget($info, 'email');
+
         $event = $this->tracking->createEvent($target, $campaign->email_template_key, $info['email']);
+        $event->update(['conversation_id' => $conversation?->id]);
         $rendered['html'] = $this->tracking->instrument($rendered['html'], $event->token);
 
         Mail::to($info['email'])->queue(TemplatedMail::fromResolved($rendered));
+
+        if ($conversation) {
+            Message::create([
+                'conversation_id' => $conversation->id,
+                'sender_type' => 'system',
+                'text' => "Campagne-e-mail verzonden: {$rendered['subject']}",
+                'body' => "Campagne-e-mail verzonden: {$rendered['subject']}",
+                'channel' => 'email',
+                'message_type' => 'campaign_email_sent',
+                'metadata' => ['campaign_id' => $campaign->id, 'email_event_id' => $event->id, 'source' => 'retell_voice'],
+            ]);
+            $conversation->last_message_at = now();
+            $conversation->save();
+        }
 
         $target->update(['status' => 'emailed', 'last_action_at' => now()]);
 
@@ -109,6 +130,26 @@ class CampaignService
             'campaign_id' => $campaign->id,
             'email_event_id' => $event->id,
         ]);
+    }
+
+    /**
+     * Shared by sendCampaignEmail() and triggerCall() so an email sent to a
+     * target and a later call to the same target land in the same Chat Hub
+     * thread — ChatConversationService's own reuse matching is by contact +
+     * location, not channel, so this works across both call sites.
+     */
+    private function resolveConversationForTarget(array $info, string $channelOrigin): ?Conversation
+    {
+        if (! $info['email'] && ! $info['phone']) {
+            return null;
+        }
+
+        return $this->chatService->createConversation([
+            'contact' => array_filter(['name' => $info['name'], 'email' => $info['email'], 'phone' => $info['phone']]),
+            'channel_origin' => $channelOrigin,
+            'harbor_id' => $info['location_id'],
+            'reuse' => true,
+        ], Request::create('/campaigns/resolve-conversation', 'POST'));
     }
 
     private function scoreEngagedTargets(Campaign $campaign): void
@@ -160,12 +201,7 @@ class CampaignService
             return;
         }
 
-        $conversation = $this->chatService->createConversation([
-            'contact' => array_filter(['name' => $info['name'], 'email' => $info['email'], 'phone' => $info['phone']]),
-            'channel_origin' => 'phone',
-            'harbor_id' => $info['location_id'],
-            'reuse' => true,
-        ], Request::create('/campaigns/trigger-call', 'POST'));
+        $conversation = $this->resolveConversationForTarget($info, 'phone');
 
         $message = Message::create([
             'conversation_id' => $conversation->id,
@@ -230,6 +266,21 @@ class CampaignService
                 'location_id' => null,
                 'language' => $model->language_preferred,
                 'user' => $model->user,
+                'yacht_id' => null,
+                'lead' => null,
+            ],
+            // Harbor/location outreach (spec §5) — prefer the location's
+            // assigned owner/manager (default_seller_id) as the addressee;
+            // fall back to the location's own contact details when no
+            // specific person is on file yet, since outreach to a brand-new
+            // prospective partner harbor may not have one.
+            $model instanceof Location => [
+                'name' => $model->defaultSeller?->name ?? $model->name,
+                'email' => $model->defaultSeller?->email ?? $model->email,
+                'phone' => $model->defaultSeller?->phone ?? $model->phone,
+                'location_id' => $model->id,
+                'language' => $model->defaultSeller?->locale,
+                'user' => $model->defaultSeller,
                 'yacht_id' => null,
                 'lead' => null,
             ],

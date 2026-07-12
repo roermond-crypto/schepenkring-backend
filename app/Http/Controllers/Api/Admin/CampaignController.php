@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Campaign;
 use App\Models\CampaignTarget;
 use App\Models\Lead;
+use App\Models\Location;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -65,7 +66,32 @@ class CampaignController extends Controller
             'location_id' => 'nullable|integer',
             'lead_ids' => 'nullable|array',
             'lead_ids.*' => 'integer',
+            // Harbor/location outreach (spec §5) — targets a set of
+            // locations directly rather than leads at all.
+            'target_location_ids' => 'nullable|array',
+            'target_location_ids.*' => 'integer|exists:locations,id',
         ]);
+
+        $added = 0;
+
+        if (! empty($validated['target_location_ids'])) {
+            $existingLocationIds = $campaign->targets()->where('target_type', 'location')->pluck('target_id');
+            $locationIds = Location::whereIn('id', $validated['target_location_ids'])
+                ->whereNotIn('id', $existingLocationIds)
+                ->pluck('id');
+
+            foreach ($locationIds as $locationId) {
+                CampaignTarget::create([
+                    'campaign_id' => $campaign->id,
+                    'target_type' => 'location',
+                    'target_id' => $locationId,
+                    'status' => 'pending',
+                ]);
+                $added++;
+            }
+
+            return response()->json(['added' => $added]);
+        }
 
         $query = Lead::query();
         if (! empty($validated['lead_ids'])) {

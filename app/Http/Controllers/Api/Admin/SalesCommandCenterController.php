@@ -9,12 +9,14 @@ use App\Models\CampaignTarget;
 use App\Models\FollowUp;
 use App\Models\Lead;
 use App\Models\User;
+use App\Models\Yacht;
 use App\Services\ActivityFeedService;
 use App\Services\CampaignService;
 use App\Services\FollowUpService;
 use App\Services\LocationAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * Backing endpoint for the Sales Command Center (spec §17) — aggregates
@@ -48,7 +50,11 @@ class SalesCommandCenterController extends Controller
 
     private function dueFollowUps(bool $scoped, array $locationIds): array
     {
-        $query = FollowUp::with(['assignedEmployee:id,name', 'relatedYacht:id,boat_name,ref_harbor_id,location_id'])
+        $query = FollowUp::with([
+            'assignedEmployee:id,name',
+            'relatedYacht:id,boat_name,ref_harbor_id,location_id',
+            'relatedDeal:id,status,agreed_amount',
+        ])
             ->where('status', 'open')
             ->where(fn ($q) => $q->whereNull('due_at')->orWhere('due_at', '<=', now()))
             ->orderBy('due_at');
@@ -77,13 +83,14 @@ class SalesCommandCenterController extends Controller
             'ai_summary' => $f->ai_summary,
             'assigned_employee' => $f->assignedEmployee?->name,
             'related_yacht' => $f->relatedYacht ? ['id' => $f->relatedYacht->id, 'boat_name' => $f->relatedYacht->boat_name] : null,
+            'related_deal' => $f->relatedDeal ? ['id' => $f->relatedDeal->id, 'status' => $f->relatedDeal->status, 'agreed_amount' => $f->relatedDeal->agreed_amount] : null,
             'related_chat_thread_id' => $f->related_chat_thread_id,
         ])->all();
     }
 
     private function prioritizedLeads(bool $scoped, array $locationIds): array
     {
-        $query = CampaignTarget::with('campaign:id,name')
+        $query = CampaignTarget::with(['campaign:id,name', 'emailEvents'])
             ->where('target_type', 'lead')
             ->where('status', 'scored')
             ->orderByDesc('score');
@@ -94,6 +101,7 @@ class SalesCommandCenterController extends Controller
 
         return $query->limit(30)->get()->map(function (CampaignTarget $target) {
             $lead = Lead::find($target->target_id);
+            $yacht = $lead?->yacht_id ? Yacht::find($lead->yacht_id, ['id', 'boat_name', 'completeness_score']) : null;
 
             return [
                 'campaign_target_id' => $target->id,
@@ -101,10 +109,15 @@ class SalesCommandCenterController extends Controller
                 'score' => $target->score,
                 'call_attempts' => $target->call_attempts,
                 'lead_id' => $lead?->id,
+                'lead_status' => $lead?->status,
                 'name' => $lead?->name,
                 'phone' => $lead?->phone,
                 'yacht_id' => $lead?->yacht_id,
+                'yacht_name' => $yacht?->boat_name,
+                'yacht_completeness_score' => $yacht?->completeness_score,
                 'location_id' => $lead?->location_id,
+                'email_opens' => (int) $target->emailEvents->sum('open_count'),
+                'email_clicks' => (int) $target->emailEvents->sum('click_count'),
             ];
         })->all();
     }
@@ -125,8 +138,11 @@ class SalesCommandCenterController extends Controller
             'direction' => $call->direction,
             'outcome' => $call->outcome,
             'duration_seconds' => $call->duration_seconds,
+            'cost_eur' => $call->cost_eur,
             'ended_at' => $call->ended_at?->toIso8601String(),
             'summary' => data_get($call->metadata, 'ai_summary'),
+            'transcript_preview' => $call->transcript_text ? Str::limit($call->transcript_text, 220) : null,
+            'has_recording' => (bool) $call->recording_url,
             'seller' => $call->seller?->name,
             'yacht' => $call->yacht?->boat_name,
             'conversation_id' => $call->conversation_id,

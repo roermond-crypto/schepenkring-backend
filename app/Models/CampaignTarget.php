@@ -38,17 +38,19 @@ class CampaignTarget extends Model
     }
 
     /**
-     * The underlying entity this target represents — a Lead, User, or
-     * Contact. Not a true polymorphic relation (no morph map) since each
+     * The underlying entity this target represents — a Lead, User,
+     * Contact, or (for harbor/location outreach campaigns, spec §5) a
+     * Location. Not a true polymorphic relation (no morph map) since each
      * target type needs different contact-resolution logic anyway; callers
      * that need the model should use this, not a raw where() on target_id.
      */
-    public function targetModel(): Lead|User|Contact|null
+    public function targetModel(): Lead|User|Contact|Location|null
     {
         return match ($this->target_type) {
             'lead' => Lead::find($this->target_id),
             'user' => User::find($this->target_id),
             'contact' => Contact::find($this->target_id),
+            'location' => Location::find($this->target_id),
             default => null,
         };
     }

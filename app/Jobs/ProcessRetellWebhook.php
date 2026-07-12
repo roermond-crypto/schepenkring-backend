@@ -42,7 +42,15 @@ class ProcessRetellWebhook implements ShouldQueue
                     $phoneService->handleRetellCallAnalyzed($call);
                     break;
                 default:
-                    Log::info('Retell webhook ignored', ['event_type' => $eventType]);
+                    // Retell's documented webhook taxonomy is only these
+                    // three events — call failures surface as a
+                    // call_status/disconnection_reason on call_ended,
+                    // handled there, not as a separate error event. Still,
+                    // an unrecognized event type is recorded (not just
+                    // logged and discarded) in case Retell's API adds one
+                    // later that this integration doesn't know about yet.
+                    $phoneService->handleRetellUnknownEvent($eventType, $call, $payload);
+                    Log::warning('Retell webhook event type not recognized', ['event_type' => $eventType]);
                     break;
             }
 
