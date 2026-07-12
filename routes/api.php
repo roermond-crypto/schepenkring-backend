@@ -72,6 +72,9 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublicLeadController;
 use App\Http\Controllers\Api\PublicConversationMessageController;
 use App\Http\Controllers\Api\SentryWebhookController;
+use App\Http\Controllers\Api\RetellTool\RetellToolActionController;
+use App\Http\Controllers\Api\RetellTool\RetellToolContextController;
+use App\Http\Controllers\Api\RetellTool\RetellToolHandoffController;
 use App\Http\Controllers\Api\RetellWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SignhostController;
@@ -244,6 +247,26 @@ Route::post('webhooks/whatsapp/360dialog', [WhatsApp360DialogWebhookController::
 Route::post('webhooks/telnyx/voice', [TelnyxVoiceWebhookController::class, 'handle']);
 Route::post('webhooks/retell', [RetellWebhookController::class, 'handle']);
 Route::post('sentry/webhook', [SentryWebhookController::class, 'handle']);
+
+// Retell agent tool calls — mid-conversation function calls, gated by a
+// shared secret (retell.tools middleware) rather than user auth, since
+// there is no logged-in user on these requests.
+Route::prefix('integrations/retell/tools')->middleware('retell.tools')->group(function () {
+    Route::post('users/get-context', [RetellToolContextController::class, 'userContext']);
+    Route::post('sellers/get-context', [RetellToolContextController::class, 'sellerContext']);
+    Route::post('buyers/get-context', [RetellToolContextController::class, 'buyerContext']);
+    Route::post('yachts/get-context', [RetellToolContextController::class, 'yachtContext']);
+    Route::post('locations/get-context', [RetellToolContextController::class, 'locationContext']);
+    Route::post('deals/get-status', [RetellToolContextController::class, 'dealStatus']);
+    Route::post('bids/get-status', [RetellToolContextController::class, 'bidStatus']);
+    Route::post('contracts/get-status', [RetellToolContextController::class, 'contractStatus']);
+    Route::post('payments/get-status', [RetellToolContextController::class, 'paymentStatus']);
+    Route::post('appointments/create', [RetellToolActionController::class, 'createAppointment']);
+    Route::post('callbacks/create', [RetellToolActionController::class, 'createCallback']);
+    Route::post('onboarding/send-link', [RetellToolActionController::class, 'sendOnboardingLink']);
+    Route::post('onboarding/get-status', [RetellToolActionController::class, 'onboardingStatus']);
+    Route::post('handoffs/find-destination', [RetellToolHandoffController::class, 'findDestination']);
+});
 
 // Internal voice gateway callbacks
 Route::post('internal/voice/transcript', [VoiceTranscriptController::class, 'store'])

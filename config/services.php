@@ -146,6 +146,11 @@ return [
         'base_url' => env('RETELL_BASE_URL', 'https://api.retellai.com'),
         'api_key' => env('RETELL_API_KEY'),
         'webhook_secret' => env('RETELL_WEBHOOK_SECRET'),
+        // Shared secret Retell sends as a custom header on every tool-call
+        // request (configured per-tool in the Retell agent dashboard) —
+        // separate from webhook_secret since tools and webhooks are
+        // different call directions with independent credentials.
+        'tools_secret' => env('RETELL_TOOLS_SECRET'),
     ],
 
     'integrations' => [

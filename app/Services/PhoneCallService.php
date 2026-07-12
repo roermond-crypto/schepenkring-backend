@@ -22,7 +22,10 @@ class PhoneCallService
         private ChatConversationService $chatService,
         private ChatContactService $contactService,
         private VoiceProvider $voiceProvider,
-        private PhoneBillingService $billing
+        private PhoneBillingService $billing,
+        private RetellCallOutcomeValidator $outcomeValidator,
+        private FollowUpService $followUps,
+        private ActivityFeedService $activityFeed,
     ) {
     }
 
@@ -311,10 +314,76 @@ class PhoneCallService
 
         $this->createTranscriptMessage($session);
 
-        // Structured-outcome validation and downstream actions (follow-ups,
-        // deal/bid/appointment updates, suppression) are applied by
-        // RetellCallOutcomeValidator + FollowUpService — added in the next
-        // milestone. This method only persists what Retell reported.
+        $this->applyCallOutcome($session, data_get($call, 'call_analysis.custom_analysis_data', []));
+    }
+
+    /**
+     * Validates Retell's structured outcome before letting anything act on
+     * it (spec §16 — "Laravel validates this before updating statuses,
+     * creating appointments, sending emails, suppressing future calls, or
+     * updating deal/bid records"). An invalid/unrecognized outcome is
+     * logged to the Activity Feed for manual review instead of being
+     * silently dropped or blindly trusted.
+     */
+    private function applyCallOutcome(CallSession $session, array $analysisData): void
+    {
+        if (empty($analysisData)) {
+            return;
+        }
+
+        $result = $this->outcomeValidator->validate($analysisData);
+
+        if (! $result['valid']) {
+            $this->activityFeed->record('call_session', $session->id, 'call.outcome.invalid', 'Retell reported an unrecognized or inconsistent call outcome', [
+                'errors' => $result['errors'],
+                'raw' => $analysisData,
+            ]);
+
+            return;
+        }
+
+        [$subjectType, $subjectId] = $this->resolveOutcomeSubject($session);
+        if (! $subjectId) {
+            return;
+        }
+
+        $campaignTargetId = data_get($session->metadata, 'campaign_target_id');
+
+        $this->followUps->applyOutcome($subjectType, $subjectId, $result['outcome'], array_filter([
+            'campaign_target_id' => $campaignTargetId,
+            'ai_summary' => data_get($session->metadata, 'ai_summary'),
+            'related_yacht_id' => $session->yacht_id,
+            'related_deal_id' => $session->deal_id,
+            'related_chat_thread_id' => $session->conversation_id,
+        ], fn ($value) => $value !== null));
+
+        $session->outcome = $result['outcome'];
+        $session->save();
+
+        $this->activityFeed->record($subjectType, $subjectId, 'call.outcome.applied', "Call outcome applied: {$result['outcome']}", [
+            'call_session_id' => $session->id,
+        ]);
+    }
+
+    /**
+     * @return array{0: string, 1: int|string|null}
+     */
+    private function resolveOutcomeSubject(CallSession $session): array
+    {
+        if ($session->seller_id) {
+            return ['user', $session->seller_id];
+        }
+
+        $leadId = data_get($session->metadata, 'lead_id');
+        if ($leadId) {
+            return ['lead', $leadId];
+        }
+
+        if ($session->contact_id) {
+            return ['contact', $session->contact_id];
+        }
+
+        return ['call_session', $session->id];
     }
 
     private function parseRetellTimestamp(mixed $value): ?Carbon
