@@ -1020,6 +1020,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/platforms')->group(f
     Route::get('/', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'index']);
     Route::post('/', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'store']);
     Route::get('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'show']);
+    Route::get('{platform}/health', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'health']);
     Route::put('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'update']);
     Route::patch('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'update']);
     Route::delete('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'destroy']);

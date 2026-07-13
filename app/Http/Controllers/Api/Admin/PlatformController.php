@@ -7,6 +7,7 @@ use App\Http\Requests\Api\StorePlatformRequest;
 use App\Http\Requests\Api\UpdatePlatformRequest;
 use App\Models\AuditLog;
 use App\Models\Platform;
+use App\Services\PlatformHealthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -14,6 +15,11 @@ use Illuminate\Support\Str;
 class PlatformController extends Controller
 {
     private const MASKED_CREDENTIAL_KEYS = ['api_secret', 'webhook_secret'];
+
+    public function __construct(
+        private readonly PlatformHealthService $health,
+    ) {
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -108,5 +114,10 @@ class PlatformController extends Controller
         ]);
 
         return response()->json(['message' => 'Platform deleted']);
+    }
+
+    public function health(Platform $platform): JsonResponse
+    {
+        return response()->json($this->health->forPlatform($platform));
     }
 }
