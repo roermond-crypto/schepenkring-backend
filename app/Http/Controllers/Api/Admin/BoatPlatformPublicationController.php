@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\BoatPlatformPublication;
 use App\Models\Platform;
 use App\Models\Yacht;
@@ -107,6 +108,7 @@ class BoatPlatformPublicationController extends Controller
 
         $pub->update([
             'last_sync_at' => now(),
+            'last_success_at' => now(),
             'status'       => 'synced',
             'retry_count'  => 0,
         ]);
@@ -115,6 +117,17 @@ class BoatPlatformPublicationController extends Controller
             'yacht_id'    => $yacht->id,
             'platform_id' => $platform->id,
             'platform'    => $platform->name,
+        ]);
+
+        AuditLog::create([
+            'action'      => 'platform.publication.synced',
+            'risk_level'  => 'low',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => ['yacht_id' => $yacht->id],
+            'ip_address'  => $request->ip(),
         ]);
 
         return response()->json([

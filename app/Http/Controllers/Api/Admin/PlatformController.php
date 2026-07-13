@@ -174,8 +174,20 @@ class PlatformController extends Controller
     public function previewFeed(Request $request, Platform $platform): JsonResponse
     {
         $yachtId = $request->filled('yacht_id') ? (int) $request->input('yacht_id') : null;
+        $result = $this->exportTools->previewFeed($platform, $yachtId);
 
-        return response()->json($this->exportTools->previewFeed($platform, $yachtId));
+        AuditLog::create([
+            'action'      => empty($result['error']) ? 'platform.export.feed_generated' : 'platform.export.feed_failed',
+            'risk_level'  => 'low',
+            'result'      => empty($result['error']) ? 'success' : 'failure',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => ['yacht_id' => $result['yacht_id'] ?? null, 'error' => $result['error'] ?? null],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json($result);
     }
 
     public function previewPayload(Request $request, Platform $platform): JsonResponse
