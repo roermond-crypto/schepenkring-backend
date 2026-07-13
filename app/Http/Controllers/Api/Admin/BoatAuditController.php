@@ -13,12 +13,23 @@ class BoatAuditController extends Controller
      */
     public function index(Request $request)
     {
-        $query = BoatFieldChange::with(['user:id,name,email,avatar', 'yacht:id,boat_name'])
+        $query = BoatFieldChange::with(['user:id,name,email,avatar', 'yacht:id,boat_name', 'platform:id,name'])
             ->orderByDesc('created_at');
 
         // Filter by specific yacht
         if ($request->filled('yacht_id')) {
             $query->where('yacht_id', $request->input('yacht_id'));
+        }
+
+        // Filter by platform (AI Quality Dashboard deep-links) — "0" means
+        // the unscoped/"General" bucket (platform_id IS NULL).
+        if ($request->filled('platform_id')) {
+            $platformId = $request->input('platform_id');
+            if ($platformId === '0' || $platformId === 0) {
+                $query->whereNull('platform_id');
+            } else {
+                $query->where('platform_id', $platformId);
+            }
         }
 
         // Filter by field name

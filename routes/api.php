@@ -902,6 +902,8 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('audit', [AdminAuditLogController::class, 'index']);
     Route::get('audit/{id}', [AdminAuditLogController::class, 'show']);
     Route::get('boat-audit', [\App\Http\Controllers\Api\Admin\BoatAuditController::class, 'index']);
+    Route::get('ai-quality/summary', [\App\Http\Controllers\Api\Admin\AiQualityController::class, 'summary']);
+    Route::get('ai-quality/feedback', [\App\Http\Controllers\Api\Admin\AiQualityController::class, 'feedback']);
 
     // Issue management (admin)
     Route::get('issues', [IssueController::class, 'index'])->missing(fn () => response()->json(['message' => 'Not found'], 404));
