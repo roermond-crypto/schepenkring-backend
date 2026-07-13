@@ -29,7 +29,10 @@ return new class extends Migration
             $table->json('warnings')->nullable();
             $table->timestamps();
 
-            $table->index(['mapping_regression_run_id', 'passed']);
+            // Explicit short name — the auto-generated one
+            // ("mapping_regression_run_results_mapping_regression_run_id_passed_index")
+            // is 71 characters, over MySQL's 64-character identifier limit.
+            $table->index(['mapping_regression_run_id', 'passed'], 'mrr_results_run_passed_idx');
         });
     }
 
