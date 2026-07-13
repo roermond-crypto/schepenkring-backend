@@ -131,7 +131,7 @@ class OpenMarineService
      */
     private function resolveMappedValue(Yacht $yacht, string $field): array
     {
-        if (str_starts_with($field, '(')) {
+        if ($field === '' || str_starts_with($field, '(')) {
             return [null, true];
         }
 
@@ -150,9 +150,262 @@ class OpenMarineService
     }
 
     /**
-     * Build the OpenMarine 2.0 XML string.
+     * Groups render as a child element of <boat> (e.g. <price>, <engine>),
+     * except Identity, whose fields attach directly to <boat>. Order here is
+     * the actual output order and matches the mapping table's original
+     * hardcoded sequence.
+     */
+    private const GROUP_ORDER = ['Identity', 'Price', 'Dimensions', 'Engine', 'Descriptions', 'Location', 'Images'];
+
+    private const GROUP_NODE_NAMES = [
+        'Price' => 'price',
+        'Dimensions' => 'dimensions',
+        'Engine' => 'engine',
+        'Location' => 'location',
+    ];
+
+    /**
+     * The <engine> node is only emitted when at least one of these specific
+     * yacht attributes is non-empty (matches the original condition exactly
+     * — NOT "any engine field resolved," which would also fire for e.g. a
+     * lone engine_year with no manufacturer/horsepower, something the
+     * original hardcoded implementation never did).
+     */
+    private const ENGINE_TRIGGER_FIELDS = ['engine_manufacturer', 'horse_power'];
+
+    /**
+     * Build the OpenMarine 2.0 XML string from the OpenMarineFieldMapping
+     * table — this is the actual export logic; editing a mapping row (via
+     * the mapping editor) genuinely changes what gets generated here.
      */
     private function buildXml(Yacht $yacht): string
+    {
+        $xml = new SimpleXMLElement(
+            '<?xml version="1.0" encoding="UTF-8"?><openmarine version="2.0"/>'
+        );
+        $boatNode = $xml->addChild('boat');
+
+        $mappingsByGroup = OpenMarineFieldMapping::orderBy('id')
+            ->get()
+            ->groupBy(fn (OpenMarineFieldMapping $m) => $m->group_label ?? 'Identity');
+
+        foreach (self::GROUP_ORDER as $groupLabel) {
+            $rows = $mappingsByGroup->get($groupLabel);
+            if (! $rows || $rows->isEmpty()) {
+                continue;
+            }
+
+            match ($groupLabel) {
+                'Identity' => $this->applyScalarFields($boatNode, $rows, $yacht),
+                'Descriptions' => $this->buildDescriptionsNode($boatNode, $rows, $yacht),
+                'Images' => $this->buildImagesNode($boatNode, $rows, $yacht),
+                'Engine' => $this->buildEngineNode($boatNode, $rows, $yacht),
+                'Location' => $this->buildLocationNode($boatNode, $rows, $yacht),
+                default => $this->buildScalarGroupNode($boatNode, $groupLabel, $rows, $yacht),
+            };
+        }
+
+        $dom = dom_import_simplexml($xml)->ownerDocument;
+        $dom->formatOutput = true;
+
+        return $dom->saveXML();
+    }
+
+    /**
+     * Price / Dimensions — a wrapper element (always emitted, even empty)
+     * containing one child element per mapping row, resolved directly off
+     * the yacht. No group-level conditional logic here — Engine and
+     * Location each have their own quirk the original hardcoded
+     * implementation applied, handled by their dedicated methods instead.
+     */
+    private function buildScalarGroupNode(SimpleXMLElement $boatNode, string $groupLabel, $rows, Yacht $yacht): void
+    {
+        $groupNode = $boatNode->addChild(self::GROUP_NODE_NAMES[$groupLabel]);
+        foreach ($rows as $row) {
+            $value = $this->resolveScalar($row, $yacht);
+            $this->addSafe($groupNode, $this->lastPathSegment($row->openmarine_xml_path), (string) ($value ?? ''));
+        }
+    }
+
+    /**
+     * The <engine> node is only emitted when engine_manufacturer or
+     * horse_power is non-empty (matches the original condition exactly).
+     */
+    private function buildEngineNode(SimpleXMLElement $boatNode, $rows, Yacht $yacht): void
+    {
+        $triggered = false;
+        foreach (self::ENGINE_TRIGGER_FIELDS as $field) {
+            if (! empty($yacht->{$field})) {
+                $triggered = true;
+                break;
+            }
+        }
+
+        if (! $triggered) {
+            return;
+        }
+
+        $engineNode = $boatNode->addChild('engine');
+        foreach ($rows as $row) {
+            $value = $this->resolveScalar($row, $yacht);
+            $this->addSafe($engineNode, $this->lastPathSegment($row->openmarine_xml_path), (string) ($value ?? ''));
+        }
+    }
+
+    /**
+     * <location> is always emitted (city/country resolve normally), but
+     * lat/lng are a pair — both are only added when location_lat is
+     * non-empty, matching the original condition exactly (a lone lng with
+     * no lat was never emitted).
+     */
+    private function buildLocationNode(SimpleXMLElement $boatNode, $rows, Yacht $yacht): void
+    {
+        $locationNode = $boatNode->addChild('location');
+
+        foreach ($rows as $row) {
+            $elementName = $this->lastPathSegment($row->openmarine_xml_path);
+
+            if (in_array($elementName, ['lat', 'lng'], true)) {
+                continue; // handled separately below, as a pair
+            }
+
+            $value = $this->resolveScalar($row, $yacht);
+            $this->addSafe($locationNode, $elementName, (string) ($value ?? ''));
+        }
+
+        if (! empty($yacht->location_lat)) {
+            $latRow = $rows->first(fn ($r) => $this->lastPathSegment($r->openmarine_xml_path) === 'lat');
+            $lngRow = $rows->first(fn ($r) => $this->lastPathSegment($r->openmarine_xml_path) === 'lng');
+
+            if ($latRow) {
+                $this->addSafe($locationNode, 'lat', (string) ($this->resolveScalar($latRow, $yacht) ?? ''));
+            }
+            if ($lngRow) {
+                $this->addSafe($locationNode, 'lng', (string) ($this->resolveScalar($lngRow, $yacht) ?? ''));
+            }
+        }
+    }
+
+    /**
+     * Identity fields attach directly to <boat>, no wrapper element.
+     */
+    private function applyScalarFields(SimpleXMLElement $boatNode, $rows, Yacht $yacht): void
+    {
+        foreach ($rows as $row) {
+            $elementName = $this->lastPathSegment($row->openmarine_xml_path);
+            $value = $this->resolveScalar($row, $yacht);
+            $this->addSafe($boatNode, $elementName, (string) ($value ?? ''));
+        }
+    }
+
+    /**
+     * One <description lang="X"> CDATA node per mapping row — the row's
+     * openmarine_xml_path ends in "[lang=XX]" to declare which language it
+     * represents (one row per language, not a loop over a single row).
+     */
+    private function buildDescriptionsNode(SimpleXMLElement $boatNode, $rows, Yacht $yacht): void
+    {
+        $descNode = $boatNode->addChild('descriptions');
+
+        foreach ($rows as $row) {
+            if (! preg_match('/\[lang=([a-z]{2})\]$/', $row->openmarine_xml_path, $m)) {
+                continue;
+            }
+
+            $text = $this->resolveScalar($row, $yacht);
+            if ($text === null || $text === '') {
+                continue;
+            }
+
+            $d = $descNode->addChild('description');
+            $d->addAttribute('lang', $m[1]);
+            $node = dom_import_simplexml($d);
+            $node->appendChild($node->ownerDocument->createCDATASection($text));
+        }
+    }
+
+    /**
+     * One <image> node per $yacht->images row. A mapping row whose path ends
+     * in "[@attrname]" becomes an XML attribute on the <image> node instead
+     * of a child element (used for the "order" attribute).
+     */
+    private function buildImagesNode(SimpleXMLElement $boatNode, $rows, Yacht $yacht): void
+    {
+        $imagesNode = $boatNode->addChild('images');
+
+        foreach (($yacht->images ?? []) as $image) {
+            $imgNode = $imagesNode->addChild('image');
+
+            foreach ($rows as $row) {
+                if (! str_starts_with($row->schepenkring_field, 'images[].')) {
+                    continue;
+                }
+
+                $column = substr($row->schepenkring_field, strlen('images[].'));
+                $value = $image->{$column} ?? null;
+
+                if (preg_match('/\[@([a-zA-Z_]+)\]$/', $row->openmarine_xml_path, $m)) {
+                    $imgNode->addAttribute($m[1], (string) ($value ?? 0));
+                } else {
+                    $this->addSafe($imgNode, $this->lastPathSegment($row->openmarine_xml_path), (string) ($value ?? ''));
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolves one mapping row's value: '' schepenkring_field means a
+     * constant (default_value used as-is, never touching the yacht);
+     * otherwise the yacht attribute is read, falling back to default_value
+     * only when the resolved value is NULL — matching the original
+     * hardcoded implementation's `?? $default` semantics exactly. An empty
+     * string is a real (if unlikely) value and is deliberately NOT treated
+     * as "missing" here, same as the original — it just won't render since
+     * addSafe() skips empty strings regardless of how they got that way.
+     */
+    private function resolveScalar(OpenMarineFieldMapping $row, Yacht $yacht): ?string
+    {
+        if ($row->schepenkring_field === '' || $row->schepenkring_field === null) {
+            return $row->default_value;
+        }
+
+        $value = $yacht->{$row->schepenkring_field} ?? null;
+        if ($value === null) {
+            return $row->default_value;
+        }
+
+        return (string) $value;
+    }
+
+    private function lastPathSegment(string $path): string
+    {
+        $withoutBracket = preg_replace('/\[.*\]$/', '', $path);
+        $segments = explode('.', $withoutBracket);
+
+        return end($segments);
+    }
+
+    /**
+     * Add a child node only when the value is non-empty.
+     */
+    private function addSafe(SimpleXMLElement $parent, string $name, string $value): void
+    {
+        if ($value !== '') {
+            $parent->addChild($name, htmlspecialchars($value, ENT_XML1 | ENT_COMPAT, 'UTF-8'));
+        }
+    }
+
+    /**
+     * The exact original hardcoded implementation buildXml() replaced,
+     * preserved verbatim (only renamed) so `openmarine:verify-mapping-parity`
+     * can diff its output against the new data-driven buildXml() before
+     * anyone trusts the rewrite in production. This environment has no
+     * working database driver to run that diff during development, so it
+     * was verified only by careful manual line-by-line comparison — treat
+     * that as a lower confidence level than an actual executed diff, and
+     * run the parity command for real before relying on this.
+     */
+    public function buildXmlLegacy(Yacht $yacht): string
     {
         $xml = new SimpleXMLElement(
             '<?xml version="1.0" encoding="UTF-8"?><openmarine version="2.0"/>'
@@ -221,11 +474,6 @@ class OpenMarineService
         $imagesNode = $boatNode->addChild('images');
         foreach (($yacht->images ?? []) as $image) {
             $imgNode = $imagesNode->addChild('image');
-            // optimized_url resolves to a fully-qualified public URL (falls back
-            // to full_url internally) — the raw `url` column is a storage-relative
-            // path and `alt_text`/`order` never existed as YachtImage columns
-            // (the real columns are `caption` and `sort_order`), so this was
-            // silently exporting broken image URLs and empty captions/order.
             $this->addSafe($imgNode, 'url',     $image->optimized_url ?? '');
             $this->addSafe($imgNode, 'caption', $image->caption ?? '');
             $imgNode->addAttribute('order', (string) ($image->sort_order ?? 0));
@@ -236,15 +484,5 @@ class OpenMarineService
         $dom->formatOutput = true;
 
         return $dom->saveXML();
-    }
-
-    /**
-     * Add a child node only when the value is non-empty.
-     */
-    private function addSafe(SimpleXMLElement $parent, string $name, string $value): void
-    {
-        if ($value !== '') {
-            $parent->addChild($name, htmlspecialchars($value, ENT_XML1 | ENT_COMPAT, 'UTF-8'));
-        }
     }
 }

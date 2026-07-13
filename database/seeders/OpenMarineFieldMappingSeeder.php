@@ -85,7 +85,7 @@ class OpenMarineFieldMappingSeeder extends Seeder
             ['schepenkring_field' => 'location_lat', 'openmarine_xml_path' => 'boat.location.lat', 'default_value' => null, 'group_label' => 'Location', 'is_required' => false, 'notes' => null],
             ['schepenkring_field' => 'location_lng', 'openmarine_xml_path' => 'boat.location.lng', 'default_value' => null, 'group_label' => 'Location', 'is_required' => false, 'notes' => null],
 
-            ['schepenkring_field' => 'images[].url', 'openmarine_xml_path' => 'boat.images.image.url', 'default_value' => null, 'group_label' => 'Images', 'is_required' => true, 'notes' => 'validate() requires at least 1 image, warns below 3.'],
+            ['schepenkring_field' => 'images[].optimized_url', 'openmarine_xml_path' => 'boat.images.image.url', 'default_value' => null, 'group_label' => 'Images', 'is_required' => true, 'notes' => 'Resolves the optimized_url accessor (fully-qualified public URL, falls back to full_url), not the raw "url" column (a storage-relative path) — validate() requires at least 1 image, warns below 3.'],
             ['schepenkring_field' => 'images[].caption', 'openmarine_xml_path' => 'boat.images.image.caption', 'default_value' => null, 'group_label' => 'Images', 'is_required' => false, 'notes' => null],
             ['schepenkring_field' => 'images[].sort_order', 'openmarine_xml_path' => 'boat.images.image[@order]', 'default_value' => null, 'group_label' => 'Images', 'is_required' => false, 'notes' => null],
         ];
