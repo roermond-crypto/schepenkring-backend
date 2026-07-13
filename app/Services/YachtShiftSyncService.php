@@ -443,7 +443,12 @@ class YachtShiftSyncService
         ];
     }
 
-    private function mapExportFields(Yacht $yacht): array
+    /**
+     * Public so the Integration Center's marketplace preview can show
+     * exactly what a real YachtShift export would contain, without
+     * duplicating this mapping logic.
+     */
+    public function mapExportFields(Yacht $yacht): array
     {
         $payload = [
             'external_id' => (string) $yacht->id,

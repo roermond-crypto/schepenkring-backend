@@ -1059,6 +1059,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/openmarine')->group(
     Route::post('regression/run', [\App\Http\Controllers\Api\Admin\MappingRegressionController::class, 'run']);
     Route::get('regression/runs', [\App\Http\Controllers\Api\Admin\MappingRegressionController::class, 'index']);
     Route::get('regression/runs/{run}', [\App\Http\Controllers\Api\Admin\MappingRegressionController::class, 'show']);
+    Route::get('preview/{yacht}', [\App\Http\Controllers\Api\Admin\MarketplacePreviewController::class, 'forYacht']);
+    Route::get('compatibility', [\App\Http\Controllers\Api\Admin\PlatformCompatibilityController::class, 'index']);
+    Route::get('compatibility/{platform}', [\App\Http\Controllers\Api\Admin\PlatformCompatibilityController::class, 'drillDown']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/test-yachts')->group(function () {
