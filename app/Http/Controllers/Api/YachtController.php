@@ -39,6 +39,28 @@ class YachtController extends Controller
         'other',
     ];
 
+    /**
+     * Subset of $coreFields a seller may write to their own yacht: boat
+     * info, description, equipment, price, location, photos. Everything
+     * else in $coreFields (status, auction/bidding mechanics, external
+     * listing links) is broker/admin-only. Fields outside this list that a
+     * seller's request includes are silently dropped, not rejected — the
+     * seller wizard round-trips broader form state than it lets the seller
+     * intentionally edit.
+     */
+    private const SELLER_EDITABLE_CORE_FIELDS = [
+        'boat_name', 'price', 'year', 'main_image',
+        'owners_comment', 'reg_details', 'known_defects', 'last_serviced',
+        'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
+        'vessel_lying', 'location_city', 'location_country', 'location_lat', 'location_lng',
+        'short_description_nl', 'short_description_en', 'short_description_de', 'short_description_fr', 'advertise_as',
+        'ce_category', 'ce_max_weight', 'ce_max_motor', 'cvo', 'cbb',
+        'open_cockpit', 'aft_cockpit', 'ballast_tank',
+        'steering_system', 'steering_system_location',
+        'remote_control', 'rudder', 'drift_restriction',
+        'drift_restriction_controls', 'trimflaps', 'stabilizer',
+    ];
+
     public function __construct(
         private readonly LocationAccessService $locationAccess,
         private readonly AiCorrectionLoggingService $correctionLogging,
@@ -223,7 +245,10 @@ class YachtController extends Controller
             $submittedFields = $this->extractSubmittedTrackableFields($request, $trackableFields);
             $beforeSnapshot = $this->captureBeforeSnapshot($yacht, $submittedFields, $isUpdate);
 
-            foreach ($coreFields as $field) {
+            $isSellerActor = (bool) $actor?->isClient();
+            $applicableCoreFields = $isSellerActor ? self::SELLER_EDITABLE_CORE_FIELDS : $coreFields;
+
+            foreach ($applicableCoreFields as $field) {
                 if (! $request->has($field)) {
                     continue;
                 }
@@ -235,19 +260,19 @@ class YachtController extends Controller
             }
 
             foreach ($booleanFields as $field) {
-                if ($request->has($field)) {
+                if ($request->has($field) && ! $isSellerActor) {
                     $yacht->{$field} = filter_var($request->input($field), FILTER_VALIDATE_BOOLEAN);
                 } elseif (! $isUpdate) {
                     $yacht->{$field} = false;
                 }
             }
 
-            if ($request->has('auction_mode')) {
+            if ($request->has('auction_mode') && ! $isSellerActor) {
                 $auctionMode = strtolower(trim((string) $request->input('auction_mode')));
                 $yacht->auction_mode = in_array($auctionMode, ['bids', 'live'], true) ? $auctionMode : null;
             }
 
-            if ($request->has('auction_enabled') && $yacht->auction_enabled && in_array($yacht->auction_mode, ['bids', 'live'], true)) {
+            if ($request->has('auction_enabled') && ! $isSellerActor && $yacht->auction_enabled && in_array($yacht->auction_mode, ['bids', 'live'], true)) {
                 $yacht->allow_bidding = true;
             }
 
@@ -276,25 +301,27 @@ class YachtController extends Controller
                 $yacht->min_bid_amount = $yacht->price * 0.9;
             }
 
-            // Handle seller_invite_enabled and seller_login_enabled from request
-            if ($request->has('seller_invite_enabled')) {
-                $yacht->seller_invite_enabled = filter_var($request->input('seller_invite_enabled'), FILTER_VALIDATE_BOOLEAN);
-            }
-            if ($request->has('seller_login_enabled')) {
-                $yacht->seller_login_enabled = filter_var($request->input('seller_login_enabled'), FILTER_VALIDATE_BOOLEAN);
-            }
-            if ($request->has('seller_email_notifications')) {
-                $yacht->seller_email_notifications = filter_var($request->input('seller_email_notifications'), FILTER_VALIDATE_BOOLEAN);
-            }
-            if ($request->has('seller_counter_offer_enabled')) {
-                $yacht->seller_counter_offer_enabled = filter_var($request->input('seller_counter_offer_enabled'), FILTER_VALIDATE_BOOLEAN);
-            }
-            if ($request->has('minimum_offer_amount')) {
-                $min = $request->input('minimum_offer_amount');
-                $yacht->minimum_offer_amount = ($min !== null && $min !== '') ? (float) $min : null;
-            }
-            if ($request->has('seller_id') && $request->input('seller_id')) {
-                $yacht->seller_id = (int) $request->input('seller_id');
+            // Broker-configured settings *about* a seller — never seller-editable.
+            if (! $isSellerActor) {
+                if ($request->has('seller_invite_enabled')) {
+                    $yacht->seller_invite_enabled = filter_var($request->input('seller_invite_enabled'), FILTER_VALIDATE_BOOLEAN);
+                }
+                if ($request->has('seller_login_enabled')) {
+                    $yacht->seller_login_enabled = filter_var($request->input('seller_login_enabled'), FILTER_VALIDATE_BOOLEAN);
+                }
+                if ($request->has('seller_email_notifications')) {
+                    $yacht->seller_email_notifications = filter_var($request->input('seller_email_notifications'), FILTER_VALIDATE_BOOLEAN);
+                }
+                if ($request->has('seller_counter_offer_enabled')) {
+                    $yacht->seller_counter_offer_enabled = filter_var($request->input('seller_counter_offer_enabled'), FILTER_VALIDATE_BOOLEAN);
+                }
+                if ($request->has('minimum_offer_amount')) {
+                    $min = $request->input('minimum_offer_amount');
+                    $yacht->minimum_offer_amount = ($min !== null && $min !== '') ? (float) $min : null;
+                }
+                if ($request->has('seller_id') && $request->input('seller_id')) {
+                    $yacht->seller_id = (int) $request->input('seller_id');
+                }
             }
 
             $yacht->save();
@@ -540,13 +567,23 @@ class YachtController extends Controller
 
     private function applyRequestedOwner(Request $request, Yacht $yacht, ?User $actor, bool $isUpdate): void
     {
+        // Client actors (seller/buyer/client) can never reassign yacht
+        // ownership, whether to themselves or anyone else — a seller
+        // submitting `user_id` in an update payload must not be able to
+        // change who owns their own listing. Only set ownership on create.
+        if ($actor?->isClient()) {
+            if (! $isUpdate) {
+                $yacht->user_id = $actor->id;
+            }
+
+            return;
+        }
+
         if ($request->has('user_id')) {
             $requestedUserId = $request->input('user_id');
 
             if ($requestedUserId === null || $requestedUserId === '') {
-                if (! $actor?->isClient()) {
-                    $yacht->user_id = null;
-                }
+                $yacht->user_id = null;
 
                 return;
             }
@@ -566,12 +603,6 @@ class YachtController extends Controller
             if (! $yacht->ref_harbor_id && $owner->client_location_id) {
                 $yacht->ref_harbor_id = (int) $owner->client_location_id;
             }
-
-            return;
-        }
-
-        if (! $isUpdate && $actor?->isClient()) {
-            $yacht->user_id = $actor->id;
         }
     }
 
