@@ -10,10 +10,13 @@ use App\Models\BuyerVerificationSignhostTransaction;
 use App\Models\KycQuestion;
 use App\Models\User;
 use App\Support\BuyerVerificationStatus;
+use App\Support\SyncsOnboardingProfileToUser;
 use Illuminate\Support\Facades\DB;
 
 class BuyerVerificationOrchestrator
 {
+    use SyncsOnboardingProfileToUser;
+
     public function __construct(
         private readonly SignhostService $signhost,
         private readonly BuyerVerificationDecisionService $decisionService,
@@ -59,6 +62,8 @@ class BuyerVerificationOrchestrator
                 ['user_id' => $user->id],
                 $payload
             );
+
+            $this->syncOnboardingProfileToUser($user, $payload);
 
             if (! $this->identityVerificationEnforced()) {
                 // Identity verification (iDIN), bank verification (€0,01

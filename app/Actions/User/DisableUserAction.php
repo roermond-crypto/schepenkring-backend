@@ -44,7 +44,7 @@ class DisableUserAction
                 'entity_type' => 'user',
                 'entity_id' => $user->id,
                 'status' => $user->status?->value ?? $user->status,
-                'url' => '/dashboard/account',
+                'url' => '/dashboard/'.strtolower($user->type?->value ?? 'client').'/account',
             ],
             null,
             true,

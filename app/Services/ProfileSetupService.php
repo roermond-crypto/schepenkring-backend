@@ -88,14 +88,7 @@ class ProfileSetupService
 
     public function saveAddress(User $user, string $placeId): array
     {
-        $details = $this->places->fetchByPlaceId($placeId);
-        if (!empty($details['error'])) {
-            throw new \RuntimeException((string) $details['error']);
-        }
-
-        if (!$this->hasRequiredAddressDetails($details)) {
-            throw new \RuntimeException('Please choose a full street-level address from Google Maps, not only a country, region, or sea area.');
-        }
+        $details = $this->resolvePlaceDetails($placeId);
 
         $role = strtolower((string) $user->role);
         if (!in_array($role, ['seller', 'buyer'], true)) {
@@ -140,6 +133,45 @@ class ProfileSetupService
     public function search(string $query): array
     {
         return $this->places->searchPredictions($query);
+    }
+
+    /**
+     * Resolve a place_id to its address components without persisting
+     * anything — used by account pages (any role) that want the same
+     * Google-Places-backed search/resolve flow as onboarding but must save
+     * into their own record (e.g. the main users table) rather than the
+     * seller/buyer-only profile tables saveAddress() writes to.
+     */
+    public function resolveAddress(string $placeId): array
+    {
+        $details = $this->resolvePlaceDetails($placeId);
+
+        return [
+            'formatted_address' => $details['formatted_address'] ?? null,
+            'street' => $details['street'] ?? null,
+            'house_number' => $details['house_number'] ?? null,
+            'city' => $details['city'] ?? null,
+            'region' => $details['region'] ?? null,
+            'postal_code' => $details['postal_code'] ?? null,
+            'country' => $details['country_code'] ?? ($details['country'] ?? null),
+            'place_id' => $details['place_id'] ?? $placeId,
+            'latitude' => $details['latitude'] ?? null,
+            'longitude' => $details['longitude'] ?? null,
+        ];
+    }
+
+    private function resolvePlaceDetails(string $placeId): array
+    {
+        $details = $this->places->fetchByPlaceId($placeId);
+        if (!empty($details['error'])) {
+            throw new \RuntimeException((string) $details['error']);
+        }
+
+        if (!$this->hasRequiredAddressDetails($details)) {
+            throw new \RuntimeException('Please choose a full street-level address from Google Maps, not only a country, region, or sea area.');
+        }
+
+        return $details;
     }
 
     private function hasRequiredAddressDetails(array $details): bool

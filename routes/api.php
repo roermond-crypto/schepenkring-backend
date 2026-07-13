@@ -650,6 +650,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Profile setup status — used by frontend to decide which onboarding panel to show
     Route::get('/profile-setup/status', [\App\Http\Controllers\Api\ProfileSetupController::class, 'status']);
     Route::get('/profile-setup/address/search', [\App\Http\Controllers\Api\ProfileSetupController::class, 'search']);
+    Route::get('/profile-setup/address/resolve', [\App\Http\Controllers\Api\ProfileSetupController::class, 'resolve']);
     Route::put('/profile-setup/address', [\App\Http\Controllers\Api\ProfileSetupController::class, 'saveAddress']);
 });
 

@@ -12,12 +12,15 @@ use App\Models\SellerOnboardingSignhostTransaction;
 use App\Models\SellerProfile;
 use App\Models\User;
 use App\Support\SellerOnboardingStatus;
+use App\Support\SyncsOnboardingProfileToUser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class SellerOnboardingOrchestrator
 {
+    use SyncsOnboardingProfileToUser;
+
     public function __construct(
         private readonly MollieService $mollie,
         private readonly SignhostService $signhost,
@@ -71,6 +74,8 @@ class SellerOnboardingOrchestrator
                 ['user_id' => $user->id],
                 $payload
             );
+
+            $this->syncOnboardingProfileToUser($user, $payload);
 
             $onboarding->status = SellerOnboardingStatus::PROFILE_COMPLETED;
             $onboarding->save();

@@ -47,6 +47,29 @@ class ProfileSetupController extends Controller
     }
 
     /**
+     * Resolve a place_id to its address components without persisting —
+     * for account pages (any role) that need the onboarding flow's
+     * Google-Places search/resolve, but must save into their own record.
+     */
+    public function resolve(Request $request, ProfileSetupService $service): JsonResponse
+    {
+        $user = $request->user();
+        abort_if(!$user, 401, 'Unauthorized.');
+
+        $validated = $request->validate([
+            'place_id' => 'required|string|max:255',
+        ]);
+
+        try {
+            $address = $service->resolveAddress($validated['place_id']);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['data' => $address]);
+    }
+
+    /**
      * Save a selected address to the user's profile.
      */
     public function saveAddress(Request $request, ProfileSetupService $service): JsonResponse

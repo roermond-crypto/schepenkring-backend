@@ -57,4 +57,21 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 401);
             }
         });
+
+        // Thrown by Laravel's ValidatePostSize middleware — which runs in the
+        // global stack before SetLocaleFromRequest ever gets a chance to set
+        // app()->getLocale(), so the locale is resolved from the request
+        // header directly here instead of relying on app()->getLocale().
+        $exceptions->renderable(function (\Illuminate\Http\Exceptions\PostTooLargeException $e, $request) {
+            if ($request->is('api/*')) {
+                $language = new \App\Support\CopilotLanguage();
+                $locale = $language->fromAcceptLanguage($request->header('Accept-Language'))
+                    ?? $language->fromAcceptLanguage($request->header('X-Locale'))
+                    ?? 'nl';
+
+                return response()->json([
+                    'message' => trans('errors.upload_too_large', [], $locale),
+                ], 413);
+            }
+        });
     })->create();
