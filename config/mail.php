@@ -120,4 +120,17 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Fallback Admin Notification Address
+    |--------------------------------------------------------------------------
+    |
+    | Used when a location-specific notification (e.g. a new public boat
+    | intake) has no location email on file, so the notification isn't
+    | silently dropped. Leave null to keep current "drop silently" behavior.
+    |
+    */
+
+    'admin_notification_address' => env('ADMIN_NOTIFICATION_EMAIL'),
+
 ];

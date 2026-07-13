@@ -3,16 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use App\Mail\BoatIntakeConfirmationMail;
 use App\Mail\BoatIntakeLocationNotificationMail;
 use App\Models\AuditLog;
 use App\Models\BoatIntake;
 use App\Models\BoatIntakeFile;
 use App\Models\Location;
+use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\User;
 use App\Models\Yacht;
 use App\Services\BoatIntakeScoreService;
+use App\Services\EmailVerificationCodeService;
+use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +28,10 @@ use Illuminate\Support\Str;
 
 class BoatIntakeController extends Controller
 {
-    public function __construct(private BoatIntakeScoreService $scorer) {}
+    public function __construct(
+        private BoatIntakeScoreService $scorer,
+        private EmailVerificationCodeService $verificationCodes,
+    ) {}
 
     // ── POST /api/boat-intake ────────────────────────────────
     // Create a new intake (submit step 1 + basic boat info)
@@ -61,7 +68,7 @@ class BoatIntakeController extends Controller
         [$intake, $score, $resumeToken] = DB::transaction(function () use ($data, $request) {
             $descLen = strlen($data['short_description'] ?? '');
             $resumeToken = Str::random(64);
-            $seller = $this->findOrCreateSeller($data);
+            $seller = $this->findOrCreateSeller($data, $request);
 
             $intake = BoatIntake::create([
                 ...$data,
@@ -316,32 +323,48 @@ class BoatIntakeController extends Controller
     /**
      * @param  array<string, mixed>  $data
      */
-    private function findOrCreateSeller(array $data): User
+    private function findOrCreateSeller(array $data, Request $request): User
     {
         $existing = User::where('email', $data['seller_email'])->first();
         if ($existing) {
             return $existing;
         }
 
-        return User::create([
+        $seller = User::create([
             'name'               => trim("{$data['seller_first_name']} {$data['seller_last_name']}"),
             'first_name'         => $data['seller_first_name'],
             'last_name'          => $data['seller_last_name'],
             'email'              => $data['seller_email'],
             'phone'              => $data['seller_phone'],
-            // No login flow exists for this account yet — the seller reaches
-            // their intake via the emailed resume link, not a password.
-            // A random password keeps the column non-null without implying
-            // a usable credential.
+            // The seller can now log in via the auto-login-on-resume-token
+            // path (see session()) without ever knowing this password. It
+            // only guards the normal email+password login route in case
+            // they later try that instead.
             'password'           => Hash::make(Str::random(32)),
             'type'               => UserType::SELLER,
             'role'               => 'seller',
+            'status'             => UserStatus::EMAIL_PENDING,
             'client_location_id' => $data['location_id'] ?? null,
             'address_line1'      => $data['seller_address'] ?? null,
             'city'               => $data['seller_city'] ?? null,
             'postal_code'        => $data['seller_postal_code'] ?? null,
             'country'            => $data['seller_country'] ?? null,
         ]);
+
+        // Real verification-code email, same mechanism the normal signup
+        // flow uses (EmailVerificationCodeController) — previously this
+        // account got no verification email of any kind.
+        try {
+            $this->verificationCodes->issue($seller, null, $request->header('Accept-Language'));
+        } catch (\Throwable $e) {
+            Log::error('[BoatIntake] Seller verification email FAILED', [
+                'seller_id' => $seller->id,
+                'email'     => $seller->email,
+                'error'     => $e->getMessage(),
+            ]);
+        }
+
+        return $seller;
     }
 
     private function resolveToken(string $token): BoatIntake
@@ -406,11 +429,19 @@ class BoatIntakeController extends Controller
             $location = Location::find($intake->location_id);
             if (! $location) return;
 
-            // Email the location if it has an email address
-            if ($location->email) {
-                Mail::to($location->email)->send(
+            // Prefer the location's own email; fall back to a global admin
+            // address so a location with no email on file doesn't silently
+            // drop the notification entirely.
+            $recipient = $location->email ?: config('mail.admin_notification_address');
+            if ($recipient) {
+                Mail::to($recipient)->send(
                     new BoatIntakeLocationNotificationMail($intake, $location)
                 );
+            } else {
+                Log::warning('[BoatIntake] No location email and no ADMIN_NOTIFICATION_EMAIL configured — notification not sent', [
+                    'intake_id'   => $intake->id,
+                    'location_id' => $intake->location_id,
+                ]);
             }
 
             // Also notify location staff via in-app notification
@@ -445,6 +476,48 @@ class BoatIntakeController extends Controller
 
         return response()->json([
             'confirmation_sent' => (bool) $intake->confirmation_sent,
+        ]);
+    }
+
+    // ── POST /api/boat-intake/{token}/session ─────────────────
+    // Exchange the resume token for a real Sanctum session on the seller
+    // account created by store() — closes the "user has to register again"
+    // gap: arriving via this token (only ever delivered to the seller's own
+    // email) is treated as equivalent proof of email ownership, the same
+    // trust assumption every magic-link login relies on. Login itself is
+    // never blocked on verification here (matching the requested flow:
+    // login first, verify after) — the account's own verification-code
+    // email was already sent by findOrCreateSeller() and can still be
+    // completed from the dashboard.
+
+    public function session(Request $request, string $token): JsonResponse
+    {
+        $intake = $this->resolveToken($token);
+
+        $seller = User::find($intake->seller_user_id);
+        if (! $seller) {
+            abort(404, 'No account is associated with this intake.');
+        }
+
+        if (! $seller->hasVerifiedEmail()) {
+            if ($seller->markEmailAsVerified()) {
+                event(new Verified($seller));
+            }
+        }
+
+        $seller->forceFill([
+            'status'         => UserStatus::ACTIVE,
+            'last_login_at'  => now(),
+        ])->save();
+
+        $tokenName = $request->input('device_name', 'web');
+        $plainTextToken = $seller->createToken(is_string($tokenName) ? $tokenName : 'web')->plainTextToken;
+
+        $this->audit('boat_intake_auto_login', $intake, $request);
+
+        return response()->json([
+            'token' => $plainTextToken,
+            'user'  => new UserResource($seller->load(['locations', 'clientLocation'])),
         ]);
     }
 

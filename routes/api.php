@@ -175,6 +175,8 @@ Route::prefix('boat-intake')->group(function () {
         ->middleware('throttle:20,1');
     Route::post('{token}/resend-confirmation', [\App\Http\Controllers\Api\BoatIntakeController::class, 'resendConfirmation'])
         ->middleware('throttle:3,10'); // max 3 resends per 10 minutes
+    Route::post('{token}/session', [\App\Http\Controllers\Api\BoatIntakeController::class, 'session'])
+        ->middleware('throttle:10,1');
 });
 
 // ── CRM Public Chat Widget ──────────
