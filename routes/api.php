@@ -386,6 +386,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('me/address', [MeAddressController::class, 'update']);
     Route::patch('me/security', [MeSecurityController::class, 'update']);
     Route::patch('me/password', [MePasswordController::class, 'update']);
+    Route::get('me/audit', [\App\Http\Controllers\Api\Me\AuditController::class, 'index']);
 
     // Seller dashboard
     Route::get('dashboard/seller/summary', [SellerDashboardController::class, 'summary']);
