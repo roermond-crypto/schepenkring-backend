@@ -494,6 +494,10 @@ class EmailTemplateController extends Controller
             $types[] = [
                 'value' => $type,
                 'label' => EmailTemplateAutoCreateService::READABLE_NAMES[$type] ?? $type,
+                // Tags the send-time code actually populates for this event —
+                // lets the editor warn when a template omits one of them,
+                // not just when it references a tag that doesn't exist at all.
+                'required_tags' => $this->renderer->requiredTagsForType($type),
             ];
         }
 
