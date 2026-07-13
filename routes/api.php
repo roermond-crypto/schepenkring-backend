@@ -1062,6 +1062,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/openmarine')->group(
     Route::get('preview/{yacht}', [\App\Http\Controllers\Api\Admin\MarketplacePreviewController::class, 'forYacht']);
     Route::get('compatibility', [\App\Http\Controllers\Api\Admin\PlatformCompatibilityController::class, 'index']);
     Route::get('compatibility/{platform}', [\App\Http\Controllers\Api\Admin\PlatformCompatibilityController::class, 'drillDown']);
+    Route::get('export-statistics', [\App\Http\Controllers\Api\Admin\ExportStatisticsController::class, 'index']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/test-yachts')->group(function () {

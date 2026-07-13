@@ -176,14 +176,35 @@ class PlatformController extends Controller
         $yachtId = $request->filled('yacht_id') ? (int) $request->input('yacht_id') : null;
         $result = $this->exportTools->previewFeed($platform, $yachtId);
 
+        // Three distinct outcomes, not two: no yacht found to preview at
+        // all (feed_failed), a yacht was found but its data fails OpenMarine
+        // validation (validation_failed — previously indistinguishable from
+        // success in the audit trail, since $result['valid'] === false
+        // doesn't set the top-level 'error' key this used to key off of),
+        // or a genuinely valid feed (feed_generated).
+        if (! empty($result['error'])) {
+            $action = 'platform.export.feed_failed';
+            $auditResult = 'failure';
+        } elseif (($result['valid'] ?? true) === false) {
+            $action = 'platform.export.validation_failed';
+            $auditResult = 'failure';
+        } else {
+            $action = 'platform.export.feed_generated';
+            $auditResult = 'success';
+        }
+
         AuditLog::create([
-            'action'      => empty($result['error']) ? 'platform.export.feed_generated' : 'platform.export.feed_failed',
+            'action'      => $action,
             'risk_level'  => 'low',
-            'result'      => empty($result['error']) ? 'success' : 'failure',
+            'result'      => $auditResult,
             'actor_id'    => $request->user()?->id,
             'entity_type' => 'platform',
             'entity_id'   => $platform->id,
-            'meta'        => ['yacht_id' => $result['yacht_id'] ?? null, 'error' => $result['error'] ?? null],
+            'meta'        => [
+                'yacht_id' => $result['yacht_id'] ?? null,
+                'error' => $result['error'] ?? null,
+                'errors' => $result['errors'] ?? null,
+            ],
             'ip_address'  => $request->ip(),
         ]);
 
