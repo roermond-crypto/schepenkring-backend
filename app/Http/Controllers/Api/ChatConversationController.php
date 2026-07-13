@@ -212,19 +212,31 @@ class ChatConversationController extends Controller
             $conversation->fill($hubFields)->save();
         }
 
-        // Send initial message if provided
+        // Send initial message if provided. Sender type must match what the
+        // frontend actually checks (msg.sender_type === "admin" for staff
+        // styling) — a customer (client/seller/buyer) starting their own
+        // conversation is a visitor message, not a staff one, otherwise
+        // their own opening question renders as if support wrote it, and
+        // never counts toward the "unread visitor message" badge staff rely
+        // on to see it needs a reply.
         if (!empty($payload['initial_message'])) {
+            $initiator = $request->user();
+            $isStaffInitiator = $initiator && ($initiator->isAdmin() || $initiator->isEmployee());
             $clientMessageId = 'init-' . uniqid();
             $conversation->messages()->create([
-                'sender_type' => 'employee',
+                'sender_type' => $isStaffInitiator ? 'admin' : 'visitor',
                 'body' => $payload['initial_message'],
                 'text' => $payload['initial_message'],
                 'channel' => $payload['send_channel'] ?? 'chat',
                 'message_type' => 'text',
                 'client_message_id' => $clientMessageId,
-                'employee_id' => $request->user()?->id,
+                'employee_id' => $initiator?->id,
             ]);
-            $conversation->update(['last_message_at' => now(), 'last_staff_message_at' => now()]);
+            $timestampField = $isStaffInitiator ? 'last_staff_message_at' : 'last_customer_message_at';
+            $conversation->update([
+                'last_message_at' => now(),
+                $timestampField => now(),
+            ]);
         }
 
         return response()->json($conversation->fresh()->load(['contact', 'lead', 'location:id,name', 'assignedEmployee:id,name,email']), 201);

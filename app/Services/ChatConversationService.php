@@ -120,7 +120,13 @@ class ChatConversationService
             $conversation->save();
         }
 
-        $senderType = $payload['sender_type'] ?? ($user ? 'admin' : 'visitor');
+        // Only staff default to 'admin' — an authenticated client/seller/
+        // buyer replying in their own conversation is still a visitor
+        // message. Defaulting on "any authenticated user" previously
+        // mislabeled every customer reply as a staff message, so it never
+        // rendered as customer-authored and never counted toward the
+        // unread-visitor-message badge staff use to spot new replies.
+        $senderType = $payload['sender_type'] ?? (($user && $this->isStaff($user)) ? 'admin' : 'visitor');
         if ($user && $this->isStaff($user) && $senderType === 'visitor') {
             $senderType = 'admin';
         }
