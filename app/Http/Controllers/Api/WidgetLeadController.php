@@ -502,6 +502,13 @@ class WidgetLeadController extends Controller
             'priority'         => 'normal',
             'channel'          => 'web_widget',
             'channel_origin'   => 'web_widget',
+            // chat_type uses the app-wide taxonomy (general/offer/viewing/
+            // callback/question/brochure/seller/buyer) that staff-facing
+            // filters, badges, and the composer's own type picker all use —
+            // widget_flow_type keeps the finer-grained "which structured
+            // widget form was this" detail (plan_viewing/offer/brochure/
+            // callback/question) for filters that need that precision.
+            'chat_type'        => $this->chatTypeForFlow($flowType),
             'widget_flow_type' => $flowType,
             'ai_mode'          => 'off',
             'page_url'         => $data['source_url'] ?? null,
@@ -526,6 +533,20 @@ class WidgetLeadController extends Controller
         ]);
 
         return $conversation;
+    }
+
+    /**
+     * Maps a widget flow type onto the app-wide chat_type taxonomy
+     * (general/offer/viewing/callback/question/brochure/seller/buyer).
+     * Only "plan_viewing" doesn't match its own name in that taxonomy —
+     * everything else already lines up 1:1.
+     */
+    private function chatTypeForFlow(string $flowType): string
+    {
+        return match ($flowType) {
+            'plan_viewing' => 'viewing',
+            default => $flowType,
+        };
     }
 
     private function ensureLead(

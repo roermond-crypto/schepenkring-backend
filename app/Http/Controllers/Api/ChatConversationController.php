@@ -70,6 +70,9 @@ class ChatConversationController extends Controller
         if ($request->filled('chat_type')) {
             $query->where('chat_type', $request->query('chat_type'));
         }
+        if ($request->filled('widget_flow_type')) {
+            $query->where('widget_flow_type', $request->query('widget_flow_type'));
+        }
 
         if ($request->filled('cursor')) {
             $query->where('last_message_at', '<', $request->query('cursor'));

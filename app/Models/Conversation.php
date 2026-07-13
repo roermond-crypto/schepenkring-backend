@@ -23,6 +23,7 @@ class Conversation extends Model
         'visitor_id',
         'channel',
         'chat_type',
+        'widget_flow_type',
         'send_channel',
         'status',
         'priority',
