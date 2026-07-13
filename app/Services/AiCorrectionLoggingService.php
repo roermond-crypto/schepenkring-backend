@@ -38,6 +38,7 @@ class AiCorrectionLoggingService
     {
         return BoatFieldChange::create([
             'yacht_id' => $attributes['yacht_id'],
+            'platform_id' => $attributes['platform_id'] ?? null,
             'field_name' => (string) $attributes['field_name'],
             'old_value' => $this->encodeValue($attributes['old_value'] ?? null),
             'new_value' => $this->encodeValue($attributes['new_value'] ?? null),
@@ -45,6 +46,7 @@ class AiCorrectionLoggingService
             'changed_by_id' => $attributes['changed_by_id'] ?? null,
             'source_type' => $attributes['source_type'] ?? null,
             'confidence_before' => $attributes['confidence_before'] ?? null,
+            'confidence_after' => $attributes['confidence_after'] ?? null,
             'ai_session_id' => $attributes['ai_session_id'] ?? null,
             'model_name' => $attributes['model_name'] ?? null,
             'reason' => $attributes['reason'] ?? null,
@@ -87,6 +89,7 @@ class AiCorrectionLoggingService
 
             $this->logFieldChange([
                 'yacht_id' => $yachtId,
+                'platform_id' => $context['platform_id'] ?? null,
                 'field_name' => $field,
                 'old_value' => $old,
                 'new_value' => $new,
@@ -94,6 +97,7 @@ class AiCorrectionLoggingService
                 'changed_by_id' => $context['changed_by_id'] ?? null,
                 'source_type' => $context['source_type'] ?? null,
                 'confidence_before' => $context['field_confidence'][$field] ?? ($context['confidence_before'] ?? null),
+                'confidence_after' => $context['field_confidence_after'][$field] ?? ($context['confidence_after'] ?? null),
                 'ai_session_id' => $context['ai_session_id'] ?? null,
                 'model_name' => $context['model_name'] ?? null,
                 'reason' => $context['field_reasons'][$field] ?? ($context['reason'] ?? null),

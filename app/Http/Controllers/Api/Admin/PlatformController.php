@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\StorePlatformRequest;
+use App\Http\Requests\Api\UpdatePlatformRequest;
+use App\Models\AuditLog;
 use App\Models\Platform;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -10,6 +13,8 @@ use Illuminate\Support\Str;
 
 class PlatformController extends Controller
 {
+    private const MASKED_CREDENTIAL_KEYS = ['api_secret', 'webhook_secret'];
+
     public function index(Request $request): JsonResponse
     {
         $query = Platform::orderBy('priority')->orderBy('name');
@@ -25,34 +30,23 @@ class PlatformController extends Controller
         return response()->json($query->get());
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StorePlatformRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'name'                    => 'required|string|max:255',
-            'slug'                    => 'nullable|string|max:100|unique:platforms,slug',
-            'logo_url'                => 'nullable|url',
-            'website_url'             => 'nullable|url',
-            'type'                    => 'nullable|string|in:openmarine,xml,api,manual',
-            'export_method'           => 'nullable|string|in:openmarine,xml,api,manual',
-            'feed_url'                => 'nullable|url',
-            'api_url'                 => 'nullable|url',
-            'credentials'             => 'nullable|array',
-            'openmarine_enabled'      => 'boolean',
-            'openmarine_dealer_id'    => 'nullable|string|max:100',
-            'openmarine_version'      => 'nullable|string|max:10',
-            'openmarine_category_map' => 'nullable|array',
-            'supported_countries'     => 'nullable|array',
-            'supported_languages'     => 'nullable|array',
-            'contact_name'            => 'nullable|string|max:255',
-            'contact_email'           => 'nullable|email',
-            'notes'                   => 'nullable|string',
-            'priority'                => 'nullable|integer',
-            'is_active'               => 'boolean',
-        ]);
-
+        $data = $request->validated();
         $data['slug'] = $data['slug'] ?? Str::slug($data['name']);
 
         $platform = Platform::create($data);
+
+        AuditLog::create([
+            'action'      => 'platform.created',
+            'risk_level'  => 'medium',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => ['name' => $platform->name, 'category' => $platform->category],
+            'ip_address'  => $request->ip(),
+        ]);
 
         return response()->json($platform, 201);
     }
@@ -62,39 +56,56 @@ class PlatformController extends Controller
         return response()->json($platform);
     }
 
-    public function update(Request $request, Platform $platform): JsonResponse
+    public function update(UpdatePlatformRequest $request, Platform $platform): JsonResponse
     {
-        $data = $request->validate([
-            'name'                    => 'sometimes|string|max:255',
-            'slug'                    => 'sometimes|string|max:100|unique:platforms,slug,' . $platform->id,
-            'logo_url'                => 'nullable|url',
-            'website_url'             => 'nullable|url',
-            'type'                    => 'nullable|string|in:openmarine,xml,api,manual',
-            'export_method'           => 'nullable|string|in:openmarine,xml,api,manual',
-            'feed_url'                => 'nullable|url',
-            'api_url'                 => 'nullable|url',
-            'credentials'             => 'nullable|array',
-            'openmarine_enabled'      => 'boolean',
-            'openmarine_dealer_id'    => 'nullable|string|max:100',
-            'openmarine_version'      => 'nullable|string|max:10',
-            'openmarine_category_map' => 'nullable|array',
-            'supported_countries'     => 'nullable|array',
-            'supported_languages'     => 'nullable|array',
-            'contact_name'            => 'nullable|string|max:255',
-            'contact_email'           => 'nullable|email',
-            'notes'                   => 'nullable|string',
-            'priority'                => 'nullable|integer',
-            'is_active'               => 'boolean',
-        ]);
+        $data = $request->validated();
+
+        if (array_key_exists('credentials', $data)) {
+            $existing = $platform->getRawOriginal('credentials');
+            $existing = is_string($existing) ? (json_decode($existing, true) ?? []) : ($existing ?? []);
+
+            foreach (self::MASKED_CREDENTIAL_KEYS as $key) {
+                if (($data['credentials'][$key] ?? null) === Platform::MASK_PLACEHOLDER) {
+                    unset($data['credentials'][$key]);
+                }
+            }
+
+            $data['credentials'] = array_merge($existing, $data['credentials']);
+        }
 
         $platform->update($data);
 
-        return response()->json($platform);
+        AuditLog::create([
+            'action'      => 'platform.updated',
+            'risk_level'  => 'low',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => ['fields' => array_keys($data)],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json($platform->fresh());
     }
 
-    public function destroy(Platform $platform): JsonResponse
+    public function destroy(Request $request, Platform $platform): JsonResponse
     {
+        $name = $platform->name;
+        $platformId = $platform->id;
+
         $platform->delete();
+
+        AuditLog::create([
+            'action'      => 'platform.deleted',
+            'risk_level'  => 'high',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platformId,
+            'meta'        => ['name' => $name],
+            'ip_address'  => $request->ip(),
+        ]);
 
         return response()->json(['message' => 'Platform deleted']);
     }

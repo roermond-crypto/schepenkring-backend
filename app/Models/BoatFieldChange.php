@@ -12,6 +12,7 @@ class BoatFieldChange extends Model
 
     protected $fillable = [
         'yacht_id',
+        'platform_id',
         'field_name',
         'old_value',
         'new_value',
@@ -19,6 +20,7 @@ class BoatFieldChange extends Model
         'changed_by_id',
         'source_type',
         'confidence_before',
+        'confidence_after',
         'ai_session_id',
         'model_name',
         'reason',
@@ -28,12 +30,18 @@ class BoatFieldChange extends Model
 
     protected $casts = [
         'confidence_before' => 'float',
+        'confidence_after' => 'float',
         'meta' => 'array',
     ];
 
     public function yacht(): BelongsTo
     {
         return $this->belongsTo(Yacht::class);
+    }
+
+    public function platform(): BelongsTo
+    {
+        return $this->belongsTo(Platform::class);
     }
 
     public function changedBy(): BelongsTo
