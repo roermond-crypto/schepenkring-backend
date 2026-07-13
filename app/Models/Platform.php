@@ -83,12 +83,20 @@ class Platform extends Model
         return $decoded;
     }
 
-    public function hasCredentialSecret(string $key): bool
+    /**
+     * Unmasked credentials, for server-side use only (test-connection,
+     * validation, actual export calls) — never return this from an API response.
+     */
+    public function rawCredentials(): array
     {
         $raw = $this->getRawOriginal('credentials');
-        $decoded = is_string($raw) ? (json_decode($raw, true) ?? []) : ($raw ?? []);
 
-        return ! empty($decoded[$key]);
+        return is_string($raw) ? (json_decode($raw, true) ?? []) : ($raw ?? []);
+    }
+
+    public function hasCredentialSecret(string $key): bool
+    {
+        return ! empty($this->rawCredentials()[$key] ?? null);
     }
 
     public function getHasApiSecretAttribute(): bool

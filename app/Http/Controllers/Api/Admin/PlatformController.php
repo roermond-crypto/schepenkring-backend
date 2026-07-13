@@ -7,9 +7,11 @@ use App\Http\Requests\Api\StorePlatformRequest;
 use App\Http\Requests\Api\UpdatePlatformRequest;
 use App\Models\AuditLog;
 use App\Models\Platform;
+use App\Services\PlatformExportToolsService;
 use App\Services\PlatformHealthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class PlatformController extends Controller
@@ -18,6 +20,7 @@ class PlatformController extends Controller
 
     public function __construct(
         private readonly PlatformHealthService $health,
+        private readonly PlatformExportToolsService $exportTools,
     ) {
     }
 
@@ -119,5 +122,66 @@ class PlatformController extends Controller
     public function health(Platform $platform): JsonResponse
     {
         return response()->json($this->health->forPlatform($platform));
+    }
+
+    public function uploadLogo(Request $request, Platform $platform): JsonResponse
+    {
+        $request->validate([
+            'logo' => 'required|image|max:2048',
+        ]);
+
+        $path = $request->file('logo')->store("platforms/{$platform->id}", 'public');
+        $platform->logo_url = Storage::disk('public')->url($path);
+        $platform->save();
+
+        AuditLog::create([
+            'action'      => 'platform.logo.uploaded',
+            'risk_level'  => 'low',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => ['path' => $path],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json($platform->fresh());
+    }
+
+    public function testConnection(Request $request, Platform $platform): JsonResponse
+    {
+        $result = $this->exportTools->testConnection($platform);
+
+        AuditLog::create([
+            'action'      => 'platform.test_connection',
+            'risk_level'  => 'low',
+            'result'      => $result['success'] ? 'success' : 'failure',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => $result,
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json($result);
+    }
+
+    public function validateConfiguration(Platform $platform): JsonResponse
+    {
+        return response()->json($this->exportTools->validateConfiguration($platform));
+    }
+
+    public function previewFeed(Request $request, Platform $platform): JsonResponse
+    {
+        $yachtId = $request->filled('yacht_id') ? (int) $request->input('yacht_id') : null;
+
+        return response()->json($this->exportTools->previewFeed($platform, $yachtId));
+    }
+
+    public function previewPayload(Request $request, Platform $platform): JsonResponse
+    {
+        $yachtId = $request->filled('yacht_id') ? (int) $request->input('yacht_id') : null;
+
+        return response()->json($this->exportTools->previewPayload($platform, $yachtId));
     }
 }

@@ -1021,6 +1021,11 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/platforms')->group(f
     Route::post('/', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'store']);
     Route::get('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'show']);
     Route::get('{platform}/health', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'health']);
+    Route::post('{platform}/logo', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'uploadLogo']);
+    Route::post('{platform}/test-connection', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'testConnection']);
+    Route::post('{platform}/validate', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'validateConfiguration']);
+    Route::get('{platform}/preview-feed', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'previewFeed']);
+    Route::get('{platform}/preview-payload', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'previewPayload']);
     Route::put('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'update']);
     Route::patch('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'update']);
     Route::delete('{platform}', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'destroy']);
