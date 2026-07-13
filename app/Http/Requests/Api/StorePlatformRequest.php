@@ -34,6 +34,7 @@ class StorePlatformRequest extends ApiRequest
             'notes'                      => 'nullable|string',
             'priority'                   => 'nullable|integer',
             'is_active'                  => 'boolean',
+            'feed_source_platform_id'    => 'nullable|integer|exists:platforms,id',
         ];
     }
 }

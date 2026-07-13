@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Api;
 
+use Illuminate\Validation\Rule;
+
 class UpdatePlatformRequest extends ApiRequest
 {
     public function rules(): array
@@ -36,6 +38,10 @@ class UpdatePlatformRequest extends ApiRequest
             'notes'                      => 'nullable|string',
             'priority'                   => 'nullable|integer',
             'is_active'                  => 'boolean',
+            'feed_source_platform_id'    => array_filter([
+                'nullable', 'integer', 'exists:platforms,id',
+                $platformId ? Rule::notIn([$platformId]) : null,
+            ]),
         ];
     }
 }

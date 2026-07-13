@@ -29,6 +29,7 @@ class MappingRegressionController extends Controller
 
         $yachts = Yacht::query()
             ->whereIn('status', OpenMarineService::EXPORTABLE_STATUSES)
+            ->where('is_test', false)
             ->latest('updated_at')
             ->limit($limit)
             ->get();
