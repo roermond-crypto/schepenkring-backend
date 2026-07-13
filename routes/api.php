@@ -834,6 +834,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('yachts/{yacht}/recalculate-score', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'recalculate']);
     Route::post('yachts/{yacht}/publish-validated', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'publish']);
     Route::get('yachts/{yacht}/audit', [\App\Http\Controllers\Api\Admin\YachtCompletenessController::class, 'audit']);
+    Route::post('yachts/{yacht}/info-requests', [\App\Http\Controllers\Api\Admin\YachtInfoRequestController::class, 'store']);
+    Route::get('yachts/{yacht}/info-requests', [\App\Http\Controllers\Api\Admin\YachtInfoRequestController::class, 'index']);
+    Route::post('info-requests/{infoRequest}/resolve', [\App\Http\Controllers\Api\Admin\YachtInfoRequestController::class, 'resolve']);
 
     // Yachts (Admin) — bulk import
     Route::post('yachts/bulk-import', [YachtshiftImportController::class, 'store']);

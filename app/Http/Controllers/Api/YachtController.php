@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Yacht;
 use App\Models\YachtImage;
 use App\Models\YachtAiExtraction;
+use App\Models\YachtInfoRequest;
 use App\Models\User;
 use App\Services\AiCorrectionLoggingService;
 use App\Services\BoatTaskAutomationService;
@@ -13,6 +14,7 @@ use App\Services\KnowledgeGraphService;
 use App\Services\LocationAccessService;
 use App\Services\SyncYachtTasksService;
 use App\Services\VideoAutomationService;
+use App\Services\YachtCompletenessService;
 use App\Support\YachtImageLimits;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -327,6 +329,18 @@ class YachtController extends Controller
             $yacht->save();
             $yacht->saveSubTables($request->all());
 
+            // A seller updating their own yacht resolves any open broker
+            // info-request automatically — no manual sync required.
+            if ($isSellerActor && $isUpdate) {
+                YachtInfoRequest::where('yacht_id', $yacht->id)
+                    ->where('status', 'open')
+                    ->update([
+                        'status' => 'resolved',
+                        'resolved_at' => now(),
+                        'resolved_by_id' => $actor->id,
+                    ]);
+            }
+
             // Fire seller invite email only when seller_invite_enabled or seller_id just changed
             // (not on every save — the flags stay true across unrelated edits).
             $inviteTriggered = $yacht->seller_invite_enabled
@@ -385,6 +399,7 @@ class YachtController extends Controller
             }
 
             $savedYacht = Yacht::query()->findOrFail($yacht->id);
+            app(YachtCompletenessService::class)->calculate($savedYacht);
             $afterSnapshot = $this->buildSnapshotForFields($savedYacht->toArray(), $submittedFields);
             $aiExtraction = $this->findAiExtraction($request);
             $loggingContext = $this->buildFieldLoggingContext($request, $actor, $aiExtraction, $isUpdate);
@@ -912,6 +927,7 @@ class YachtController extends Controller
             'availabilityRules',
             'latestSignRequest',
             'owner:id,name,first_name,last_name,email,phone,address_line1,address_line2,postal_code,city,country,client_location_id',
+            'infoRequests' => fn (Builder $query) => $query->where('status', 'open')->latest(),
         ];
 
         if ($withImages) {

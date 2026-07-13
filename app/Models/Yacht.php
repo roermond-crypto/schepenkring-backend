@@ -15,7 +15,7 @@ class Yacht extends Model
 {
     use Auditable;
 
-    protected $appends = ['latest_signhost', 'main_image_url'];
+    protected $appends = ['latest_signhost', 'main_image_url', 'open_info_request'];
 
     protected $hidden = [
         'latest_sign_request',
@@ -280,6 +280,26 @@ class Yacht extends Model
     public function platformPublications(): HasMany
     {
         return $this->hasMany(BoatPlatformPublication::class);
+    }
+
+    public function infoRequests(): HasMany
+    {
+        return $this->hasMany(YachtInfoRequest::class);
+    }
+
+    /**
+     * The most recent open broker info-request, or null. Prefers an
+     * already-eager-loaded `infoRequests` relation (constrained to
+     * status=open, see YachtController::visibleYachtsQuery()) to avoid an
+     * N+1 query on list views; falls back to a direct query otherwise.
+     */
+    public function getOpenInfoRequestAttribute(): ?YachtInfoRequest
+    {
+        if ($this->relationLoaded('infoRequests')) {
+            return $this->getRelation('infoRequests')->first();
+        }
+
+        return $this->infoRequests()->where('status', 'open')->latest()->first();
     }
 
     public function signRequests(): HasMany
