@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +15,7 @@ use App\Support\SignhostRecipientSupport;
 class Yacht extends Model
 {
     use Auditable;
+    use HasFactory;
 
     protected $appends = ['latest_signhost', 'main_image_url', 'open_info_request'];
 
@@ -110,7 +112,7 @@ class Yacht extends Model
         'yachtshift_last_exported_at', 'yachtshift_last_export_error', 'yachtshift_sync_summary',
         'allow_bidding', 'auction_enabled', 'auction_mode', 'auction_start', 'auction_end',
         'auction_duration_minutes', 'auction_extension_seconds', 'main_image', 'year', 'min_bid_amount',
-        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id',
+        'current_bid', 'boat_type_id', 'display_specs', 'offline_uuid', 'ref_harbor_id', 'is_test',
 
         // Identity (from Yachtshift)
         'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',

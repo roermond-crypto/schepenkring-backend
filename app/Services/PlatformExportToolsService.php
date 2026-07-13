@@ -179,6 +179,7 @@ class PlatformExportToolsService
         }
 
         return Yacht::whereIn('status', self::EXPORTABLE_STATUSES)
+            ->where('is_test', false)
             ->latest('updated_at')
             ->first();
     }

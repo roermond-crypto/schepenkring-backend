@@ -55,6 +55,13 @@ class OpenMarineService
         $errors   = [];
         $warnings = [];
 
+        // Test yachts (from the Integration Center's Test Yacht Generator)
+        // can still be previewed/generated for mapping tests, but must
+        // never pass validation for a real publish.
+        if (! empty($yacht->is_test)) {
+            $errors[] = 'Test yachts are excluded from publishing.';
+        }
+
         // Status gate
         if (! in_array($yacht->status, self::EXPORTABLE_STATUSES, true)) {
             $errors[] = "Boat status '{$yacht->status}' is not exportable. Must be approved or published.";

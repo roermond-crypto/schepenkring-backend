@@ -203,6 +203,7 @@ class YachtShiftSyncService
     {
         $yachts = Yacht::query()
             ->whereIn('yachtshift_publish_status', ['queued', 'published'])
+            ->where('is_test', false)
             ->where(function ($query) {
                 $query->where('yachtshift_publish_status', 'queued')
                     ->orWhereNull('yachtshift_synced_at')

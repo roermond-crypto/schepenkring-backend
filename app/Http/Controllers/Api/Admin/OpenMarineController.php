@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\OpenMarineFieldMapping;
 use App\Models\Yacht;
+use App\Services\AiMappingSuggestionService;
 use App\Services\OpenMarineService;
 use Illuminate\Http\JsonResponse;
 
 class OpenMarineController extends Controller
 {
-    public function __construct(private OpenMarineService $openMarine) {}
+    public function __construct(
+        private OpenMarineService $openMarine,
+        private AiMappingSuggestionService $suggestions,
+    ) {}
 
     /**
      * GET /admin/openmarine/mappings
@@ -85,5 +89,16 @@ class OpenMarineController extends Controller
                 'missing_required' => $missingRequired,
             ],
         ]);
+    }
+
+    /**
+     * GET /admin/openmarine/mappings/suggestions
+     *
+     * Deterministic AI-style suggestions for equipment fields (the
+     * Yacht::SUB_TABLE_MAP categories) that have no mapping row yet.
+     */
+    public function suggestions(): JsonResponse
+    {
+        return response()->json(['data' => $this->suggestions->suggestions()]);
     }
 }
