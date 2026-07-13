@@ -12,7 +12,7 @@ class OpenMarineService
      * Statuses that are safe to export.
      * Draft / pending boats are never included.
      */
-    private const EXPORTABLE_STATUSES = ['approved', 'published', 'active'];
+    public const EXPORTABLE_STATUSES = ['approved', 'published', 'active'];
 
     /**
      * Required OpenMarine 2.0 fields mapped to Yacht attributes.

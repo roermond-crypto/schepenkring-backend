@@ -1049,6 +1049,15 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/yachts/{yacht}')->gr
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/openmarine')->group(function () {
     Route::get('mappings', [\App\Http\Controllers\Api\Admin\OpenMarineController::class, 'mappings']);
     Route::get('mappings/inspect/{yacht}', [\App\Http\Controllers\Api\Admin\OpenMarineController::class, 'inspect']);
+    Route::post('mappings', [\App\Http\Controllers\Api\Admin\OpenMarineMappingController::class, 'store']);
+    Route::put('mappings/{mapping}', [\App\Http\Controllers\Api\Admin\OpenMarineMappingController::class, 'update']);
+    Route::delete('mappings/{mapping}', [\App\Http\Controllers\Api\Admin\OpenMarineMappingController::class, 'destroy']);
+    Route::get('mappings/versions', [\App\Http\Controllers\Api\Admin\OpenMarineMappingController::class, 'versions']);
+    Route::get('mappings/versions/{version}', [\App\Http\Controllers\Api\Admin\OpenMarineMappingController::class, 'showVersion']);
+    Route::post('mappings/versions/{version}/restore', [\App\Http\Controllers\Api\Admin\OpenMarineMappingController::class, 'restoreVersion']);
+    Route::post('regression/run', [\App\Http\Controllers\Api\Admin\MappingRegressionController::class, 'run']);
+    Route::get('regression/runs', [\App\Http\Controllers\Api\Admin\MappingRegressionController::class, 'index']);
+    Route::get('regression/runs/{run}', [\App\Http\Controllers\Api\Admin\MappingRegressionController::class, 'show']);
 });
 
 // Publishing health dashboard widget
