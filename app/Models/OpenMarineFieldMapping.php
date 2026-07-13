@@ -9,6 +9,7 @@ class OpenMarineFieldMapping extends Model
     protected $fillable = [
         'schepenkring_field',
         'openmarine_xml_path',
+        'default_value',
         'group_label',
         'is_required',
         'notes',
