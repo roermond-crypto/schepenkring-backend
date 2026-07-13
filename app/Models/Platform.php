@@ -38,6 +38,8 @@ class Platform extends Model
         'notes',
         'priority',
         'is_active',
+        'is_default',
+        'feed_source_platform_id',
     ];
 
     protected $casts = [
@@ -47,6 +49,7 @@ class Platform extends Model
         'supported_languages'    => 'array',
         'openmarine_enabled'     => 'boolean',
         'is_active'              => 'boolean',
+        'is_default'             => 'boolean',
     ];
 
     private const MASKED_CREDENTIAL_KEYS = ['api_secret', 'webhook_secret'];
@@ -112,5 +115,15 @@ class Platform extends Model
     public function boatPublications(): HasMany
     {
         return $this->hasMany(BoatPlatformPublication::class);
+    }
+
+    public function feedSourcePlatform(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Platform::class, 'feed_source_platform_id');
+    }
+
+    public function assignedMarketplaces(): HasMany
+    {
+        return $this->hasMany(Platform::class, 'feed_source_platform_id');
     }
 }

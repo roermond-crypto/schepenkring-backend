@@ -124,6 +124,33 @@ class PlatformController extends Controller
         return response()->json($this->health->forPlatform($platform));
     }
 
+    /**
+     * Marks $platform as the default OpenMarine connection, clearing the
+     * flag on every other connection-category platform (only one default
+     * makes sense — it's what the Connection Manager preselects for a
+     * fresh export/test-yacht action with no explicit platform chosen).
+     */
+    public function setDefault(Request $request, Platform $platform): JsonResponse
+    {
+        \DB::transaction(function () use ($platform) {
+            Platform::where('id', '!=', $platform->id)->where('is_default', true)->update(['is_default' => false]);
+            $platform->update(['is_default' => true]);
+        });
+
+        AuditLog::create([
+            'action'      => 'platform.connection.set_default',
+            'risk_level'  => 'low',
+            'result'      => 'success',
+            'actor_id'    => $request->user()?->id,
+            'entity_type' => 'platform',
+            'entity_id'   => $platform->id,
+            'meta'        => ['name' => $platform->name],
+            'ip_address'  => $request->ip(),
+        ]);
+
+        return response()->json($platform->fresh());
+    }
+
     public function uploadLogo(Request $request, Platform $platform): JsonResponse
     {
         $request->validate([

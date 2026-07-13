@@ -1029,6 +1029,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/platforms')->group(f
     Route::get('{platform}/health', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'health']);
     Route::post('{platform}/logo', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'uploadLogo']);
     Route::post('{platform}/test-connection', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'testConnection']);
+    Route::post('{platform}/set-default', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'setDefault']);
     Route::post('{platform}/validate', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'validateConfiguration']);
     Route::get('{platform}/preview-feed', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'previewFeed']);
     Route::get('{platform}/preview-payload', [\App\Http\Controllers\Api\Admin\PlatformController::class, 'previewPayload']);
