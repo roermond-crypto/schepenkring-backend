@@ -389,6 +389,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('me/security', [MeSecurityController::class, 'update']);
     Route::patch('me/password', [MePasswordController::class, 'update']);
     Route::get('me/audit', [\App\Http\Controllers\Api\Me\AuditController::class, 'index']);
+    Route::get('me/location/bid-settings', [\App\Http\Controllers\Api\Me\LocationBidSettingsController::class, 'show']);
 
     // Seller dashboard
     Route::get('dashboard/seller/summary', [SellerDashboardController::class, 'summary']);
