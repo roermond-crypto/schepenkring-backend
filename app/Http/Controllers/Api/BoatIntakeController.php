@@ -403,9 +403,22 @@ class BoatIntakeController extends Controller
             $frontendBase = rtrim(config('app.frontend_url', 'https://schepenkring.nl'), '/');
             $resumeUrl = "{$frontendBase}/nl/boot-aanmelden/aanvullen?token={$token}";
 
-            Mail::to($intake->seller_email)->send(
-                new BoatIntakeConfirmationMail($intake, $score, $resumeUrl)
-            );
+            // Observed in production: the first send attempt right after
+            // store()'s DB work (intake create, score calc, draft yacht
+            // create, all synchronous before this point) reliably fails,
+            // while a manual "Try again" — a fresh request with no prior
+            // work in front of it — reliably succeeds. Consistent with a
+            // cold SMTP connection on the first send of a busy request
+            // rather than a real config/content problem (the request
+            // itself, and the mail's data/template, are both otherwise
+            // fine — see the from/replyTo simplification made earlier).
+            // A short automatic retry turns that into a non-issue instead
+            // of depending on the seller noticing and clicking retry.
+            retry(2, function () use ($intake, $score, $resumeUrl) {
+                Mail::to($intake->seller_email)->send(
+                    new BoatIntakeConfirmationMail($intake, $score, $resumeUrl)
+                );
+            }, 300);
 
             $intake->update([
                 'confirmation_sent'    => true,
