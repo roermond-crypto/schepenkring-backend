@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 
 class EmailTemplateController extends Controller
 {
@@ -561,7 +562,12 @@ class EmailTemplateController extends Controller
         ]);
 
         $path = $request->file('file')->store('email-template-media', 'public');
-        $url  = asset('storage/' . $path);
+        // Storage::disk('public')->url() honors STORAGE_URL (falls back to
+        // APP_URL) — asset('storage/'.$path) bypasses STORAGE_URL entirely
+        // and would keep resolving to APP_URL even after that env var is
+        // set, silently reproducing the same "http://localhost:8000 in the
+        // browser" bug fixed elsewhere for boat-intake photos.
+        $url = Storage::disk('public')->url($path);
 
         return response()->json(['url' => $url]);
     }
