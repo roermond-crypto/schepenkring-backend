@@ -75,6 +75,20 @@ class BoatIntakeController extends Controller
                 'seller_user_id'           => $seller->id,
                 'status'                   => 'frontend_draft',
                 'description_length'       => $descLen,
+                // photo_count/document_count default to 0 at the DB level,
+                // but Eloquent never syncs column defaults into the
+                // in-memory model after an insert unless explicitly set
+                // here — leaving them out meant $intake->photo_count was
+                // null (not 0) for the rest of this request. That null
+                // flowed straight into BoatIntakeConfirmationMail's typed
+                // `int $photoCount` property and threw a TypeError,
+                // silently caught by sendSellerConfirmation()'s catch
+                // block. This is the real, now-confirmed (via production
+                // log) cause of "first send always fails" — resendConfirmation()
+                // always worked because it reloads $intake fresh from the
+                // DB, where the column default is a real 0.
+                'photo_count'              => 0,
+                'document_count'           => 0,
                 'resume_token'             => $resumeToken,
                 'resume_token_expires_at'  => now()->addDays(30),
                 'ip_address'               => $request->ip(),
