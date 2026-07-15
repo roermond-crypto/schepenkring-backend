@@ -5,7 +5,6 @@ namespace App\Mail;
 use App\Models\BoatIntake;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -64,12 +63,15 @@ class BoatIntakeConfirmationMail extends Mailable
 
     public function envelope(): Envelope
     {
-        $fromAddress = config('mail.from.address', 'support@schepen-kring.nl');
-        $fromName    = 'Schepenkring Makelaars';
-
+        // No explicit from/replyTo — let it fall through to the mailer's
+        // configured default (MAIL_FROM_ADDRESS/MAIL_FROM_NAME), same as
+        // every other working mail class in this app (e.g.
+        // PasswordResetLinkMail). This class used to build its own Address
+        // here; removed as a precaution in case a strict SMTP provider was
+        // rejecting the explicit override — genuine confirmation of the
+        // real cause still needs the exception logged by
+        // sendSellerConfirmation()'s catch block in storage/logs/laravel.log.
         return new Envelope(
-            from:    new Address($fromAddress, $fromName),
-            replyTo: [new Address($fromAddress, $fromName)],
             subject: "Boot aanmelding ontvangen: {$this->boatName}",
         );
     }
