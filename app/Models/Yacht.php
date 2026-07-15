@@ -116,7 +116,7 @@ class Yacht extends Model
 
         // Identity (from Yachtshift)
         'boat_type', 'boat_category', 'new_or_used', 'manufacturer', 'model',
-        'vessel_lying', 'location_city', 'location_lat', 'location_lng',
+        'vessel_lying', 'location_city', 'location_country', 'location_lat', 'location_lng',
         'short_description_nl', 'short_description_en', 'short_description_de', 'short_description_fr', 'advertise_as',
         'advertising_channels',
 
@@ -253,7 +253,12 @@ class Yacht extends Model
     // ─── Existing relationships ────────────────────────────────
 
     public function images(): HasMany {
-        return $this->hasMany(YachtImage::class);
+        // Default-ordered by sort_order (the pipeline's curated gallery
+        // order, also what "sort_order 0 = main image" relies on) so any
+        // caller that does ->images->first()/->take(n) without an explicit
+        // orderBy() — e.g. PublicBoatController — gets the same order the
+        // wizard shows, not arbitrary insertion order.
+        return $this->hasMany(YachtImage::class)->orderBy('sort_order');
     }
 
     public function owner(): BelongsTo

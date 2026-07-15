@@ -111,6 +111,16 @@ class ImagePipelineController extends Controller
                 'count' => count($uploaded),
                 'image_ids' => collect($uploaded)->pluck('id')->all(),
             ]);
+
+            // If this yacht had no images before this batch, the first
+            // uploaded image is now the sort_order-0 / main image — keep
+            // yachts.main_image (the legacy scalar column still read by
+            // public listing pages, offer-reply emails, and the admin
+            // yacht index) in sync rather than relying on the frontend to
+            // set it separately.
+            if ($currentCount === 0) {
+                $this->syncMainImageColumn($yacht, $uploaded[0]->id);
+            }
         }
 
         return response()->json([
@@ -203,6 +213,11 @@ class ImagePipelineController extends Controller
             'was_main_image' => $wasFirst,
         ]);
 
+        if ($wasFirst) {
+            $newFirstId = $yacht->images()->whereNotIn('status', ['deleted'])->orderBy('sort_order')->value('id');
+            $this->syncMainImageColumn($yacht, $newFirstId);
+        }
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Image deleted.',
@@ -243,6 +258,15 @@ class ImagePipelineController extends Controller
                 'error' => 'Image is not yet processed — try again once processing finishes.',
             ], 422);
         }
+
+        // rotateInPlace() overwrites the same file path, so the URL string
+        // never changes. The frontend keys each <img> element off
+        // image.updated_at specifically so a rotate forces React to mount
+        // a fresh element (and the browser to re-fetch) instead of
+        // silently keeping the pre-rotation image on screen — without
+        // this touch(), that key never changes and the rotate looks like
+        // it did nothing until a hard refresh.
+        $image->touch();
 
         $this->logImageAudit('image_rotated', $yacht, $request->user(), [
             'image_id' => (int) $imageId,
@@ -338,7 +362,6 @@ class ImagePipelineController extends Controller
 
     /**
      * POST /yachts/{yachtId}/images/reorder
-     * POST /yachts/{yachtId}/images/reorderß
      * Persist manual drag-and-drop image ordering.
      */
     public function reorder(Request $request, $yachtId): JsonResponse
@@ -381,6 +404,7 @@ class ImagePipelineController extends Controller
                 'previous_first_image_id' => $previousFirstId,
                 'new_first_image_id' => $newFirstId,
             ]);
+            $this->syncMainImageColumn($yacht, $newFirstId);
         }
 
         return response()->json([
@@ -428,11 +452,32 @@ class ImagePipelineController extends Controller
             'previous_first_image_id' => $previousFirstId,
             'new_first_image_id' => (int) $imageId,
         ]);
+        $this->syncMainImageColumn($yacht, (int) $imageId);
 
         return response()->json([
             'status' => 'success',
             'message' => 'Main image updated.',
         ]);
+    }
+
+    /**
+     * Keeps the legacy yachts.main_image scalar column (still read by
+     * public listing pages, offer-reply emails, and the admin yacht index
+     * — none of which eager-load the images relation) in sync with
+     * whichever image is actually sort_order 0 in the pipeline. Without
+     * this, changing the main image via drag-and-drop reorder or the
+     * "set main" action silently left those surfaces showing a stale
+     * photo, since neither previously wrote to this column at all.
+     */
+    private function syncMainImageColumn(Yacht $yacht, ?int $imageId): void
+    {
+        $path = null;
+        if ($imageId !== null) {
+            $image = YachtImage::find($imageId);
+            $path = $image?->optimized_url;
+        }
+
+        $yacht->forceFill(['main_image' => $path])->save();
     }
 
     /**

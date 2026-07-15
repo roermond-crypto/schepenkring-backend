@@ -33,7 +33,6 @@ class PublicBoatController extends Controller
         }
 
         // Only expose public-facing fields — never sensitive data.
-        $firstImage = $yacht->images->first();
 
         return response()->json([
             'id'               => $yacht->id,
@@ -51,9 +50,13 @@ class PublicBoatController extends Controller
             'location_id'      => $yacht->location_id,
             'location_name'    => $yacht->location?->name,
             'harbor_name'      => $yacht->location?->name,
+            // optimized_url, not the raw url column (a storage-relative
+            // path) — same bug already found/fixed for OpenMarine exports:
+            // the raw column produces broken relative URLs on the public
+            // site instead of the real fully-qualified public URL.
             'images'           => $yacht->images->take(10)->map(fn($img) => [
-                'url'  => $img->url ?? $img->path ?? null,
-                'src'  => $img->url ?? $img->path ?? null,
+                'url'  => $img->optimized_url,
+                'src'  => $img->optimized_url,
             ])->values()->toArray(),
         ]);
     }
