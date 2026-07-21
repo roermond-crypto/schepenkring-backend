@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Mail\TemplatedMail;
 use App\Models\KycQuestion;
+use App\Models\Location;
 use App\Models\Notification;
 use App\Models\SellerOnboarding;
 use App\Models\SellerOnboardingContract;
@@ -15,6 +17,8 @@ use App\Models\User;
 use App\Support\SellerOnboardingStatus;
 use App\Support\SyncsOnboardingProfileToUser;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -461,6 +465,69 @@ class SellerOnboardingOrchestrator
         } catch (\Throwable $e) {
             report($e);
         }
+
+        // Also email Schepenkring so the case is actioned even by staff who
+        // aren't watching the in-app notification bell. Isolated in its own
+        // try/catch: an email failure must not suppress the in-app alert above
+        // nor break the seller-facing submit flow.
+        try {
+            $this->emailSchepenkringOfOnboardingOutcome($onboarding, $outcome, $title, $message);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Email the seller's Schepenkring location (falling back to the global
+     * admin notification address) that an onboarding needs attention.
+     */
+    private function emailSchepenkringOfOnboardingOutcome(
+        SellerOnboarding $onboarding,
+        string $outcome,
+        string $title,
+        string $message
+    ): void {
+        $onboarding->loadMissing('user');
+        $seller = $onboarding->user;
+
+        $locationEmail = $seller?->client_location_id
+            ? Location::query()->whereKey($seller->client_location_id)->value('email')
+            : null;
+        $recipient = $locationEmail ?: config('mail.admin_notification_address');
+
+        if (! $recipient) {
+            Log::warning('[SellerOnboarding] No location email and no ADMIN_NOTIFICATION_EMAIL configured — outcome email not sent', [
+                'seller_onboarding_id' => $onboarding->id,
+                'outcome' => $outcome,
+            ]);
+
+            return;
+        }
+
+        $reviewUrl = rtrim((string) config('app.frontend_url'), '/').'/nl/dashboard/admin/onboarding';
+        $sellerName = trim((string) ($seller->name ?? '')) ?: ($seller->email ?? 'Onbekende verkoper');
+        $sellerEmail = $seller->email ?? '—';
+
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">'
+            .'<h2 style="color:#003566;margin:0 0 12px">'.e($title).'</h2>'
+            .'<p style="margin:0 0 16px">'.e($message).'</p>'
+            .'<table style="border-collapse:collapse;margin:0 0 20px">'
+            .'<tr><td style="padding:4px 16px 4px 0;color:#64748b">Verkoper</td><td style="padding:4px 0"><strong>'.e($sellerName).'</strong></td></tr>'
+            .'<tr><td style="padding:4px 16px 4px 0;color:#64748b">E-mailadres</td><td style="padding:4px 0">'.e($sellerEmail).'</td></tr>'
+            .'<tr><td style="padding:4px 16px 4px 0;color:#64748b">Status</td><td style="padding:4px 0">'.e($outcome === 'rejected' ? 'Afgewezen tijdens KYC' : 'Handmatige beoordeling vereist').'</td></tr>'
+            .'</table>'
+            .'<a href="'.e($reviewUrl).'" style="display:inline-block;background:#003566;color:#fff;text-decoration:none;padding:10px 20px;border-radius:9999px;font-weight:bold">Beoordeel in het adminpaneel</a>'
+            .'<p style="margin:24px 0 0;color:#94a3b8;font-size:12px">Schepenkring — automatische melding uit de verkoper-onboarding.</p>'
+            .'</div>';
+
+        $subject = $outcome === 'rejected'
+            ? 'Verkoper afgewezen tijdens KYC — beoordeling vereist'
+            : 'Verkoper vereist handmatige beoordeling';
+
+        Mail::to($recipient)->send(new TemplatedMail(
+            htmlContent: $html,
+            emailSubject: $subject,
+        ));
     }
 
     public function handleSignhostStatus(SellerOnboardingSignhostTransaction $transaction, string $status, array $payload): SellerOnboarding
