@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\KycQuestion;
+use App\Models\Notification;
 use App\Models\SellerOnboarding;
 use App\Models\SellerOnboardingContract;
 use App\Models\SellerOnboardingKycAnswer;
@@ -369,6 +370,21 @@ class SellerOnboardingOrchestrator
             $onboarding->can_publish_boat = false;
             $onboarding->save();
 
+            // A seller being stopped during KYC must not fail silently: open an
+            // admin review record and alert Schepenkring admins so the case is
+            // visible and actionable (previously the seller just saw "Aanvraag
+            // afgewezen" while no one on the Schepenkring side was notified).
+            $review = SellerOnboardingReview::query()->firstOrCreate(
+                [
+                    'seller_onboarding_id' => $onboarding->id,
+                    'status' => 'open',
+                ],
+                [
+                    'opened_at' => now(),
+                ]
+            );
+            $this->notifyAdminsOfOnboardingOutcome($onboarding, 'rejected', $review);
+
             return $decision;
         }
 
@@ -378,7 +394,7 @@ class SellerOnboardingOrchestrator
             $onboarding->can_publish_boat = false;
             $onboarding->save();
 
-            SellerOnboardingReview::query()->firstOrCreate(
+            $review = SellerOnboardingReview::query()->firstOrCreate(
                 [
                     'seller_onboarding_id' => $onboarding->id,
                     'status' => 'open',
@@ -387,6 +403,7 @@ class SellerOnboardingOrchestrator
                     'opened_at' => now(),
                 ]
             );
+            $this->notifyAdminsOfOnboardingOutcome($onboarding, 'manual_review', $review);
 
             return $decision;
         }
@@ -400,6 +417,50 @@ class SellerOnboardingOrchestrator
         $this->startContractSigning($onboarding);
 
         return $decision;
+    }
+
+    /**
+     * Alert Schepenkring admins that a seller onboarding needs attention
+     * (auto-rejected or flagged for manual review). Notifying every active
+     * admin (the default when no user IDs are passed) so the case can be
+     * picked up from the seller-onboarding review queue. Best-effort: a
+     * notification failure must never break the seller-facing submit flow.
+     */
+    private function notifyAdminsOfOnboardingOutcome(
+        SellerOnboarding $onboarding,
+        string $outcome,
+        ?SellerOnboardingReview $review = null
+    ): void {
+        try {
+            $onboarding->loadMissing('user');
+            $seller = $onboarding->user;
+            $sellerName = trim((string) ($seller->name ?? '')) ?: ($seller->email ?? 'Onbekende verkoper');
+
+            [$title, $message] = $outcome === 'rejected'
+                ? [
+                    'Verkoper afgewezen tijdens KYC',
+                    "{$sellerName} is automatisch afgewezen tijdens de KYC-controle en wacht op beoordeling.",
+                ]
+                : [
+                    'Verkoper vereist handmatige beoordeling',
+                    "{$sellerName} is tijdens de KYC-controle gemarkeerd voor handmatige beoordeling.",
+                ];
+
+            Notification::createAndSend(
+                type: "seller_onboarding_{$outcome}",
+                title: $title,
+                message: $message,
+                data: [
+                    'seller_onboarding_id' => $onboarding->id,
+                    'review_id' => $review?->id,
+                    'user_id' => $onboarding->user_id,
+                    'seller_email' => $seller->email ?? null,
+                    'outcome' => $outcome,
+                ],
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     public function handleSignhostStatus(SellerOnboardingSignhostTransaction $transaction, string $status, array $payload): SellerOnboarding
